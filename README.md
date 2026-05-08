@@ -2,6 +2,11 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+### Environment variables
+
+- **`DATABASE_URL`** — PostgreSQL connection string (required). See [DEPLOY.md](./DEPLOY.md#local-development).
+- **`AUTH_SECRET`** — Random string, **32+ characters**, used to sign session cookies. Generate with `openssl rand -base64 32`; add it to `.env` / `.env.local` or to Vercel **Environment Variables**, then **restart dev** or **redeploy**. Full steps: [DEPLOY.md — AUTH_SECRET](./DEPLOY.md#auth-secret--session-signing) (or open `/docs/auth-secret` while the app is running).
+
 First, run the development server:
 
 ```bash
@@ -31,6 +36,6 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 
 ## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+See [DEPLOY.md](./DEPLOY.md) for hosting the app on Vercel with PostgreSQL on Railway (env vars, migrations, SSL).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The generic [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) applies to other hosts.

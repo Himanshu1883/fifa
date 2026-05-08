@@ -1,0 +1,65 @@
+"use server";
+
+import bcrypt from "bcryptjs";
+import { redirect } from "next/navigation";
+import { AUTH_SECRET_SETUP_ROUTE } from "@/lib/auth-secret-docs";
+import {
+  clearSessionCookie,
+  setSessionCookie,
+  signSessionToken,
+} from "@/lib/auth/session";
+import { prisma } from "@/lib/prisma";
+
+const USERNAME_MAX = 64;
+const PASSWORD_MAX = 256;
+
+function validateUsername(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const u = raw.trim();
+  if (!u || u.length > USERNAME_MAX) return null;
+  return u;
+}
+
+function validatePassword(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  if (!raw || raw.length > PASSWORD_MAX) return null;
+  return raw;
+}
+
+export type LoginState = { error?: string };
+
+export async function loginAction(
+  _prev: LoginState | undefined,
+  formData: FormData,
+): Promise<LoginState> {
+  const username = validateUsername(formData.get("username"));
+  const password = validatePassword(formData.get("password"));
+
+  if (!username || !password) {
+    return { error: "Enter a valid username and password." };
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { username },
+  });
+
+  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+    return { error: "Invalid username or password." };
+  }
+
+  let token: string;
+  try {
+    token = await signSessionToken(user.id, user.username);
+  } catch {
+    return {
+      error: `Could not create a session. Set AUTH_SECRET (32+ random characters), redeploy or restart dev, then try again. Setup: ${AUTH_SECRET_SETUP_ROUTE}`,
+    };
+  }
+  await setSessionCookie(token);
+  redirect("/");
+}
+
+export async function logoutAction(): Promise<void> {
+  await clearSessionCookie();
+  redirect("/login");
+}

@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  /** `pg` ships optional native bits; keep it external for server bundling. */
+  serverExternalPackages: ["pg"],
 };
 
 export default nextConfig;
