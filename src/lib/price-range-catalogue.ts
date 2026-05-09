@@ -111,6 +111,153 @@ function normalizeCategory(cat: unknown): IncomingCategory | null {
   return c;
 }
 
+/** Same heuristic as Zapier/Make unwrappers for other webhook bodies. */
+const CATALOGUE_WRAPPER_KEYS = [
+  "data",
+  "payload",
+  "body",
+  "json",
+  "record",
+  "input",
+  "hook",
+  "event",
+  "result",
+  "response",
+  "output",
+] as const;
+
+function tryParseJsonLoose(s: string): unknown | null {
+  const t = s.trim();
+  if (!t || (t[0] !== "{" && t[0] !== "[")) return null;
+  try {
+    return JSON.parse(t) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function looksLikeCategoryArray(arr: unknown): arr is unknown[] {
+  return (
+    Array.isArray(arr) &&
+    arr.length > 0 &&
+    arr.every(
+      (el) =>
+        !!el &&
+        typeof el === "object" &&
+        !Array.isArray(el) &&
+        Array.isArray((el as IncomingCategory).blocks),
+    )
+  );
+}
+
+function coerceCategoriesArray(value: unknown): unknown[] | null {
+  if (Array.isArray(value)) return looksLikeCategoryArray(value) ? value : null;
+  if (typeof value === "string") {
+    const p = tryParseJsonLoose(value);
+    return Array.isArray(p) && looksLikeCategoryArray(p) ? p : null;
+  }
+  return null;
+}
+
+/**
+ * Peel common automation-tool wrappers / stringified bodies until categories keys appear,
+ * then leave deep resolution to `resolveCategoriesList`.
+ */
+function unwrapCatalogueBody(raw: unknown): unknown {
+  let cur: unknown = raw;
+  if (typeof cur === "string") {
+    const parsed = tryParseJsonLoose(cur);
+    if (parsed === null) {
+      throw new CataloguePayloadError("Body must be valid JSON.");
+    }
+    cur = parsed;
+  }
+  if (!cur || typeof cur !== "object" || Array.isArray(cur)) return cur;
+
+  for (let depth = 0; depth < 8; depth++) {
+    const o = cur as Record<string, unknown>;
+    if (
+      Object.prototype.hasOwnProperty.call(o, "priceRangeCategories") ||
+      Object.prototype.hasOwnProperty.call(o, "categories")
+    ) {
+      return cur;
+    }
+    let inner: unknown = null;
+    for (const k of CATALOGUE_WRAPPER_KEYS) {
+      const v = o[k];
+      if (typeof v === "string") {
+        const loose = tryParseJsonLoose(v);
+        if (loose !== null && typeof loose === "object") {
+          inner = loose;
+          break;
+        }
+      }
+      if (v !== null && v !== undefined && typeof v === "object") {
+        inner = v;
+        break;
+      }
+    }
+    if (inner === null) return cur;
+    cur = inner;
+    if (!cur || typeof cur !== "object" || Array.isArray(cur)) break;
+  }
+  return cur;
+}
+
+function findPrefIdDeep(o: Record<string, unknown>, depth = 0): string {
+  if (depth > 8) return "";
+  const local =
+    (typeof o.prefId === "string" && o.prefId.trim()) ||
+    (typeof o.eventPrefId === "string" && o.eventPrefId.trim()) ||
+    "";
+  if (local) return local;
+  for (const v of Object.values(o)) {
+    if (v !== null && v !== undefined && typeof v === "object" && !Array.isArray(v)) {
+      const inner = findPrefIdDeep(v as Record<string, unknown>, depth + 1);
+      if (inner) return inner;
+    }
+  }
+  return "";
+}
+
+function resolveCategoriesList(o: Record<string, unknown>, depth = 0): unknown[] | null {
+  if (depth > 8) return null;
+  const direct =
+    coerceCategoriesArray(o.priceRangeCategories) ?? coerceCategoriesArray(o.categories);
+  if (direct) return direct;
+  for (const [k, v] of Object.entries(o)) {
+    if (k === "prefId" || k === "eventPrefId") continue;
+    const fromVal = coerceCategoriesArray(v);
+    if (fromVal) return fromVal;
+    if (v !== null && v !== undefined && typeof v === "object" && !Array.isArray(v)) {
+      const nested = resolveCategoriesList(v as Record<string, unknown>, depth + 1);
+      if (nested !== null && nested.length > 0) return nested;
+    }
+  }
+  return null;
+}
+
+/** Array of wrappers `[{ categories: [...] }, …]` export shape. */
+function normalizeTopLevelCategoriesArray(arr: unknown[]): unknown[] {
+  if (!arr.length) return arr;
+  if (looksLikeCategoryArray(arr)) return arr;
+  const merged: unknown[] = [];
+  let anyMerged = false;
+  const items = arr as unknown[];
+  for (const el of items) {
+    if (el !== null && el !== undefined && typeof el === "object" && !Array.isArray(el)) {
+      const eo = el as Record<string, unknown>;
+      const part =
+        coerceCategoriesArray(eo.priceRangeCategories) ?? coerceCategoriesArray(eo.categories);
+      if (part) {
+        merged.push(...part);
+        anyMerged = true;
+      }
+    }
+  }
+  return anyMerged ? merged : arr;
+}
+
 /**
  * Produce rows in order: sorted categories × sorted blocks inside each category.
  */
@@ -159,14 +306,17 @@ export function catalogueRowsFromPayload(body: unknown, prefIdFallback?: string 
   prefId: string;
   rows: FlatCatalogueRow[];
 } {
+  body = unwrapCatalogueBody(body);
+
   if (Array.isArray(body)) {
+    const merged = normalizeTopLevelCategoriesArray(body);
     const prefId = prefIdFallback?.trim() ?? "";
     if (!prefId) {
       throw new CataloguePayloadError(
         "Send prefId (?prefId= in URL), or wrap the array as { prefId, categories: [...] }.",
       );
     }
-    return { prefId, rows: priceRangeCategoriesToFlatRows(body) };
+    return { prefId, rows: priceRangeCategoriesToFlatRows(merged) };
   }
 
   if (!body || typeof body !== "object") {
@@ -176,18 +326,15 @@ export function catalogueRowsFromPayload(body: unknown, prefIdFallback?: string 
   }
 
   const o = body as Record<string, unknown>;
-  const prefId =
-    (typeof o.prefId === "string" && o.prefId.trim()) ||
-    (typeof o.eventPrefId === "string" && o.eventPrefId.trim()) ||
-    (prefIdFallback?.trim() ?? "");
+  const prefId = findPrefIdDeep(o) || (prefIdFallback?.trim() ?? "");
 
-  const catList = o.priceRangeCategories ?? o.categories;
+  const catList = resolveCategoriesList(o);
   if (!prefId) {
     throw new CataloguePayloadError(
       "Missing prefId (prefId / eventPrefId in JSON, or ?prefId= for raw arrays).",
     );
   }
-  if (!Array.isArray(catList)) {
+  if (catList === null) {
     throw new CataloguePayloadError(
       'Missing categories — use "priceRangeCategories" / "categories", or POST a raw array with ?prefId=.',
     );

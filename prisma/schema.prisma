@@ -19,18 +19,89 @@ model User {
   @@map("users")
 }
 
+enum CataloguePriceSource {
+  PRIMARY_PREF
+  RESELL_PREF
+}
+
 model Event {
-  id            Int              @id @default(autoincrement())
-  matchLabel    String           @map("match_label")
-  sortOrder     Int              @map("sort_order")
+  id            Int                      @id @default(autoincrement())
+  matchLabel    String                   @map("match_label")
+  sortOrder     Int                      @map("sort_order")
   name          String
-  prefId        String           @map("pref_id")
-  resalePrefId  String?          @map("resale_pref_id")
+  /// Match stage / round (e.g. group phase); optional for backfill.
+  stage         String?
+  venue         String?
+  country       String?
+  prefId        String                   @map("pref_id")
+  resalePrefId  String?                  @map("resale_pref_id")
   categories    EventCategory[]
+  blockPrices   EventCategoryBlockPrice[]
+  seatListings  EventSeatListing[]
 
   @@index([sortOrder])
   @@index([prefId])
   @@index([resalePrefId])
+}
+
+/// One resale / map seat listing row (GeoJSON feature) per event.
+model EventSeatListing {
+  id                 Int      @id @default(autoincrement())
+  eventId            Int      @map("event_id")
+  event              Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  categoryBlockId    String   @map("category_block_id")
+  categoryBlockName  String   @map("category_block_name")
+
+  areaId             String   @map("area_id")
+  areaName           String   @map("area_name")
+
+  color              String
+
+  rowLabel           String   @map("row_label")
+  seatNumber         String   @map("seat_number")
+
+  seatCategoryId     String   @map("seat_category_id")
+  seatCategoryName   String   @map("seat_category_name")
+
+  contingentId       String   @map("contingent_id")
+
+  amount             Decimal  @map("amount") @db.Decimal(18, 4)
+  resaleMovementId   String   @map("resale_movement_id")
+  exclusive          Boolean
+
+  propertiesId       String   @map("properties_id")
+
+  geometryType       String   @map("geometry_type")
+  rotation           Int
+  coordX             Int      @map("coord_x")
+  coordY             Int      @map("coord_y")
+
+  mainId             String   @map("main_id")
+
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@unique([eventId, resaleMovementId])
+  @@index([eventId])
+  @@index([eventId, categoryBlockId])
+  @@index([seatCategoryId])
+  @@map("event_seat_listings")
+}
+
+model EventCategoryBlockPrice {
+  id                Int                  @id @default(autoincrement())
+  eventId           Int                  @map("event_id")
+  event             Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  categoryId        String               @map("category_id")
+  categoryBlockId   String               @map("category_block_id")
+  minPrice          Decimal              @map("min_price") @db.Decimal(14, 4)
+  maxPrice          Decimal              @map("max_price") @db.Decimal(14, 4)
+  catalogueSource   CataloguePriceSource @map("catalogue_source")
+
+  @@unique([eventId, categoryId, categoryBlockId, catalogueSource])
+  @@index([eventId])
+  @@map("event_category_block_prices")
 }
 
 model EventCategory {

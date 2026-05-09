@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /** `pg` ships optional native bits; keep it external for server bundling. */
-  serverExternalPackages: ["pg"],
+  /** `pg` / driver adapter skip Turbopack bundling (dev “module not found” otherwise). */
+  serverExternalPackages: ["pg", "@prisma/adapter-pg"],
 };
 
 export default nextConfig;

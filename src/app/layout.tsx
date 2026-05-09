@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { getSession } from "@/lib/auth/session";
-import { logoutAction } from "@/app/actions/auth";
+import { logoutAction } from "@/app/actions/logout";
+import { getSession, type SessionPayload } from "@/lib/auth/session";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -24,7 +24,12 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const session = await getSession();
+  let session: SessionPayload | null = null;
+  try {
+    session = await getSession();
+  } catch {
+    /* cookies / crypto edge cases — render without auth chrome */
+  }
   return (
     <html
       lang="en"

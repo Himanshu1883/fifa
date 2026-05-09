@@ -6,12 +6,22 @@ import {
 } from "@/lib/auth/session";
 
 /**
- * Authenticated areas: `/` (home) and `/events/*` require a valid session JWT cookie.
- * Public: `/login`, `/api/*` (webhooks, health, logout), and Next static assets.
- * Unauthenticated users hitting protected routes are sent to `/login` so the app stays gated.
+ * Sessions: `/` and `/events/*` need a valid session cookie + `AUTH_SECRET`.
+ * Public: `/login`, `/api/*`, and static assets.
+ *
+ * Local dev (optional): set `DISABLE_AUTH_PROXY=1` in `.env` to open `/` without login.
+ *
+ * Next.js **16.x** uses `proxy.ts` with a named `proxy` export here (Node runtime in this app).
+ * The older `middleware.ts` / `middleware` name still works but is deprecated — see build warning
+ * and https://nextjs.org/docs/messages/middleware-to-proxy
  */
-export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+export async function proxy(request: NextRequest) {
+  if (
+    process.env.NODE_ENV === "development" &&
+    process.env.DISABLE_AUTH_PROXY === "1"
+  ) {
+    return NextResponse.next();
+  }
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const key = tryAuthSecretKeyBytes();

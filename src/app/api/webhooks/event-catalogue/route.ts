@@ -74,5 +74,9 @@ export async function GET(req: NextRequest) {
       "/api/webhooks/event-catalogue-resale",
       req.nextUrl.origin,
     ).toString(),
+    categoryBlockPricesWebhook: new URL(
+      "/api/webhooks/event-category-prices",
+      req.nextUrl.origin,
+    ).toString(),
   });
 }

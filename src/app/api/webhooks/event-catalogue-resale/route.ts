@@ -75,5 +75,9 @@ export async function GET(req: NextRequest) {
     },
     usage:
       "POST JSON here when you only want to target events by resale catalogue pref. Raw array bodies need ?resalePrefId=10229225516056 (or ?prefId=).",
+    categoryBlockPricesResaleWebhook: new URL(
+      "/api/webhooks/event-category-prices-resale",
+      req.nextUrl.origin,
+    ).toString(),
   });
 }

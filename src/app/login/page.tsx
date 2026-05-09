@@ -8,8 +8,17 @@ export const metadata: Metadata = {
 };
 
 export default async function LoginPage() {
-  const session = await getSession();
-  if (session) redirect("/");
+  let session: Awaited<ReturnType<typeof getSession>> = null;
+  let sessionError = false;
+  try {
+    session = await getSession();
+  } catch {
+    sessionError = true;
+  }
+
+  if (session && tryAuthSecretKeyBytes()) {
+    redirect("/");
+  }
 
   const showAuthSecretMissing = tryAuthSecretKeyBytes() === null;
 
@@ -22,7 +31,15 @@ export default async function LoginPage() {
           <p className="text-sm text-zinc-400">Use your account to view matches and catalogues.</p>
         </header>
         <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-2xl shadow-black/40 backdrop-blur-md">
-          <LoginForm showAuthSecretMissing={showAuthSecretMissing} />
+          {sessionError ? (
+            <p className="mb-4 rounded-lg border border-red-500/30 bg-red-950/40 px-4 py-3 text-sm text-red-300" role="alert">
+              Could not read the session cookie. Try a hard refresh or clear site data for this host, then reload.
+            </p>
+          ) : null}
+          <LoginForm
+            showAuthSecretMissing={showAuthSecretMissing}
+            showDevInsecureAuthHint={process.env.NODE_ENV === "development"}
+          />
         </div>
         <p className="text-center text-xs text-zinc-500">
           After signing in you are redirected to the matches home page.

@@ -156,8 +156,16 @@ function requireDatabaseUrl(): string {
   return url;
 }
 
+/** Fail fast when Postgres is unreachable (default pg timeout is indefinite). */
+const PG_CONNECTION_TIMEOUT_MS = 15_000;
+
 export function createPrismaClient(): PrismaClient {
-  const adapter = new PrismaPg({ connectionString: requireDatabaseUrl() });
+  const adapter = new PrismaPg({
+    connectionString: requireDatabaseUrl(),
+    connectionTimeoutMillis: PG_CONNECTION_TIMEOUT_MS,
+    idleTimeoutMillis: 60_000,
+    max: 10,
+  });
   return new PrismaClient({ adapter });
 }
 

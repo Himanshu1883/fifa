@@ -6,6 +6,29 @@ This app uses **Prisma ORM 7** with **PostgreSQL** only (`prisma/schema.prisma`)
 
 This repo is a **single Next.js app**: **UI, API routes, middleware, and Prisma** all run on **Vercel**. There is no separate Node “API server” to deploy—the **backend** in production terms is **PostgreSQL hosted on Railway**. Vercel serverless functions invoke Prisma using **`DATABASE_URL`** pointing at Railway’s **public** Postgres URL (`?sslmode=require` as needed).
 
+### What you do vs what’s automatic
+
+| You (dashboards — your Railway + Vercel accounts) | From your machine / automation (after `DATABASE_URL` exists) |
+|---------------------------------------------------|----------------------------------------------------------------|
+| Create **PostgreSQL** on Railway, copy the **public** `DATABASE_URL`, paste it into Vercel as **`DATABASE_URL`**. | Run **`npx prisma migrate deploy`** with `DATABASE_URL` set (shell or CI). Default **`npm run build`** does **not** run migrations unless you override the Vercel build command — see [§5](#5-prisma-migrations-first-deploy-and-ongoing). |
+| Generate **`AUTH_SECRET`** (e.g. `openssl rand -base64 32`), add it on Vercel for **Production** and **Preview**. | Optional: seed data with **`npx prisma db seed`**. |
+| **Import** the GitHub repo on Vercel and **deploy** / **redeploy** after env changes. | Same DB URL works for local scripts; never commit `.env` or tokens. |
+
+**No CLI required for first deploy** if the repo is already on GitHub: use **Vercel → Add Project → Import** from Git. Commands like **`npx vercel link`** are **interactive** — avoid them in non-interactive environments. **Dashboard steps always need your login**; this doc does not deploy the project for you.
+
+Optional: `scripts/deploy-notes.sh` echoes the same high-level reminders (no secrets).
+
+### Vercel + Railway (quick)
+
+1. **Railway:** Create **PostgreSQL** → copy the **public** `DATABASE_URL` (Vercel must not use `*.railway.internal`). Add `?sslmode=require` if connections fail.
+2. **Vercel:** Project → **Settings** → **Environment Variables** — add for **Production** and **Preview** (same names in each; duplicate if Vercel does not auto-copy):
+   - **`DATABASE_URL`** — required  
+   - **`AUTH_SECRET`** — required (random string, **32+ characters**; e.g. `openssl rand -base64 32`)
+3. **Schema:** Before the app can use the DB, run migrations **once** with that database: locally `DATABASE_URL=… npx prisma migrate deploy`, *or* set Vercel **Build Command** to `prisma generate && prisma migrate deploy && next build` (needs `DATABASE_URL` at build time). Default `npm run build` does **not** run `migrate deploy`.
+4. **Deploy:** Import the GitHub repo in Vercel and deploy; **redeploy** after changing env vars.
+
+Details, troubleshooting, and the optional **`fifa`** repo checklist are below.
+
 ## GitHub / Vercel / Railway (fifa)
 
 Use this checklist when publishing to a GitHub repo named **`fifa`** and wiring the same tree to Vercel + Railway Postgres.
@@ -126,6 +149,19 @@ npx prisma db seed
 ```
 
 The seed creates default events/categories and an app login user whose password is set only in the seed script (hashed in the database — never stored as plaintext in the DB or in this doc).
+
+### Data: local PostgreSQL → empty Railway
+
+Choose **one** path:
+
+| Situation | Steps |
+|-----------|--------|
+| **Railway can match seed** (catalogue JSON in repo, no unique local rows you need to keep) | On your machine: `export DATABASE_URL="<Railway public URL>"` then `npx prisma migrate deploy` and `npx prisma db seed`. The seed **deletes all events** and recreates them — do not run it after a manual dump if you want to keep dumped rows. |
+| **Local DB has data you must preserve** | Run `npx prisma migrate deploy` against Railway first (schema must match migrations). Then from the repo root: `export SOURCE_DATABASE_URL="<local>"` `export TARGET_DATABASE_URL="<Railway public>"` and **`TRUNCATE_TARGET=1 ./scripts/pg-copy-app-data.sh`** for a clean load (requires local `pg_dump` / `psql`). The script copies only **`"Event"`**, **`"EventCategory"`**, and **`users`**. |
+
+Verify row counts without exposing secrets: `DATABASE_URL="<Railway>" npx tsx scripts/db-row-counts.ts` (prints JSON counts only).
+
+**No separate “API server” on Railway is required** for this repo: Next.js **API routes on Vercel** are the backend; they already use **`DATABASE_URL`** to reach Railway Postgres. Do **not** set **`NEXT_PUBLIC_*`** API base URLs unless you split the frontend onto a different origin and change fetches to absolute URLs (that complicates cookies, CORS, and `SameSite`). Deploying a **second** full Next.js app on Railway “next to” the DB is duplicative—only consider it if you need a non-Vercel edge or long-lived Node processes; if you do, align session cookies and hostnames deliberately so you do not break Vercel-only auth.
 
 ## Vercel: Next.js app
 

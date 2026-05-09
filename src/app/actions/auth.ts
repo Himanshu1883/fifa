@@ -3,11 +3,7 @@
 import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
 import { AUTH_SECRET_SETUP_ROUTE } from "@/lib/auth-secret-docs";
-import {
-  clearSessionCookie,
-  setSessionCookie,
-  signSessionToken,
-} from "@/lib/auth/session";
+import { setSessionCookie, signSessionToken } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 
 const USERNAME_MAX = 64;
@@ -57,9 +53,4 @@ export async function loginAction(
   }
   await setSessionCookie(token);
   redirect("/");
-}
-
-export async function logoutAction(): Promise<void> {
-  await clearSessionCookie();
-  redirect("/login");
 }

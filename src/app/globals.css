@@ -3,6 +3,11 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Event / ticketing surfaces — dark pages override via Tailwind; vars available for fine gradients */
+  --ticketing-accent: #34d399;
+  --ticketing-accent-dim: rgba(52, 211, 153, 0.14);
+  --ticketing-surface: #0f1412;
+  --ticketing-elevated: rgba(255, 255, 255, 0.04);
 }
 
 @theme inline {

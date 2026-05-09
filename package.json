@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --hostname localhost",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "catalogue:extract": "tsx scripts/extract-catalogue-categories.ts",
+    "import:seat-listings-sample": "tsx scripts/import-seat-listings-sample.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
@@ -21,7 +22,8 @@
     "next": "16.2.5",
     "pg": "^8.16.0",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -10,7 +10,13 @@ const inp =
 
 const initial: LoginState = {};
 
-export function LoginForm({ showAuthSecretMissing }: { showAuthSecretMissing: boolean }) {
+export function LoginForm({
+  showAuthSecretMissing,
+  showDevInsecureAuthHint,
+}: {
+  showAuthSecretMissing: boolean;
+  showDevInsecureAuthHint?: boolean;
+}) {
   const [state, formAction, pending] = useActionState(loginAction, initial);
 
   return (
@@ -28,6 +34,16 @@ export function LoginForm({ showAuthSecretMissing }: { showAuthSecretMissing: bo
           <span className="text-amber-200/80"> — also </span>
           <span className="font-mono text-amber-100/90">DEPLOY.md</span>
           <span className="text-amber-200/80"> in the repo.</span>
+          {showDevInsecureAuthHint ? (
+            <>
+              {" "}
+              <span className="block pt-2 text-amber-200/90">
+                Local-only fallback: set{" "}
+                <span className="font-mono text-amber-100/90">ALLOW_INSECURE_DEV_AUTH=1</span> to use a
+                dev placeholder secret (never in production).
+              </span>
+            </>
+          ) : null}
         </p>
       ) : null}
       {state.error ? (

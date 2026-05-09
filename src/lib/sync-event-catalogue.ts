@@ -27,6 +27,8 @@ export async function syncEventCategoriesFromCatalogue(
 
   if (!event) return null;
 
+  // TODO: If upstream catalogue payloads expose stage / venue / country, map them onto `Event` here.
+
   await tx.eventCategory.deleteMany({ where: { eventId: event.id } });
   await tx.eventCategory.createMany({
     data: rows.map((r) => ({
