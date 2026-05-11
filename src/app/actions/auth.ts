@@ -9,6 +9,17 @@ import { prisma } from "@/lib/prisma";
 const USERNAME_MAX = 64;
 const PASSWORD_MAX = 256;
 
+function safeNextPath(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const v = raw.trim();
+  if (!v) return null;
+  if (!v.startsWith("/")) return null;
+  if (v.startsWith("//")) return null;
+  if (v.includes("://")) return null;
+  if (v.includes("\n") || v.includes("\r")) return null;
+  return v;
+}
+
 function validateUsername(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const u = raw.trim();
@@ -30,6 +41,7 @@ export async function loginAction(
 ): Promise<LoginState> {
   const username = validateUsername(formData.get("username"));
   const password = validatePassword(formData.get("password"));
+  const nextPath = safeNextPath(formData.get("next"));
 
   if (!username || !password) {
     return { error: "Enter a valid username and password." };
@@ -52,5 +64,5 @@ export async function loginAction(
     };
   }
   await setSessionCookie(token);
-  redirect("/");
+  redirect(nextPath ?? "/");
 }

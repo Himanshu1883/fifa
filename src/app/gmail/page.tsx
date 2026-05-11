@@ -20,9 +20,9 @@ function firstQs(v: string | string[] | undefined): string | undefined {
 
 export default async function GmailPage({ searchParams }: Props) {
   const session = await getSession();
-  if (!session) redirect("/login");
+  if (!session) redirect("/login?msg=gmail_signin_required&next=%2Fgmail");
   const userId = Number(session.sub);
-  if (!Number.isInteger(userId) || userId <= 0) redirect("/login");
+  if (!Number.isInteger(userId) || userId <= 0) redirect("/login?msg=gmail_signin_required&next=%2Fgmail");
 
   const sp = await searchParams;
   const gmailErr = firstQs(sp.gmailErr);

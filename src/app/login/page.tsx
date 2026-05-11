@@ -7,7 +7,59 @@ export const metadata: Metadata = {
   title: "Sign in",
 };
 
-export default async function LoginPage() {
+type Props = {
+  searchParams?: Promise<{ msg?: string | string[]; next?: string | string[] }>;
+};
+
+function firstQs(v: string | string[] | undefined): string | undefined {
+  if (typeof v === "string") return v;
+  if (Array.isArray(v) && typeof v[0] === "string") return v[0];
+  return undefined;
+}
+
+function safeNextPath(raw: string | undefined): string | undefined {
+  const v = (raw ?? "").trim();
+  if (!v) return undefined;
+  if (!v.startsWith("/")) return undefined;
+  if (v.startsWith("//")) return undefined;
+  if (v.includes("://")) return undefined;
+  if (v.includes("\n") || v.includes("\r")) return undefined;
+  return v;
+}
+
+function describeLoginMessage(raw: string | undefined): { kind: "info" | "error"; text: string } | null {
+  const v = (raw ?? "").trim();
+  if (!v) return null;
+
+  if (v === "gmail_signin_required") {
+    return { kind: "info", text: "Sign in to continue to Gmail." };
+  }
+  if (v === "missing_auth_secret") {
+    return { kind: "error", text: "AUTH_SECRET is missing or too short. Set it, redeploy/restart, then try again." };
+  }
+  if (v.startsWith("oauth_error:")) {
+    return { kind: "error", text: `Google sign-in failed (${v.slice("oauth_error:".length)}). Try again.` };
+  }
+  if (v.startsWith("token_exchange_failed:")) {
+    return { kind: "error", text: "Google sign-in failed during token exchange. Try again." };
+  }
+  if (v.startsWith("userinfo_failed:")) {
+    return { kind: "error", text: "Google sign-in failed while fetching user profile. Try again." };
+  }
+  if (v === "invalid_oauth_state" || v === "missing_oauth_state") {
+    return { kind: "error", text: "Google sign-in state was invalid or expired. Try again." };
+  }
+  if (v === "google_email_not_verified") {
+    return { kind: "error", text: "Google account email is not verified. Use a verified Google account." };
+  }
+  if (v === "google_sub_mismatch_for_user") {
+    return { kind: "error", text: "This email is already linked to a different Google account." };
+  }
+
+  return { kind: "error", text: v.slice(0, 180) };
+}
+
+export default async function LoginPage({ searchParams }: Props) {
   let session: Awaited<ReturnType<typeof getSession>> = null;
   let sessionError = false;
   try {
@@ -21,6 +73,10 @@ export default async function LoginPage() {
   }
 
   const showAuthSecretMissing = tryAuthSecretKeyBytes() === null;
+
+  const sp = searchParams ? await searchParams : {};
+  const message = describeLoginMessage(firstQs(sp.msg));
+  const nextPath = safeNextPath(firstQs(sp.next));
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-emerald-950 text-zinc-100">
@@ -39,6 +95,8 @@ export default async function LoginPage() {
           <LoginForm
             showAuthSecretMissing={showAuthSecretMissing}
             showDevInsecureAuthHint={process.env.NODE_ENV === "development"}
+            message={message ?? undefined}
+            nextPath={nextPath}
           />
         </div>
         <p className="text-center text-xs text-zinc-500">

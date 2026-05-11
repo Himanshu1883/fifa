@@ -13,14 +13,34 @@ const initial: LoginState = {};
 export function LoginForm({
   showAuthSecretMissing,
   showDevInsecureAuthHint,
+  message,
+  nextPath,
 }: {
   showAuthSecretMissing: boolean;
   showDevInsecureAuthHint?: boolean;
+  message?: { kind: "info" | "error"; text: string };
+  nextPath?: string;
 }) {
   const [state, formAction, pending] = useActionState(loginAction, initial);
 
+  const googleHref = nextPath
+    ? `/api/auth/google/start?next=${encodeURIComponent(nextPath)}`
+    : "/api/auth/google/start";
+
   return (
     <form action={formAction} className="flex flex-col gap-4">
+      {message ? (
+        <p
+          className={
+            message.kind === "info"
+              ? "rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100"
+              : "rounded-lg border border-red-500/30 bg-red-950/40 px-4 py-3 text-sm text-red-300"
+          }
+          role={message.kind === "info" ? "status" : "alert"}
+        >
+          {message.text}
+        </p>
+      ) : null}
       {showAuthSecretMissing ? (
         <p className="rounded-lg border border-amber-500/30 bg-amber-950/40 px-4 py-3 text-sm text-amber-200" role="alert">
           Set <span className="font-mono">AUTH_SECRET</span> to a random string (32+ characters), then
@@ -51,6 +71,18 @@ export function LoginForm({
           {state.error}
         </p>
       ) : null}
+      <Link
+        href={googleHref}
+        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-white/[0.08] px-4 py-2.5 text-sm font-medium text-zinc-100 ring-1 ring-white/10 transition-colors hover:bg-white/[0.12]"
+      >
+        Continue with Google
+      </Link>
+      <div className="flex items-center gap-3">
+        <div className="h-px flex-1 bg-white/10" />
+        <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">or</span>
+        <div className="h-px flex-1 bg-white/10" />
+      </div>
+      {nextPath ? <input type="hidden" name="next" value={nextPath} /> : null}
       <div className="flex flex-col gap-1">
         <label htmlFor="username" className="text-xs font-medium uppercase tracking-wide text-zinc-500">
           Username
