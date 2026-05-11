@@ -220,7 +220,7 @@ async function main() {
     await syncSequences(targetPool);
 
     console.log("\nDone. Verify with your Railway URL as DATABASE_URL:");
-    console.log("  DATABASE_URL=\"…\" npx tsx scripts/db-row-counts.ts");
+    console.log("  DATABASE_URL=\"…\" npm run db:row-counts");
   } finally {
     await sourcePool.end();
     await targetPool.end();

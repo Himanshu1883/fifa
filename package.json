@@ -13,6 +13,7 @@
     "db:copy:railway": "node --import tsx scripts/copy-app-data-postgres.ts",
     "db:push:railway": "TRUNCATE_TARGET=1 node --import tsx scripts/copy-app-data-postgres.ts",
     "db:seed": "prisma db seed",
+    "db:row-counts": "node --import tsx scripts/db-row-counts.ts",
     "catalogue:extract": "node --import tsx scripts/extract-catalogue-categories.ts",
     "import:seat-listings-sample": "node --import tsx scripts/import-seat-listings-sample.ts",
     "postinstall": "prisma generate"
