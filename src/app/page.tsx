@@ -127,8 +127,12 @@ type HomeEventRow = {
   country: string | null;
   prefId: string;
   resalePrefId: string | null;
-  seatListingCount: number;
+  ticketsCount: number;
   lowestPriceCents: string | null;
+  cat1: string | null;
+  cat2: string | null;
+  cat3: string | null;
+  cat4: string | null;
   categoryCount: number;
   blockCount: number;
   categoryBlockHierarchy: HomeSeatCategoryHierarchyItem[];
@@ -140,6 +144,16 @@ const eventNameLinkClass =
 function cellText(value: string | null | undefined): string {
   const t = value?.trim();
   return t ? t : "—";
+}
+
+function sockAmountRawToCentsString(value: string | null): string | null {
+  if (!value) return null;
+  const n = priceToNumber(value);
+  if (!Number.isFinite(n)) return null;
+  // sock_available.amount uses units displayed as USD via /1000.
+  // formatUsd expects cents, so dollars = n/1000 => cents = n/10.
+  const cents = n / 10;
+  return Number.isFinite(cents) ? String(cents) : null;
 }
 
 function firstQs(v: string | string[] | undefined): string | undefined {
@@ -211,7 +225,7 @@ function sortHomeEvents(
       c = compareNullablePrice(x.lowestPriceCents, y.lowestPriceCents, order);
       if (c === 0) c = compareMatchNumberOrder(x.matchNum, y.matchNum, "asc");
     } else {
-      c = x.seatListingCount - y.seatListingCount;
+      c = x.ticketsCount - y.ticketsCount;
       if (order === "desc") c = -c;
       if (c === 0) c = compareMatchNumberOrder(x.matchNum, y.matchNum, "asc");
     }
@@ -237,7 +251,7 @@ export default async function Home({ searchParams }: Props) {
   let eventsAll: HomeEventRow[];
   let events: HomeEventRow[];
   try {
-    const [rows, listingAgg, catalogueCategoryRows] = await Promise.all([
+    const [rows, catalogueCategoryRows] = await Promise.all([
       prisma.event.findMany({
         orderBy: { sortOrder: "asc" },
         select: {
@@ -253,11 +267,6 @@ export default async function Home({ searchParams }: Props) {
           resalePrefId: true,
         },
       }),
-      prisma.eventSeatListing.groupBy({
-        by: ["eventId"],
-        _count: { _all: true },
-        _min: { amount: true },
-      }),
       prisma.eventCategory.findMany({
         select: {
           eventId: true,
@@ -270,33 +279,63 @@ export default async function Home({ searchParams }: Props) {
     ]);
 
     const eventIds = rows.map((r) => r.id);
-    const seatNowRows = await prisma.eventBlockSeatNow.findMany({
-      where: { eventId: { in: eventIds } },
-      select: { eventId: true, categoryId: true, blockId: true, availabilityResale: true },
-    });
+    const [sockAgg, seatNowRows, buyingCriteriaRows] = await Promise.all([
+      prisma.sockAvailable.groupBy({
+        by: ["eventId"],
+        where: { eventId: { in: eventIds } },
+        _count: { _all: true },
+        _min: { amount: true },
+      }),
+      prisma.eventBlockSeatNow.findMany({
+        where: { eventId: { in: eventIds } },
+        select: { eventId: true, categoryId: true, blockId: true, availabilityResale: true },
+      }),
+      prisma.eventBuyingCriteria.findMany({
+        where: { eventId: { in: eventIds } },
+        select: { eventId: true, cat1: true, cat2: true, cat3: true, cat4: true },
+      }),
+    ]);
 
     const categoryBlockByEvent = buildCategoryBlockStats(catalogueCategoryRows, seatNowRows);
 
     const byEvent = new Map<
       number,
-      { seatListingCount: number; lowestPriceCents: string | null }
+      { ticketsCount: number; lowestPriceCents: string | null }
     >();
-    for (const g of listingAgg) {
+    for (const g of sockAgg) {
       const minAmt = g._min.amount;
       byEvent.set(g.eventId, {
-        seatListingCount: g._count._all,
-        lowestPriceCents: minAmt != null ? minAmt.toString() : null,
+        ticketsCount: g._count._all,
+        lowestPriceCents: minAmt != null ? sockAmountRawToCentsString(minAmt.toString()) : null,
+      });
+    }
+
+    const criteriaByEvent = new Map<
+      number,
+      { cat1: string | null; cat2: string | null; cat3: string | null; cat4: string | null }
+    >();
+    for (const r of buyingCriteriaRows) {
+      criteriaByEvent.set(r.eventId, {
+        cat1: r.cat1,
+        cat2: r.cat2,
+        cat3: r.cat3,
+        cat4: r.cat4,
       });
     }
 
     eventsAll = rows.map((e) => {
       const agg = byEvent.get(e.id);
       const catBlk = categoryBlockByEvent.get(e.id);
+      const criteria = criteriaByEvent.get(e.id);
       return {
         ...e,
         matchNum: parseEventMatchNumber(e.matchLabel, e.name),
-        seatListingCount: agg?.seatListingCount ?? 0,
+        ticketsCount: agg?.ticketsCount ?? 0,
         lowestPriceCents: agg?.lowestPriceCents ?? null,
+        cat1: criteria?.cat1 ?? null,
+        cat2: criteria?.cat2 ?? null,
+        cat3: criteria?.cat3 ?? null,
+        cat4: criteria?.cat4 ?? null,
         categoryCount: catBlk?.categoryCount ?? 0,
         blockCount: catBlk?.blockCount ?? 0,
         categoryBlockHierarchy: catBlk?.hierarchy ?? [],
@@ -326,11 +365,11 @@ export default async function Home({ searchParams }: Props) {
   const criteriaEvents = [...eventsAll];
   sortHomeEvents(criteriaEvents, listSort, listOrder);
 
-  const totalSeatListings = events.reduce((acc, e) => acc + e.seatListingCount, 0);
-  const eventsWithListings = events.filter((e) => e.seatListingCount > 0).length;
+  const totalTickets = events.reduce((acc, e) => acc + e.ticketsCount, 0);
+  const eventsWithTickets = events.filter((e) => e.ticketsCount > 0).length;
 
-  const noListingTitle = "No seat listings synced for this event yet";
-  const noPriceTitle = "No listing prices available (add seat listings via webhook or import)";
+  const noTicketsTitle = "No sock_available rows synced for this event yet";
+  const noPriceTitle = "No sock_available amounts available";
 
   const alertShell =
     "rounded-xl border border-red-400/30 bg-[color:color-mix(in_oklab,red_12%,transparent)] px-4 py-3 text-sm text-red-200 shadow-sm shadow-black/30 ring-1 ring-red-500/15";
@@ -397,7 +436,7 @@ export default async function Home({ searchParams }: Props) {
                   Match schedule
                 </h1>
                 <p className="max-w-2xl text-pretty text-sm leading-relaxed text-zinc-400">
-                  Fixtures with venue context, lowest seat-listing price, and{" "}
+                  Fixtures with venue context, lowest sock_available price, and{" "}
                   <code className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[11px] text-zinc-300">
                     EventCategory
                   </code>{" "}
@@ -417,21 +456,21 @@ export default async function Home({ searchParams }: Props) {
                 </div>
                 <div className="px-4 py-3.5 sm:flex-1 sm:py-4">
                   <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                    Seat listings
+                    Tickets
                   </dt>
                   <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-[color:color-mix(in_oklab,var(--ticketing-accent)_88%,white_8%)] sm:text-2xl sm:leading-none">
-                    {totalSeatListings.toLocaleString("en-US")}
+                    {totalTickets.toLocaleString("en-US")}
                   </dd>
                 </div>
                 <div className="px-4 py-3.5 sm:flex-1 sm:py-4">
                   <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                    With listings
+                    With tickets
                   </dt>
                   <dd
                     className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-zinc-200 sm:text-2xl sm:leading-none"
-                    title="Matches with at least one seat listing row"
+                    title="Matches with at least one sock_available row"
                   >
-                    {events.length > 0 ? eventsWithListings.toLocaleString("en-US") : "—"}
+                    {events.length > 0 ? eventsWithTickets.toLocaleString("en-US") : "—"}
                   </dd>
                 </div>
               </dl>
@@ -478,7 +517,7 @@ export default async function Home({ searchParams }: Props) {
                     >
                       <p className="text-base font-semibold tracking-tight text-zinc-100">No matches yet</p>
                       <p className="mt-2 text-sm leading-relaxed text-zinc-500">
-                        Create an event to start building your schedule. Seat listings and catalogue categories will
+                        Create an event to start building your schedule. Sock availability and catalogue categories will
                         populate after webhook or import.
                       </p>
                       <div className="mt-6 flex flex-wrap justify-center gap-3">
@@ -494,11 +533,11 @@ export default async function Home({ searchParams }: Props) {
                     aria-labelledby="home-events-heading"
                   >
                     {events.map((event, idx) => {
-                      const hasListings = event.seatListingCount > 0;
+                      const hasTickets = event.ticketsCount > 0;
+                      const hasPrice = Boolean(event.lowestPriceCents);
                       const priceLabel =
-                        hasListings && event.lowestPriceCents
-                          ? formatUsd(event.lowestPriceCents)
-                          : "—";
+                        hasPrice && event.lowestPriceCents ? formatUsd(event.lowestPriceCents) : "—";
+                      const priceTitle = hasTickets ? (hasPrice ? undefined : noPriceTitle) : noTicketsTitle;
                       const zebra =
                         idx % 2 === 1 ? "bg-[color:var(--ticketing-elevated)]" : "bg-transparent";
                       const location = [event.venue, event.country].map((v) => v?.trim()).filter(Boolean).join(" · ");
@@ -546,7 +585,7 @@ export default async function Home({ searchParams }: Props) {
                                 </dt>
                                 <dd
                                   className="mt-0.5 tabular-nums font-semibold text-zinc-100"
-                                  title={!hasListings ? noPriceTitle : undefined}
+                                  title={priceTitle}
                                 >
                                   {priceLabel}
                                 </dd>
@@ -557,10 +596,34 @@ export default async function Home({ searchParams }: Props) {
                                 </dt>
                                 <dd
                                   className="mt-0.5 tabular-nums font-medium text-zinc-200"
-                                  title={!hasListings ? noListingTitle : undefined}
+                                  title={!hasTickets ? noTicketsTitle : undefined}
                                 >
-                                  {event.seatListingCount.toLocaleString("en-US")}
+                                  {event.ticketsCount.toLocaleString("en-US")}
                                 </dd>
+                              </div>
+                              <div>
+                                <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                                  Cat1
+                                </dt>
+                                <dd className="mt-0.5 font-medium text-zinc-200">{cellText(event.cat1)}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                                  Cat2
+                                </dt>
+                                <dd className="mt-0.5 font-medium text-zinc-200">{cellText(event.cat2)}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                                  Cat3
+                                </dt>
+                                <dd className="mt-0.5 font-medium text-zinc-200">{cellText(event.cat3)}</dd>
+                              </div>
+                              <div className="col-span-2 sm:col-span-1">
+                                <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                                  Cat4
+                                </dt>
+                                <dd className="mt-0.5 font-medium text-zinc-200">{cellText(event.cat4)}</dd>
                               </div>
                             </dl>
 
@@ -587,8 +650,8 @@ export default async function Home({ searchParams }: Props) {
                   </ul>
 
                   <p className="text-xs leading-relaxed text-zinc-500 lg:hidden">
-                    Lowest price is the minimum seat listing amount (USD). Ticket counts reflect seat-listing rows. Tap
-                    category totals to open the hierarchy dialog.
+                    Lowest price is the minimum sock_available amount (USD, amount/1000). Ticket counts reflect
+                    sock_available rows. Tap category totals to open the hierarchy dialog.
                   </p>
 
                   <div className="hidden overflow-hidden rounded-xl border border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface)_55%,transparent)] ring-1 ring-white/[0.04] lg:block">
@@ -614,6 +677,18 @@ export default async function Home({ searchParams }: Props) {
                             <th scope="col" className="px-3 py-3.5 sm:px-4">
                               Country
                             </th>
+                            <th scope="col" className="px-3 py-3.5 sm:px-4">
+                              Cat1
+                            </th>
+                            <th scope="col" className="px-3 py-3.5 sm:px-4">
+                              Cat2
+                            </th>
+                            <th scope="col" className="px-3 py-3.5 sm:px-4">
+                              Cat3
+                            </th>
+                            <th scope="col" className="px-3 py-3.5 sm:px-4">
+                              Cat4
+                            </th>
                             <th
                               scope="colgroup"
                               colSpan={2}
@@ -637,11 +712,11 @@ export default async function Home({ searchParams }: Props) {
                           {events.map((event, idx) => {
                             const zebra =
                               idx % 2 === 1 ? "bg-[color:var(--ticketing-elevated)]" : "bg-transparent";
-                            const hasListings = event.seatListingCount > 0;
+                            const hasTickets = event.ticketsCount > 0;
+                            const hasPrice = Boolean(event.lowestPriceCents);
                             const priceLabel =
-                              hasListings && event.lowestPriceCents
-                                ? formatUsd(event.lowestPriceCents)
-                                : "—";
+                              hasPrice && event.lowestPriceCents ? formatUsd(event.lowestPriceCents) : "—";
+                            const priceTitle = hasTickets ? (hasPrice ? undefined : noPriceTitle) : noTicketsTitle;
                             return (
                               <tr
                                 key={event.id}
@@ -677,6 +752,18 @@ export default async function Home({ searchParams }: Props) {
                                 <td className="max-w-[10rem] px-3 py-3 align-middle text-zinc-300 sm:px-4">
                                   {cellText(event.country)}
                                 </td>
+                                <td className="max-w-[12rem] px-3 py-3 align-middle text-zinc-300 sm:px-4">
+                                  {cellText(event.cat1)}
+                                </td>
+                                <td className="max-w-[12rem] px-3 py-3 align-middle text-zinc-300 sm:px-4">
+                                  {cellText(event.cat2)}
+                                </td>
+                                <td className="max-w-[12rem] px-3 py-3 align-middle text-zinc-300 sm:px-4">
+                                  {cellText(event.cat3)}
+                                </td>
+                                <td className="max-w-[12rem] px-3 py-3 align-middle text-zinc-300 sm:px-4">
+                                  {cellText(event.cat4)}
+                                </td>
                                 <HomeEventCategoryBlockCells
                                   eventName={event.name}
                                   categoryCount={event.categoryCount}
@@ -685,15 +772,15 @@ export default async function Home({ searchParams }: Props) {
                                 />
                                 <td
                                   className="whitespace-nowrap px-3 py-3 text-right align-middle font-medium tabular-nums text-zinc-100 sm:px-4"
-                                  title={!hasListings ? noPriceTitle : undefined}
+                                  title={priceTitle}
                                 >
                                   {priceLabel}
                                 </td>
                                 <td
                                   className="whitespace-nowrap px-3 py-3 text-right align-middle tabular-nums text-zinc-200 sm:px-4"
-                                  title={!hasListings ? noListingTitle : undefined}
+                                  title={!hasTickets ? noTicketsTitle : undefined}
                                 >
-                                  {event.seatListingCount.toLocaleString("en-US")}
+                                  {event.ticketsCount.toLocaleString("en-US")}
                                 </td>
                                 <td className="max-w-[24rem] px-3 py-3 pr-4 align-middle sm:max-w-none sm:px-4 sm:pr-5">
                                   <EventPrefsEditCell
@@ -710,9 +797,9 @@ export default async function Home({ searchParams }: Props) {
                       </table>
                     </div>
                     <footer className="border-t border-white/[0.06] px-4 py-3 text-xs leading-relaxed text-zinc-500 sm:px-5">
-                      Lowest price uses the minimum seat listing amount (USD). Ticket counts are rows in seat listings.
-                      Categories and blocks are distinct IDs from catalogue rows — tap counts in each row for the
-                      hierarchy dialog.
+                      Lowest price uses the minimum sock_available amount (USD, amount/1000). Ticket counts are rows in
+                      sock_available. Categories and blocks are distinct IDs from catalogue rows — tap counts in each row
+                      for the hierarchy dialog.
                     </footer>
                   </div>
                 </>
