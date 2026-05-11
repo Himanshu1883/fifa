@@ -1,0 +1,11 @@
+.env*
+!.env.example
+
+.dev-*.log
+.dev-*.pid
+
+.vercel
+.next
+node_modules
+dev.db
+data
