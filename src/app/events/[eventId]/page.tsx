@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { SeatListingsPanel } from "./seat-listings-panel";
+import { SockAvailablePanel } from "./sock-available-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -117,6 +118,34 @@ export default async function EventDetailPage({ params }: Props) {
   const seatListingsTruncated = false;
   const seatListingsTotal = seatListings.length;
 
+  const sockAvailableRows = await prisma.sockAvailable.findMany({
+    where: { eventId: event.id },
+    select: {
+      id: true,
+      amount: true,
+      areaName: true,
+      blockName: true,
+      contingentId: true,
+      row: true,
+      seatNumber: true,
+      seatId: true,
+      resaleMovementId: true,
+      categoryName: true,
+      categoryId: true,
+      areaId: true,
+      blockId: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+    orderBy: [
+      { categoryId: "asc" },
+      { blockName: "asc" },
+      { row: "asc" },
+      { seatNumber: "asc" },
+      { resaleMovementId: "asc" },
+    ],
+  });
+
   const eventCategoriesRaw = await prisma.eventCategory.findMany({
     where: { eventId: event.id },
     select: {
@@ -146,6 +175,24 @@ export default async function EventDetailPage({ params }: Props) {
     areaId: r.areaId,
     areaName: r.areaName,
     contingentId: r.contingentId,
+  }));
+
+  const sockAvailablePayload = sockAvailableRows.map((r) => ({
+    id: r.id,
+    amount: r.amount?.toString() ?? null,
+    areaName: r.areaName,
+    blockName: r.blockName,
+    contingentId: r.contingentId,
+    row: r.row,
+    seatNumber: r.seatNumber,
+    seatId: r.seatId,
+    resaleMovementId: r.resaleMovementId,
+    categoryName: r.categoryName,
+    categoryId: r.categoryId,
+    areaId: r.areaId,
+    blockId: r.blockId,
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
   }));
 
   // Show catalogue category count (EventCategory rows) rather than only categories that currently have listings.
@@ -222,6 +269,10 @@ export default async function EventDetailPage({ params }: Props) {
                   <span className="font-semibold text-emerald-400/80">Categories</span>
                   {categoryIds.size.toLocaleString("en-US")}
                 </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.09] bg-black/35 px-2.5 py-1 text-[11px] font-medium tabular-nums text-zinc-200 ring-1 ring-white/[0.05]">
+                  <span className="font-semibold text-zinc-500">Sock</span>
+                  {sockAvailablePayload.length.toLocaleString("en-US")}
+                </span>
                 <span
                   className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-white/[0.07] bg-black/25 px-2.5 py-1 text-[10px] text-zinc-400 ring-1 ring-white/[0.04]"
                   title={event.prefId}
@@ -256,6 +307,10 @@ export default async function EventDetailPage({ params }: Props) {
               totalCount={seatListingsTotal}
               embedInParentCard
             />
+          </div>
+
+          <div className="border-t border-white/[0.06] px-0 pb-6 pt-5 sm:px-0">
+            <SockAvailablePanel rows={sockAvailablePayload} embedInParentCard />
           </div>
         </div>
       </div>
