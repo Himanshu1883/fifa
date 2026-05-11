@@ -173,6 +173,14 @@ function applyDir(cmp: number, dir: SortDir): number {
   return dir === "asc" ? cmp : -cmp;
 }
 
+function seatsTogetherOk(filter: string, n: number): boolean {
+  if (!filter) return true;
+  if (filter === "6+") return n >= 6;
+  const exact = Number.parseInt(filter, 10);
+  if (!Number.isFinite(exact)) return true;
+  return n === exact;
+}
+
 function compareMatchListing(a: SeatListingDTO, b: SeatListingDTO, dir: SortDir): number {
   const cat = compareCatalogueId(normCategoryId(a.seatCategoryId), normCategoryId(b.seatCategoryId));
   if (cat !== 0) return applyDir(cat, dir);
@@ -713,10 +721,6 @@ export function SeatListingsPanel(props: {
   const [sortKey, setSortKey] = useState<SortKey>("match");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  useEffect(() => {
-    if (mdUp) setMobileFiltersOpen(true);
-  }, [mdUp]);
-
   const catalogueCategoryNames = useMemo(
     () => indexCatalogueCategoryNames(eventCategories),
     [eventCategories],
@@ -805,12 +809,7 @@ export function SeatListingsPanel(props: {
     [filtered, eventCategories, sortKey, sortDir],
   );
 
-  const togetherOk = useMemo(() => {
-    if (!togetherFilter) return (_n: number) => true;
-    if (togetherFilter === "6+") return (n: number) => n >= 6;
-    const exact = Number.parseInt(togetherFilter, 10);
-    return (n: number) => n === exact;
-  }, [togetherFilter]);
+  const togetherOk = (n: number) => seatsTogetherOk(togetherFilter, n);
 
   const allowEmptyCatalogueCategories =
     includeEmptyCatalogueCategories &&

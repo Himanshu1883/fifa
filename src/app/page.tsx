@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { formatUsd, priceToNumber } from "@/lib/format-usd";
 import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
 import { AddEventDialog } from "@/app/add-event-dialog";
+import { BuyingCriteriaDialog } from "@/app/buying-criteria-dialog";
 import { EditEventDialog } from "@/app/edit-event-dialog";
 import { EventImportantToggle } from "@/app/event-important-toggle";
 import { EventPrefsEditCell } from "@/app/event-prefs-edit-cell";
@@ -322,6 +323,9 @@ export default async function Home({ searchParams }: Props) {
   const suggestedSortOrder =
     eventsAll.length === 0 ? 1 : Math.max(...eventsAll.map((e) => e.sortOrder)) + 1;
 
+  const criteriaEvents = [...eventsAll];
+  sortHomeEvents(criteriaEvents, listSort, listOrder);
+
   const totalSeatListings = events.reduce((acc, e) => acc + e.seatListingCount, 0);
   const eventsWithListings = events.filter((e) => e.seatListingCount > 0).length;
 
@@ -364,6 +368,12 @@ export default async function Home({ searchParams }: Props) {
                   className="rounded-md bg-sky-500/15 px-3 py-1.5 text-xs font-medium text-sky-100 ring-1 ring-white/10 hover:bg-sky-500/20"
                 >
                   Undetectable
+                </Link>
+                <Link
+                  href="/gmail"
+                  className="rounded-md bg-emerald-500/15 px-3 py-1.5 text-xs font-medium text-emerald-100 ring-1 ring-white/10 hover:bg-emerald-500/20"
+                >
+                  Gmail
                 </Link>
                 <Link
                   href="/settings"
@@ -443,6 +453,9 @@ export default async function Home({ searchParams }: Props) {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                  <BuyingCriteriaDialog
+                    events={criteriaEvents.map((e) => ({ id: e.id, matchLabel: e.matchLabel, name: e.name }))}
+                  />
                   <AddEventDialog suggestedSortOrder={suggestedSortOrder} />
                   <Suspense
                     fallback={

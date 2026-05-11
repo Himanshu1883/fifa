@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type UndetectableEnvelope<T> =
   | { code: 0; status: "success"; data: T }
@@ -42,6 +42,31 @@ async function readJson(res: Response): Promise<unknown> {
   }
 }
 
+async function fetchProfilesList(): Promise<ProfileRow[]> {
+  const res = await fetch("/api/undetectable/profiles", { method: "GET", cache: "no-store" });
+  const json = await readJson(res);
+  if (!res.ok) {
+    const message =
+      json && typeof json === "object" && "error" in json
+        ? String((json as { error?: unknown }).error ?? "Request failed")
+        : `Request failed (${res.status})`;
+    throw new Error(message);
+  }
+  if (!isEnvelope<UndetectableProfilesListData>(json)) {
+    throw new Error("Unexpected response shape from /api/undetectable/profiles");
+  }
+  if (json.code === 1) {
+    throw new Error(json.data.error || "Undetectable API returned an error");
+  }
+
+  const items: ProfileRow[] = Object.entries(json.data ?? {}).map(([id, p]) => ({
+    id,
+    ...p,
+  }));
+  items.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+  return items;
+}
+
 export function UndetectableProfilesClient() {
   const [rows, setRows] = useState<ProfileRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,60 +76,56 @@ export function UndetectableProfilesClient() {
   );
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const lastUpdatedRef = useRef<number | null>(null);
-  const [lastUpdatedTick, setLastUpdatedTick] = useState(0);
-
-  const lastUpdated = useMemo(() => {
-    if (!lastUpdatedRef.current) return null;
-    return new Date(lastUpdatedRef.current);
-  }, [lastUpdatedTick]);
-
-  const loadProfiles = useCallback(async () => {
-    setErr(null);
-    try {
-      const res = await fetch("/api/undetectable/profiles", { method: "GET", cache: "no-store" });
-      const json = await readJson(res);
-      if (!res.ok) {
-        const message =
-          json && typeof json === "object" && "error" in json
-            ? String((json as { error?: unknown }).error ?? "Request failed")
-            : `Request failed (${res.status})`;
-        throw new Error(message);
-      }
-      if (!isEnvelope<UndetectableProfilesListData>(json)) {
-        throw new Error("Unexpected response shape from /api/undetectable/profiles");
-      }
-      if (json.code === 1) {
-        throw new Error(json.data.error || "Undetectable API returned an error");
-      }
-
-      const items: ProfileRow[] = Object.entries(json.data ?? {}).map(([id, p]) => ({
-        id,
-        ...p,
-      }));
-      items.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
-      setRows(items);
-      lastUpdatedRef.current = Date.now();
-      setLastUpdatedTick((x) => x + 1);
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      setErr(message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   useEffect(() => {
-    void loadProfiles();
-  }, [loadProfiles]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const items = await fetchProfilesList();
+        if (cancelled) return;
+        setRows(items);
+        setErr(null);
+      } catch (e) {
+        if (cancelled) return;
+        const message = e instanceof Error ? e.message : String(e);
+        setErr(message);
+      } finally {
+        if (cancelled) return;
+        setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!autoRefresh) return;
     const t = setInterval(() => {
-      void loadProfiles();
+      void (async () => {
+        try {
+          const items = await fetchProfilesList();
+          setRows(items);
+          setErr(null);
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          setErr(message);
+        }
+      })();
     }, 4000);
     return () => clearInterval(t);
-  }, [autoRefresh, loadProfiles]);
+  }, [autoRefresh]);
+
+  const refresh = useCallback(async () => {
+    setErr(null);
+    try {
+      const items = await fetchProfilesList();
+      setRows(items);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setErr(message);
+    }
+  }, []);
 
   async function startProfile(id: string) {
     setBusyById((m) => ({ ...m, [id]: "starting" }));
@@ -143,14 +164,12 @@ export function UndetectableProfilesClient() {
             : r,
         ),
       );
-      lastUpdatedRef.current = Date.now();
-      setLastUpdatedTick((x) => x + 1);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setErr(message);
     } finally {
       setBusyById((m) => ({ ...m, [id]: undefined }));
-      void loadProfiles();
+      void refresh();
     }
   }
 
@@ -175,7 +194,7 @@ export function UndetectableProfilesClient() {
       setErr(message);
     } finally {
       setBusyById((m) => ({ ...m, [id]: undefined }));
-      void loadProfiles();
+      void refresh();
     }
   }
 
@@ -212,15 +231,6 @@ export function UndetectableProfilesClient() {
             <span className="font-semibold tabular-nums text-zinc-200">
               {rows.length}
             </span>
-            {lastUpdated ? (
-              <>
-                {" "}
-                · Updated{" "}
-                <span className="font-medium text-zinc-300">
-                  {lastUpdated.toLocaleTimeString()}
-                </span>
-              </>
-            ) : null}
           </p>
         </div>
 
@@ -228,7 +238,7 @@ export function UndetectableProfilesClient() {
           <button
             type="button"
             className={`${buttonBase} bg-white/[0.08] text-zinc-200 hover:bg-white/[0.12]`}
-            onClick={() => loadProfiles()}
+            onClick={() => void refresh()}
             disabled={loading}
           >
             Refresh

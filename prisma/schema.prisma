@@ -15,6 +15,7 @@ model User {
   username     String   @unique
   passwordHash String   @map("password_hash")
   createdAt    DateTime @default(now()) @map("created_at")
+  gmailAccounts GmailAccount[]
 
   @@map("users")
 }
@@ -42,10 +43,29 @@ model Event {
   seatListings  EventSeatListing[]
   blockSeatNow  EventBlockSeatNow[]
   sockAvailable SockAvailable[]
+  buyingCriteria EventBuyingCriteria?
 
   @@index([sortOrder])
   @@index([prefId])
   @@index([resalePrefId])
+}
+
+model EventBuyingCriteria {
+  id           Int      @id @default(autoincrement())
+  eventId      Int      @unique @map("event_id")
+  event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  cat1         String?  @db.Text
+  cat2         String?  @db.Text
+  cat3         String?  @db.Text
+  cat3FrontRow Boolean  @default(false) @map("cat3_front_row")
+  cat4         String?  @db.Text
+
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([eventId])
+  @@map("event_buying_criteria")
 }
 
 /// One resale / map seat listing row (GeoJSON feature) per event.
@@ -186,4 +206,48 @@ model SockAvailable {
   @@unique([eventId, resaleMovementId])
   @@index([eventId])
   @@map("sock_available")
+}
+
+model GmailAccount {
+  id                    Int           @id @default(autoincrement())
+  userId                Int           @map("user_id")
+  user                  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  email                 String        @map("email")
+  googleSub             String        @map("google_sub")
+
+  encryptedRefreshToken String        @map("encrypted_refresh_token") @db.Text
+  tokenVersion          Int           @default(0) @map("token_version")
+
+  messages              GmailMessage[]
+
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+
+  @@unique([userId, googleSub])
+  @@unique([userId, email])
+  @@index([userId])
+  @@map("gmail_accounts")
+}
+
+model GmailMessage {
+  id             Int          @id @default(autoincrement())
+  gmailMessageId String       @unique @map("gmail_message_id")
+  threadId       String?      @map("thread_id")
+
+  gmailAccountId Int          @map("gmail_account_id")
+  gmailAccount   GmailAccount @relation(fields: [gmailAccountId], references: [id], onDelete: Cascade)
+
+  from           String?      @db.Text
+  subject        String?      @db.Text
+  date           DateTime?    @map("date")
+  snippet        String?      @db.Text
+  internalDateMs BigInt?      @map("internal_date_ms")
+  rawHeaders     Json?        @map("raw_headers")
+
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@index([gmailAccountId])
+  @@map("gmail_messages")
 }
