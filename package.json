@@ -10,11 +10,11 @@
     "start": "next start",
     "lint": "eslint",
     "db:migrate": "prisma migrate deploy",
-    "db:copy:railway": "tsx scripts/copy-app-data-postgres.ts",
-    "db:push:railway": "TRUNCATE_TARGET=1 tsx scripts/copy-app-data-postgres.ts",
+    "db:copy:railway": "node --import tsx scripts/copy-app-data-postgres.ts",
+    "db:push:railway": "TRUNCATE_TARGET=1 node --import tsx scripts/copy-app-data-postgres.ts",
     "db:seed": "prisma db seed",
-    "catalogue:extract": "tsx scripts/extract-catalogue-categories.ts",
-    "import:seat-listings-sample": "tsx scripts/import-seat-listings-sample.ts",
+    "catalogue:extract": "node --import tsx scripts/extract-catalogue-categories.ts",
+    "import:seat-listings-sample": "node --import tsx scripts/import-seat-listings-sample.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
