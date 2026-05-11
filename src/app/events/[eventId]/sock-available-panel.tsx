@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatUsd, priceToNumber } from "@/lib/format-usd";
 
 const searchInpClass =
@@ -39,9 +39,40 @@ function formatSockUsd(amount: string | null): string {
   return formatUsd(String(cents));
 }
 
+function formatTsCompact(ts: string): string {
+  // "2026-05-11T18:22:33.123Z" -> "2026-05-11 18:22:33"
+  if (!ts) return "—";
+  const s = String(ts);
+  return s.length >= 19 ? s.slice(0, 19).replace("T", " ") : s;
+}
+
+function InfoIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className="h-4 w-4">
+      <path
+        d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"
+        className="stroke-zinc-500"
+        strokeWidth="1.4"
+      />
+      <path d="M10 8.6v5.1" className="stroke-zinc-200" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M10 6.25h.01" className="stroke-zinc-200" strokeWidth="2.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInParentCard?: boolean }) {
   const { rows, embedInParentCard = false } = props;
   const [search, setSearch] = useState("");
+  const [openRow, setOpenRow] = useState<SockAvailableDTO | null>(null);
+
+  useEffect(() => {
+    if (!openRow) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenRow(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [openRow]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -138,50 +169,35 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
           ) : (
             <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#080c0b] shadow-[0_16px_48px_-20px_rgba(0,0,0,0.75)] ring-1 ring-white/[0.05]">
               <div className="max-h-[70vh] overflow-auto [-webkit-overflow-scrolling:touch]">
-                <table className="w-full min-w-[110rem] border-collapse text-sm">
+                <table className="w-full min-w-[72rem] border-collapse text-sm">
                   <thead>
                     <tr className="sticky top-0 z-10 border-b border-white/[0.08] bg-[#0f1513]/95 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 backdrop-blur-md">
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
                         Area
                       </th>
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
-                        Block
+                        Category
                       </th>
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
-                        Contingent
+                        Block
                       </th>
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
                         Row
                       </th>
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
-                        Seat #
+                        Seat
                       </th>
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
                         Amount
                       </th>
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
-                        Seat ID
-                      </th>
-                      <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
-                        Resale movement
-                      </th>
-                      <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
-                        Category
-                      </th>
-                      <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
-                        Category ID
-                      </th>
-                      <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
-                        Area ID
-                      </th>
-                      <th scope="col" className="px-4 py-3 pr-5 font-medium text-zinc-400 sm:pr-6">
-                        Block ID
-                      </th>
-                      <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
                         Created
                       </th>
-                      <th scope="col" className="px-4 py-3 pr-5 font-medium text-zinc-400 sm:pr-6">
+                      <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
                         Updated
+                      </th>
+                      <th scope="col" className="px-4 py-3 pr-5 text-right font-medium text-zinc-400 sm:pr-6">
+                        Info
                       </th>
                     </tr>
                   </thead>
@@ -189,10 +205,8 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                     {filtered.map((r) => (
                       <tr key={r.id} className="text-zinc-200 transition-colors hover:bg-emerald-500/[0.06]">
                         <td className="px-4 py-3 text-sm font-medium text-zinc-50">{r.areaName}</td>
+                        <td className="px-4 py-3 text-sm text-zinc-200">{r.categoryName}</td>
                         <td className="px-4 py-3 text-sm font-medium text-zinc-50">{r.blockName}</td>
-                        <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
-                          {r.contingentId}
-                        </td>
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
                           {r.row}
                         </td>
@@ -202,30 +216,21 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-emerald-300">
                           {formatSockUsd(r.amount)}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500">
-                          {r.seatId}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500">
-                          {r.resaleMovementId}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-zinc-200">{r.categoryName}</td>
-                        <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500">
-                          {r.categoryId}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500">
-                          {r.areaId}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3 pr-5 font-mono text-[11px] text-zinc-500 sm:pr-6">
-                          {r.blockId}
-                        </td>
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500" title={r.createdAt}>
-                          {r.createdAt}
+                          {formatTsCompact(r.createdAt)}
                         </td>
-                        <td
-                          className="whitespace-nowrap px-4 py-3 pr-5 font-mono text-[11px] text-zinc-500 sm:pr-6"
-                          title={r.updatedAt}
-                        >
-                          {r.updatedAt}
+                        <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500" title={r.updatedAt}>
+                          {formatTsCompact(r.updatedAt)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 pr-5 text-right sm:pr-6">
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center rounded-md border border-white/[0.10] bg-black/25 p-2 text-zinc-200 shadow-inner shadow-black/35 transition-[border-color,background-color,transform] hover:border-white/[0.16] hover:bg-white/[0.04] active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
+                            aria-label={`Row info: ${r.areaName}, ${r.categoryName}, ${r.blockName}, row ${r.row}, seat ${r.seatNumber}`}
+                            onClick={() => setOpenRow(r)}
+                          >
+                            <InfoIcon />
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -236,6 +241,98 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
           )}
         </>
       )}
+
+      {openRow ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Sock available row details"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setOpenRow(null);
+          }}
+        >
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+          <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-white/[0.10] bg-[#070a0a] shadow-[0_28px_80px_-26px_rgba(0,0,0,0.85)] ring-1 ring-white/[0.06]">
+            <div className="border-b border-white/[0.08] px-4 py-4 sm:px-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    sock_available
+                  </p>
+                  <p className="mt-1 truncate text-sm font-semibold tracking-tight text-white">
+                    {openRow.areaName} · {openRow.categoryName} · {openRow.blockName}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Row <span className="font-mono text-zinc-300">{openRow.row}</span> · Seat{" "}
+                    <span className="font-mono text-zinc-300">{openRow.seatNumber}</span> ·{" "}
+                    <span className="font-mono text-emerald-300">{formatSockUsd(openRow.amount)}</span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-lg border border-white/[0.10] bg-black/30 px-2.5 py-1.5 text-xs font-medium text-zinc-200 hover:bg-white/[0.05] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
+                  onClick={() => setOpenRow(null)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4 px-4 py-4 sm:px-5">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    Contingent ID
+                  </p>
+                  <p className="mt-1 font-mono text-xs text-zinc-200">{openRow.contingentId}</p>
+                </div>
+                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    Seat ID
+                  </p>
+                  <p className="mt-1 font-mono text-xs text-zinc-200">{openRow.seatId}</p>
+                </div>
+                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    Resale movement
+                  </p>
+                  <p className="mt-1 font-mono text-xs text-zinc-200">{openRow.resaleMovementId}</p>
+                </div>
+                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    Category ID
+                  </p>
+                  <p className="mt-1 font-mono text-xs text-zinc-200">{openRow.categoryId}</p>
+                </div>
+                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    Area ID
+                  </p>
+                  <p className="mt-1 font-mono text-xs text-zinc-200">{openRow.areaId}</p>
+                </div>
+                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    Block ID
+                  </p>
+                  <p className="mt-1 font-mono text-xs text-zinc-200">{openRow.blockId}</p>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-zinc-500">
+                Created{" "}
+                <span className="font-mono text-zinc-300" title={openRow.createdAt}>
+                  {formatTsCompact(openRow.createdAt)}
+                </span>{" "}
+                · Updated{" "}
+                <span className="font-mono text-zinc-300" title={openRow.updatedAt}>
+                  {formatTsCompact(openRow.updatedAt)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
