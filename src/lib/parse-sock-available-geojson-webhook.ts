@@ -309,6 +309,15 @@ export function parseSockAvailableGeojsonBody(
     rows.push(built);
   }
 
+  if (features.length > 0 && rows.length === 0) {
+    throw new CataloguePayloadError(
+      [
+        "No usable features found in payload.",
+        "Expected each feature to have `properties.block.id`, `properties.area.id`, `properties.contingentId`, `properties.id`, `properties.number`, `properties.resaleMovementId`, `properties.row`, and `properties.seatCategoryId`.",
+      ].join(" "),
+    );
+  }
+
   return { prefId, rows, featureCount: features.length, skippedCount };
 }
 

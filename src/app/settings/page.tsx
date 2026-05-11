@@ -58,6 +58,10 @@ export default async function SettingsPage() {
   const proto = h.get("x-forwarded-proto") ?? "http";
   const baseUrl = host ? `${proto}://${host}` : "http://localhost:3000";
 
+  const showBoxofficeSection =
+    process.env.NODE_ENV === "development" ||
+    /^(1|true|yes)$/i.test((process.env.BOXOFFICE_WS_SHOW_IN_PROD ?? "").trim());
+
   const boxofficePort = process.env.BOXOFFICE_WS_PORT ?? "3020";
   const boxofficeWsUrl = `ws://127.0.0.1:${boxofficePort}/ws`;
   const boxofficeHttpUrl = `http://127.0.0.1:${boxofficePort}`;
@@ -429,88 +433,94 @@ export default async function SettingsPage() {
 
           <div className="border-t border-white/[0.06] px-4 pb-6 pt-5 sm:px-8 sm:pb-8">
             <section className="space-y-10">
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                    Local BoxOffice WebSocket (Chrome extension)
-                  </h2>
-                  <p className="text-xs leading-relaxed text-zinc-500">
-                    Dev-only local server for generic start/stop broadcast messages and extension status reporting. Token auth is{" "}
-                    <span className="font-medium text-zinc-300">
-                      {boxofficeTokenEnabled ? "ON" : "OFF"}
-                    </span>
-                    .
-                  </p>
-                </div>
+              {showBoxofficeSection ? (
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      Local BoxOffice WebSocket (Chrome extension)
+                    </h2>
+                    <p className="text-xs leading-relaxed text-zinc-500">
+                      Dev-only local server for generic start/stop broadcast messages and extension status reporting. Token auth
+                      is{" "}
+                      <span className="font-medium text-zinc-300">
+                        {boxofficeTokenEnabled ? "ON" : "OFF"}
+                      </span>
+                      .
+                    </p>
+                  </div>
 
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <article className="overflow-hidden rounded-xl border border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface)_55%,transparent)] ring-1 ring-white/[0.04]">
-                    <div className="border-b border-white/[0.06] px-4 py-4 sm:px-5">
-                      <p className="text-sm font-semibold tracking-tight text-white">WebSocket URL</p>
-                      <p className="mt-1 text-xs text-zinc-400">Paste this into the extension.</p>
-                    </div>
-                    <div className="space-y-3 px-4 py-4 sm:px-5">
-                      <pre className="overflow-auto rounded-lg border border-white/[0.08] bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-zinc-200">
-                        {boxofficeWsUrl}
-                      </pre>
-                      <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                          First message (only if token enabled)
-                        </p>
-                        <pre className="mt-2 overflow-auto rounded-lg border border-white/[0.08] bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-zinc-200">
-                          {`{"type":"boxoffice-auth","token":"$BOXOFFICE_WS_TOKEN"}`}
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <article className="overflow-hidden rounded-xl border border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface)_55%,transparent)] ring-1 ring-white/[0.04]">
+                      <div className="border-b border-white/[0.06] px-4 py-4 sm:px-5">
+                        <p className="text-sm font-semibold tracking-tight text-white">WebSocket URL</p>
+                        <p className="mt-1 text-xs text-zinc-400">Paste this into the extension.</p>
+                      </div>
+                      <div className="space-y-3 px-4 py-4 sm:px-5">
+                        <pre className="overflow-auto rounded-lg border border-white/[0.08] bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-zinc-200">
+                          {boxofficeWsUrl}
                         </pre>
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                            First message (only if token enabled)
+                          </p>
+                          <pre className="mt-2 overflow-auto rounded-lg border border-white/[0.08] bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-zinc-200">
+                            {`{"type":"boxoffice-auth","token":"$BOXOFFICE_WS_TOKEN"}`}
+                          </pre>
+                        </div>
                       </div>
-                    </div>
-                  </article>
+                    </article>
 
-                  <article className="overflow-hidden rounded-xl border border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface)_55%,transparent)] ring-1 ring-white/[0.04]">
-                    <div className="border-b border-white/[0.06] px-4 py-4 sm:px-5">
-                      <p className="text-sm font-semibold tracking-tight text-white">HTTP helpers</p>
-                      <p className="mt-1 text-xs text-zinc-400">
-                        Broadcast start/stop and read latest extension status (recommended: via this app’s proxy routes).
-                      </p>
-                    </div>
-                    <div className="space-y-4 px-4 py-4 sm:px-5">
-                      <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                          Status (proxy)
+                    <article className="overflow-hidden rounded-xl border border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface)_55%,transparent)] ring-1 ring-white/[0.04]">
+                      <div className="border-b border-white/[0.06] px-4 py-4 sm:px-5">
+                        <p className="text-sm font-semibold tracking-tight text-white">HTTP helpers</p>
+                        <p className="mt-1 text-xs text-zinc-400">
+                          Broadcast start/stop and read latest extension status (recommended: via this app’s proxy routes).
                         </p>
-                        <pre className="mt-2 overflow-auto rounded-lg border border-white/[0.08] bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-zinc-200">{`curl -sS "${boxofficeProxyStatusUrl}"`}</pre>
                       </div>
+                      <div className="space-y-4 px-4 py-4 sm:px-5">
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                            Status (proxy)
+                          </p>
+                          <pre className="mt-2 overflow-auto rounded-lg border border-white/[0.08] bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-zinc-200">{`curl -sS "${boxofficeProxyStatusUrl}"`}</pre>
+                        </div>
 
-                      <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                          Broadcast start (proxy)
-                        </p>
-                        <pre className="mt-2 overflow-auto rounded-lg border border-white/[0.08] bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-zinc-200">{`curl -sS -X POST "${boxofficeProxyBroadcastUrl}" \\
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                            Broadcast start (proxy)
+                          </p>
+                          <pre className="mt-2 overflow-auto rounded-lg border border-white/[0.08] bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-zinc-200">{`curl -sS -X POST "${boxofficeProxyBroadcastUrl}" \\
   -H "Content-Type: application/json" \\
   --data-binary '{"action":"start"}'`}</pre>
-                        <p className="mt-2 text-xs leading-relaxed text-zinc-500">
-                          The proxy attaches <code className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[11px] text-zinc-300">BOXOFFICE_WS_TOKEN</code>{" "}
-                          server-side (if configured), so browsers don’t need to call the WS server directly.
-                        </p>
-                      </div>
+                          <p className="mt-2 text-xs leading-relaxed text-zinc-500">
+                            The proxy attaches{" "}
+                            <code className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[11px] text-zinc-300">
+                              BOXOFFICE_WS_TOKEN
+                            </code>{" "}
+                            server-side (if configured), so browsers don’t need to call the WS server directly.
+                          </p>
+                        </div>
 
-                      <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                          Broadcast stop (proxy)
-                        </p>
-                        <pre className="mt-2 overflow-auto rounded-lg border border-white/[0.08] bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-zinc-200">{`curl -sS -X POST "${boxofficeProxyBroadcastUrl}" \\
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                            Broadcast stop (proxy)
+                          </p>
+                          <pre className="mt-2 overflow-auto rounded-lg border border-white/[0.08] bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-zinc-200">{`curl -sS -X POST "${boxofficeProxyBroadcastUrl}" \\
   -H "Content-Type: application/json" \\
   --data-binary '{"action":"stop"}'`}</pre>
-                      </div>
+                        </div>
 
-                      <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                          Direct (debug)
-                        </p>
-                        <pre className="mt-2 overflow-auto rounded-lg border border-white/[0.08] bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-zinc-200">{`curl -sS "${boxofficeHttpUrl}/status"`}</pre>
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                            Direct (debug)
+                          </p>
+                          <pre className="mt-2 overflow-auto rounded-lg border border-white/[0.08] bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-zinc-200">{`curl -sS "${boxofficeHttpUrl}/status"`}</pre>
+                        </div>
                       </div>
-                    </div>
-                  </article>
+                    </article>
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               <div className="space-y-4">
                 <div className="space-y-1">

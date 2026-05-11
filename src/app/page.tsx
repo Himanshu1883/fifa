@@ -228,6 +228,9 @@ export default async function Home({ searchParams }: Props) {
   const { sort: listSort, order: listOrder } = parseHomeListSort(q);
   const importantFilter = parseImportantFilter(q);
   const boxofficePort = process.env.BOXOFFICE_WS_PORT ?? "3020";
+  const showBoxofficeControls =
+    process.env.NODE_ENV === "development" ||
+    /^(1|true|yes)$/i.test((process.env.BOXOFFICE_WS_SHOW_IN_PROD ?? "").trim());
 
   let dbErr: string | undefined;
   let eventsAll: HomeEventRow[];
@@ -369,7 +372,7 @@ export default async function Home({ searchParams }: Props) {
                   Settings
                 </Link>
               </div>
-              <BoxofficeControlsClient port={boxofficePort} />
+              {showBoxofficeControls ? <BoxofficeControlsClient port={boxofficePort} /> : null}
             </div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
               Schedule &amp; catalogue

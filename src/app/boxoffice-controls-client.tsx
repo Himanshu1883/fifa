@@ -54,10 +54,12 @@ export function BoxofficeControlsClient({ port }: { port: string }) {
   };
 
   useEffect(() => {
-    void refresh();
+    const startId = window.setTimeout(() => void refresh(), 0);
     const id = window.setInterval(() => void refresh(), 2500);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      window.clearTimeout(startId);
+      window.clearInterval(id);
+    };
   }, []);
 
   const broadcast = (action: "start" | "stop") => {
@@ -80,8 +82,9 @@ export function BoxofficeControlsClient({ port }: { port: string }) {
     });
   };
 
-  const clients =
-    status && "ok" in status && status.ok && Array.isArray(status.statuses) ? status.statuses : [];
+  const clients = useMemo(() => {
+    return status && "ok" in status && status.ok && Array.isArray(status.statuses) ? status.statuses : [];
+  }, [status]);
 
   const latest = useMemo(() => {
     const items = clients

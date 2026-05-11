@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { CataloguePayloadError } from "@/lib/price-range-catalogue";
@@ -5,6 +6,65 @@ import { parseSockAvailableGeojsonBody } from "@/lib/parse-sock-available-geojso
 import { syncSockAvailableForEvent } from "@/lib/sync-sock-available";
 
 export const runtime = "nodejs";
+
+type WebhookErrorHint =
+  | "missing_database_url"
+  | "railway_internal_url"
+  | "missing_migrations"
+  | "db_connectivity"
+  | "db_auth"
+  | "transaction_timeout"
+  | "unknown";
+
+function createErrorId(): string {
+  try {
+    return randomUUID();
+  } catch {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+}
+
+function extractErrorCode(err: unknown): string | undefined {
+  if (!err || typeof err !== "object") return undefined;
+  const anyErr = err as { code?: unknown };
+  return typeof anyErr.code === "string" && anyErr.code.trim() ? anyErr.code.trim() : undefined;
+}
+
+function classifyWebhookError(code: string | undefined, message: string): WebhookErrorHint {
+  const msg = message.toLowerCase();
+
+  if (msg.includes("database_url is missing") || msg.includes("database_url is not")) {
+    return "missing_database_url";
+  }
+  if (msg.includes(".railway.internal")) {
+    return "railway_internal_url";
+  }
+
+  // Missing table/column (Postgres) or missing Prisma migration.
+  if (
+    code === "42P01" || // undefined_table
+    code === "42703" || // undefined_column
+    code === "P2021" ||
+    msg.includes("does not exist")
+  ) {
+    return "missing_migrations";
+  }
+
+  // Prisma / DB connectivity/auth.
+  if (code === "P1001" || code === "P1002") {
+    return "db_connectivity";
+  }
+  if (code === "P1010") {
+    return "db_auth";
+  }
+
+  // Prisma interactive transaction timeout / closed transaction.
+  if (code === "P2028" || msg.includes("transaction already closed") || msg.includes("transaction api error")) {
+    return "transaction_timeout";
+  }
+
+  return "unknown";
+}
 
 /**
  * GeoJSON-style seat listing availability features per event.
@@ -25,14 +85,23 @@ export async function POST(req: NextRequest) {
     req.nextUrl.searchParams.get("prefId") ??
     req.nextUrl.searchParams.get("resalePrefId");
 
+  let parsedPrefId: string | undefined;
+  let parsedFeatureCount: number | undefined;
+  let parsedRowCount: number | undefined;
+
   try {
     const { prefId, rows, featureCount, skippedCount } = parseSockAvailableGeojsonBody(
       raw,
       prefQs,
     );
+    parsedPrefId = prefId;
+    parsedFeatureCount = featureCount;
+    parsedRowCount = rows.length;
 
-    const result = await prisma.$transaction(async (tx) =>
-      syncSockAvailableForEvent(tx, prefId, rows),
+    const result = await prisma.$transaction(
+      async (tx) => syncSockAvailableForEvent(tx, prefId, rows),
+      // Large payloads can take longer than Prisma's default interactive transaction timeout.
+      { maxWait: 20_000, timeout: 120_000 },
     );
 
     if (!result) {
@@ -59,8 +128,38 @@ export async function POST(req: NextRequest) {
     if (err instanceof CataloguePayloadError) {
       return NextResponse.json({ error: err.message }, { status: err.statusCode });
     }
-    console.error("[sock-available webhook]", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+
+    const errorId = createErrorId();
+    const code = extractErrorCode(err);
+    const message = err instanceof Error ? err.message : String(err);
+    const hint = classifyWebhookError(code, message);
+
+    console.error(
+      "[sock-available webhook]",
+      {
+        errorId,
+        hint,
+        code,
+        prefId: parsedPrefId ?? prefQs ?? "(unset)",
+        path: req.nextUrl.pathname,
+        contentLength: req.headers.get("content-length") ?? "(unknown)",
+        parsedFeatureCount: parsedFeatureCount ?? "(unknown)",
+        parsedRowCount: parsedRowCount ?? "(unknown)",
+      },
+      err,
+    );
+
+    const isProd = process.env.NODE_ENV === "production";
+    return NextResponse.json(
+      {
+        error: "Internal server error",
+        errorId,
+        ...(code ? { code } : {}),
+        ...(hint !== "unknown" ? { hint } : {}),
+        ...(!isProd ? { message } : {}),
+      },
+      { status: 500 },
+    );
   }
 }
 
