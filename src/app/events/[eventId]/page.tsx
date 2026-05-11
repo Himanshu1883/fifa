@@ -87,8 +87,10 @@ function readFirstStringParam(v: string | string[] | undefined): string | null {
 type PanelKey = "listings" | "sock";
 function normalizePanelKey(raw: string | null): PanelKey {
   const v = (raw ?? "").trim().toLowerCase();
+  if (v === "listings" || v === "listing" || v === "seats" || v === "seat-listings") return "listings";
+  if (!v) return "sock";
   if (v === "sock" || v === "sock-available" || v === "sock_available") return "sock";
-  return "listings";
+  return "sock";
 }
 
 export default async function EventDetailPage({ params, searchParams }: Props) {
@@ -106,7 +108,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
   const canonical = String(event.id);
   if (trimmed !== canonical) {
     const sp = new URLSearchParams();
-    if (panel !== "listings") sp.set("panel", panel);
+    if (panel !== "sock") sp.set("panel", panel);
     const suffix = sp.size ? `?${sp.toString()}` : "";
     redirect(`/events/${canonical}${suffix}`);
   }
@@ -355,7 +357,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                   <Link
                     role="tab"
                     aria-selected={panel === "listings"}
-                    href={panel === "listings" ? `/events/${event.id}` : `/events/${event.id}?panel=listings`}
+                    href={`/events/${event.id}?panel=listings`}
                     className={
                       panel === "listings"
                         ? "flex flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-50 ring-1 ring-emerald-400/35 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/45 sm:flex-none"
@@ -377,7 +379,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                   <Link
                     role="tab"
                     aria-selected={panel === "sock"}
-                    href={panel === "sock" ? `/events/${event.id}?panel=sock` : `/events/${event.id}?panel=sock`}
+                    href={`/events/${event.id}`}
                     className={
                       panel === "sock"
                         ? "flex flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-50 ring-1 ring-emerald-400/35 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/45 sm:flex-none"
