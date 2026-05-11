@@ -4,11 +4,23 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useTransition } from "react";
 
 export type HomeSortKey = "match" | "price" | "tickets";
+export type HomeImportantFilter = "all" | "important" | "notImportant";
 
 const sel =
-  "min-h-9 rounded-lg border border-white/[0.09] bg-[#0c1010] px-2.5 py-1.5 text-xs text-zinc-100 shadow-inner shadow-black/35 transition-[border-color,box-shadow] focus:border-emerald-400/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]";
+  "min-h-9 rounded-lg border border-white/[0.09] bg-[#0c1010] px-2.5 py-1.5 text-xs text-zinc-100 shadow-inner shadow-black/35 transition-[border-color,box-shadow] focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
 
-function buildQuery(base: URLSearchParams, sort: HomeSortKey, order: "asc" | "desc"): string {
+function importantToParam(v: HomeImportantFilter): "1" | "0" | null {
+  if (v === "important") return "1";
+  if (v === "notImportant") return "0";
+  return null;
+}
+
+function buildQuery(
+  base: URLSearchParams,
+  sort: HomeSortKey,
+  order: "asc" | "desc",
+  important: HomeImportantFilter,
+): string {
   const params = new URLSearchParams(base.toString());
   const next = new URLSearchParams();
 
@@ -16,6 +28,9 @@ function buildQuery(base: URLSearchParams, sort: HomeSortKey, order: "asc" | "de
     const v = params.get(key);
     if (v != null && v !== "") next.set(key, v);
   }
+
+  const imp = importantToParam(important);
+  if (imp) next.set("important", imp);
 
   if (sort === "match" && order === "asc") {
     // default: omit sort & order
@@ -33,9 +48,11 @@ function buildQuery(base: URLSearchParams, sort: HomeSortKey, order: "asc" | "de
 export function HomeEventSortControls({
   sort,
   order,
+  important,
 }: {
   sort: HomeSortKey;
   order: "asc" | "desc";
+  important: HomeImportantFilter;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -43,8 +60,8 @@ export function HomeEventSortControls({
   const [pending, startTransition] = useTransition();
 
   const navigate = useCallback(
-    (nextSort: HomeSortKey, nextOrder: "asc" | "desc") => {
-      const href = `${pathname}${buildQuery(searchParams, nextSort, nextOrder)}`;
+    (nextSort: HomeSortKey, nextOrder: "asc" | "desc", nextImportant: HomeImportantFilter) => {
+      const href = `${pathname}${buildQuery(searchParams, nextSort, nextOrder, nextImportant)}`;
       startTransition(() => {
         router.push(href);
       });
@@ -54,7 +71,7 @@ export function HomeEventSortControls({
 
   return (
     <div
-      className="flex flex-wrap items-center gap-2 rounded-lg border border-white/[0.07] bg-black/30 px-3 py-2 ring-1 ring-white/[0.04]"
+      className="flex flex-wrap items-center gap-2 rounded-lg border border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface)_65%,transparent)] px-3 py-2 shadow-inner shadow-black/25 ring-1 ring-white/[0.04]"
       aria-busy={pending}
     >
       <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">Sort</span>
@@ -67,7 +84,7 @@ export function HomeEventSortControls({
         value={sort}
         onChange={(e) => {
           const v = e.target.value as HomeSortKey;
-          navigate(v, v === sort ? order : "asc");
+          navigate(v, v === sort ? order : "asc", important);
         }}
       >
         <option value="match">Match order</option>
@@ -81,10 +98,30 @@ export function HomeEventSortControls({
         id="home-sort-order"
         className={sel}
         value={order}
-        onChange={(e) => navigate(sort, e.target.value === "desc" ? "desc" : "asc")}
+        onChange={(e) => navigate(sort, e.target.value === "desc" ? "desc" : "asc", important)}
       >
         <option value="asc">Ascending</option>
         <option value="desc">Descending</option>
+      </select>
+
+      <span className="ml-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+        Important
+      </span>
+      <label className="sr-only" htmlFor="home-important-filter">
+        Filter important events
+      </label>
+      <select
+        id="home-important-filter"
+        className={sel}
+        value={important}
+        onChange={(e) => {
+          const v = e.target.value as HomeImportantFilter;
+          navigate(sort, order, v);
+        }}
+      >
+        <option value="all">All</option>
+        <option value="important">Important only</option>
+        <option value="notImportant">Not important</option>
       </select>
     </div>
   );

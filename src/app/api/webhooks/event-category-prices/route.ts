@@ -48,6 +48,9 @@ export async function POST(req: NextRequest) {
       catalogueSource: result.catalogueSource,
       eventId: result.eventId,
       rowCount: rows.length,
+      uniqueRowCount: result.uniqueRowCount,
+      insertedCount: result.insertedCount,
+      skippedExistingCount: result.skippedExistingCount,
     });
   } catch (err) {
     if (err instanceof CataloguePayloadError) {

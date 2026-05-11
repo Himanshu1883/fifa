@@ -10,6 +10,9 @@ export const runtime = "nodejs";
  * GeoJSON-style resale seat map: `{ features: [...] }` per event
  * (`Event.resalePrefId`). Same pref lookup as other resale webhooks:
  * `?resalePrefId=` / `?prefId=` or `resalePrefId` / `prefId` in JSON.
+ *
+ * Replace semantics: each POST deletes all existing `event_seat_listings` rows for
+ * the matched event and inserts the new payload.
  */
 export async function POST(req: NextRequest) {
   let raw: unknown;
@@ -45,7 +48,12 @@ export async function POST(req: NextRequest) {
       resalePrefId,
       eventId: result.eventId,
       featureCount,
-      rowCount: rows.length,
+      deletedCount: result.deletedCount,
+      rowCount: result.rowCount,
+      uniqueRowCount: result.uniqueRowCount,
+      insertedCount: result.insertedCount,
+      skippedDuplicateInPayloadCount: result.skippedDuplicateInPayloadCount,
+      skippedDbCount: result.skippedDbCount,
       skippedCount,
     });
   } catch (err) {

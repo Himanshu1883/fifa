@@ -4,7 +4,7 @@ import { useEffect, useId, useState } from "react";
 import { updateEventPrefs } from "@/app/actions/event-prefs";
 
 const inpModal =
-  "w-full rounded-md border border-white/10 bg-zinc-950/80 px-3 py-2 font-mono text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/40";
+  "w-full rounded-md border border-white/10 bg-black/35 px-3 py-2 font-mono text-sm text-zinc-100 shadow-inner shadow-black/30 placeholder:text-zinc-600 focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_48%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
 
 function cellText(value: string | null | undefined): string {
   const t = value?.trim();
@@ -54,8 +54,8 @@ export function EventPrefsEditCell({ eventId, prefId, resalePrefId }: Props) {
 
   return (
     <>
-      <div className="flex max-w-[22rem] flex-wrap items-center gap-2">
-        <div className="min-w-0 flex-1 font-mono text-[12px] leading-snug text-zinc-200">
+      <div className="flex max-w-[min(22rem,100%)] flex-wrap items-center gap-2 sm:max-w-[22rem]">
+        <div className="min-w-0 flex-1 rounded-lg border border-white/[0.06] bg-black/20 px-2 py-1.5 font-mono text-[12px] leading-snug text-zinc-200 ring-1 ring-white/[0.03]">
           <span className="text-zinc-500">Pref:</span>{" "}
           <span className="break-all text-zinc-100">{prefId}</span>
           <span className="mx-1.5 text-zinc-600">·</span>
@@ -65,7 +65,7 @@ export function EventPrefsEditCell({ eventId, prefId, resalePrefId }: Props) {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="inline-flex shrink-0 items-center justify-center rounded-md p-1.5 text-zinc-400 ring-1 ring-white/10 transition-colors hover:bg-white/[0.08] hover:text-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500/60"
+          className="inline-flex shrink-0 items-center justify-center rounded-md p-1.5 text-zinc-400 ring-1 ring-white/10 transition-colors hover:bg-white/[0.08] hover:text-[color:var(--ticketing-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
           aria-label={`Edit pref and resale IDs for event ${eventId}`}
         >
           <PencilIcon />
@@ -74,7 +74,7 @@ export function EventPrefsEditCell({ eventId, prefId, resalePrefId }: Props) {
 
       {open ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-b from-black/70 via-black/55 to-black/70 p-4 backdrop-blur-md"
           role="presentation"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) setOpen(false);
@@ -84,7 +84,7 @@ export function EventPrefsEditCell({ eventId, prefId, resalePrefId }: Props) {
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
-            className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-900 p-5 shadow-2xl shadow-black/50"
+            className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface)_94%,transparent)] p-5 shadow-2xl shadow-black/55 ring-1 ring-white/[0.04]"
             onMouseDown={(e) => e.stopPropagation()}
           >
             <h2 id={titleId} className="text-base font-semibold text-zinc-100">
@@ -135,13 +135,13 @@ export function EventPrefsEditCell({ eventId, prefId, resalePrefId }: Props) {
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
-                  className="rounded-lg border border-white/10 bg-transparent px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06]"
+                  className="rounded-lg border border-white/12 bg-transparent px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500"
+                  className="rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_52%,transparent)] bg-[color:var(--ticketing-accent)] px-4 py-2 text-sm font-semibold text-emerald-950 shadow-sm shadow-emerald-950/35 transition-[filter] hover:brightness-[1.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
                 >
                   Save
                 </button>

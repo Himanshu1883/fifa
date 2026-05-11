@@ -68,9 +68,6 @@ async function resolveEventDetailMeta(rawSegment: string) {
   });
 }
 
-/** Max seat rows rendered per event (extra row fetched to detect truncation). */
-const SEAT_LISTINGS_DISPLAY_LIMIT = 500;
-
 export async function generateMetadata({ params }: Props) {
   const { eventId: rawId } = await params;
   const event = await resolveEventDetailMeta(rawId);
@@ -93,7 +90,7 @@ export default async function EventDetailPage({ params }: Props) {
     redirect(`/events/${canonical}`);
   }
 
-  const seatListingsPlus = await prisma.eventSeatListing.findMany({
+  const seatListings = await prisma.eventSeatListing.findMany({
     where: { eventId: event.id },
     select: {
       id: true,
@@ -116,15 +113,26 @@ export default async function EventDetailPage({ params }: Props) {
       { rowLabel: "asc" },
       { seatNumber: "asc" },
     ],
-    take: SEAT_LISTINGS_DISPLAY_LIMIT + 1,
   });
-  const seatListingsTruncated = seatListingsPlus.length > SEAT_LISTINGS_DISPLAY_LIMIT;
-  const seatListings = seatListingsTruncated
-    ? seatListingsPlus.slice(0, SEAT_LISTINGS_DISPLAY_LIMIT)
-    : seatListingsPlus;
-  const seatListingsTotal = seatListingsTruncated
-    ? await prisma.eventSeatListing.count({ where: { eventId: event.id } })
-    : seatListings.length;
+  const seatListingsTruncated = false;
+  const seatListingsTotal = seatListings.length;
+
+  const eventCategoriesRaw = await prisma.eventCategory.findMany({
+    where: { eventId: event.id },
+    select: {
+      categoryId: true,
+      categoryName: true,
+      categoryBlockId: true,
+      categoryBlockName: true,
+    },
+    orderBy: [{ categoryId: "asc" }, { categoryBlockId: "asc" }],
+  });
+  const eventCategoriesPayload = eventCategoriesRaw.map((c) => ({
+    categoryId: c.categoryId,
+    categoryName: c.categoryName,
+    categoryBlockId: c.categoryBlockId,
+    categoryBlockName: c.categoryBlockName,
+  }));
 
   const listingsPayload = seatListings.map((r) => ({
     id: r.id,
@@ -242,6 +250,7 @@ export default async function EventDetailPage({ params }: Props) {
           <div className="border-t border-white/[0.06] px-0 pb-5 pt-0 sm:px-0 sm:pb-6">
             <SeatListingsPanel
               listings={listingsPayload}
+              eventCategories={eventCategoriesPayload}
               truncated={seatListingsTruncated}
               totalCount={seatListingsTotal}
               embedInParentCard

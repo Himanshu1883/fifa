@@ -1,16 +1,51 @@
 "use client";
 
-import { createEventAction } from "@/app/actions/create-event";
+import { updateEventAction } from "@/app/actions/update-event";
 import { useEffect, useId, useRef, useState } from "react";
 
 const inpModal =
   "w-full rounded-md border border-white/10 bg-black/35 px-3 py-2 text-sm text-zinc-100 shadow-inner shadow-black/30 placeholder:text-zinc-600 focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_48%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
 
-type Props = {
-  suggestedSortOrder: number;
+function PencilIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+      <path d="m15 5 4 4" />
+    </svg>
+  );
+}
+
+export type EditableEvent = {
+  id: number;
+  matchLabel: string;
+  sortOrder: number;
+  name: string;
+  stage: string | null;
+  venue: string | null;
+  country: string | null;
+  prefId: string;
+  resalePrefId: string | null;
+  isImportant: boolean;
 };
 
-export function AddEventDialog({ suggestedSortOrder }: Props) {
+type Props = {
+  event: EditableEvent;
+  /** Optional extra classes for the icon button. */
+  className?: string;
+};
+
+export function EditEventDialog({ event, className }: Props) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -37,9 +72,14 @@ export function AddEventDialog({ suggestedSortOrder }: Props) {
           setFieldErrors({});
           setOpen(true);
         }}
-        className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_52%,transparent)] bg-[color:var(--ticketing-accent)] px-4 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter] hover:brightness-[1.06] active:brightness-[0.96] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+        className={
+          className ??
+          "inline-flex shrink-0 items-center justify-center rounded-md p-1.5 text-zinc-400 ring-1 ring-white/10 transition-colors hover:bg-white/[0.08] hover:text-[color:var(--ticketing-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+        }
+        aria-label={`Edit event ${event.id}`}
+        title="Edit event"
       >
-        Add event
+        <PencilIcon />
       </button>
 
       {open ? (
@@ -58,10 +98,10 @@ export function AddEventDialog({ suggestedSortOrder }: Props) {
             onMouseDown={(e) => e.stopPropagation()}
           >
             <h2 id={titleId} className="text-base font-semibold text-zinc-100">
-              New event
+              Edit event
             </h2>
             <p className="mt-1 text-xs text-zinc-500">
-              All editable Event fields — leave sort order blank to append after the highest order.
+              Event #{event.id}. Updates the schedule row and revalidates the home page.
             </p>
 
             {fieldErrors._form ? (
@@ -71,7 +111,7 @@ export function AddEventDialog({ suggestedSortOrder }: Props) {
             ) : null}
 
             <form
-              key={`${formId}-${suggestedSortOrder}`}
+              key={`${formId}-${event.id}`}
               id={formId}
               className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2"
               onSubmit={async (e) => {
@@ -79,184 +119,234 @@ export function AddEventDialog({ suggestedSortOrder }: Props) {
                 setPending(true);
                 setFieldErrors({});
                 const form = e.currentTarget;
-                const result = await createEventAction(new FormData(form));
+                const result = await updateEventAction(new FormData(form));
                 setPending(false);
                 if (result.ok) {
                   setOpen(false);
-                  form.reset();
                 } else {
                   setFieldErrors(result.fieldErrors);
                 }
               }}
             >
+              <input type="hidden" name="id" value={event.id} />
+
               <div className="flex flex-col gap-1 sm:col-span-2">
-                <label htmlFor="add-event-matchLabel" className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                  Match label{" "}
-                  <span className="text-[color:color-mix(in_oklab,var(--ticketing-accent)_78%,white_14%)]">*</span>
+                <label
+                  htmlFor={`edit-event-matchLabel-${event.id}`}
+                  className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
+                >
+                  Match label <span className="text-emerald-400/90">*</span>
                 </label>
                 <input
                   ref={firstFieldRef}
-                  id="add-event-matchLabel"
+                  id={`edit-event-matchLabel-${event.id}`}
                   name="matchLabel"
                   required
-                  placeholder={`e.g. Match${suggestedSortOrder}`}
+                  defaultValue={event.matchLabel}
                   autoComplete="off"
                   className={`${inpModal} font-mono text-xs`}
                   aria-invalid={fieldErrors.matchLabel ? true : undefined}
-                  aria-describedby={fieldErrors.matchLabel ? "add-event-err-matchLabel" : undefined}
+                  aria-describedby={fieldErrors.matchLabel ? `edit-event-err-matchLabel-${event.id}` : undefined}
                 />
                 {fieldErrors.matchLabel ? (
-                  <p id="add-event-err-matchLabel" className="text-xs text-red-400">
+                  <p id={`edit-event-err-matchLabel-${event.id}`} className="text-xs text-red-400">
                     {fieldErrors.matchLabel}
                   </p>
                 ) : null}
               </div>
 
               <div className="flex flex-col gap-1">
-                <label htmlFor="add-event-sortOrder" className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                  Sort order
+                <label
+                  htmlFor={`edit-event-sortOrder-${event.id}`}
+                  className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
+                >
+                  Sort order <span className="text-emerald-400/90">*</span>
                 </label>
                 <input
-                  id="add-event-sortOrder"
+                  id={`edit-event-sortOrder-${event.id}`}
                   name="sortOrder"
                   type="text"
                   inputMode="numeric"
                   pattern="-?[0-9]*"
-                  defaultValue=""
-                  placeholder={String(suggestedSortOrder)}
+                  required
+                  defaultValue={String(event.sortOrder)}
                   autoComplete="off"
                   className={`${inpModal} font-mono text-xs`}
                   aria-invalid={fieldErrors.sortOrder ? true : undefined}
-                  aria-describedby={fieldErrors.sortOrder ? "add-event-err-sortOrder" : undefined}
+                  aria-describedby={fieldErrors.sortOrder ? `edit-event-err-sortOrder-${event.id}` : undefined}
                 />
                 {fieldErrors.sortOrder ? (
-                  <p id="add-event-err-sortOrder" className="text-xs text-red-400">
+                  <p id={`edit-event-err-sortOrder-${event.id}`} className="text-xs text-red-400">
                     {fieldErrors.sortOrder}
                   </p>
-                ) : (
-                  <p className="text-[11px] text-zinc-600">Empty = use next ({suggestedSortOrder}).</p>
-                )}
+                ) : null}
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label
+                  htmlFor={`edit-event-important-${event.id}`}
+                  className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
+                >
+                  Important
+                </label>
+                <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-sm text-zinc-200 shadow-inner shadow-black/25 ring-1 ring-white/[0.03]">
+                  <input
+                    id={`edit-event-important-${event.id}`}
+                    name="isImportant"
+                    type="checkbox"
+                    defaultChecked={event.isImportant}
+                    disabled={pending}
+                    className="h-4 w-4 accent-[color:var(--ticketing-accent)]"
+                  />
+                  <span className="text-sm">Mark as important</span>
+                </label>
+                {fieldErrors.isImportant ? (
+                  <p className="text-xs text-red-400">{fieldErrors.isImportant}</p>
+                ) : null}
               </div>
 
               <div className="flex flex-col gap-1 sm:col-span-2">
-                <label htmlFor="add-event-name" className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                  Event name{" "}
-                  <span className="text-[color:color-mix(in_oklab,var(--ticketing-accent)_78%,white_14%)]">*</span>
+                <label
+                  htmlFor={`edit-event-name-${event.id}`}
+                  className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
+                >
+                  Event name <span className="text-emerald-400/90">*</span>
                 </label>
                 <input
-                  id="add-event-name"
+                  id={`edit-event-name-${event.id}`}
                   name="name"
                   required
+                  defaultValue={event.name}
                   placeholder="e.g. Team A vs Team B"
                   autoComplete="off"
                   className={inpModal}
                   aria-invalid={fieldErrors.name ? true : undefined}
-                  aria-describedby={fieldErrors.name ? "add-event-err-name" : undefined}
+                  aria-describedby={fieldErrors.name ? `edit-event-err-name-${event.id}` : undefined}
                 />
                 {fieldErrors.name ? (
-                  <p id="add-event-err-name" className="text-xs text-red-400">
+                  <p id={`edit-event-err-name-${event.id}`} className="text-xs text-red-400">
                     {fieldErrors.name}
                   </p>
                 ) : null}
               </div>
 
               <div className="flex flex-col gap-1">
-                <label htmlFor="add-event-stage" className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                <label
+                  htmlFor={`edit-event-stage-${event.id}`}
+                  className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
+                >
                   Stage
                 </label>
                 <input
-                  id="add-event-stage"
+                  id={`edit-event-stage-${event.id}`}
                   name="stage"
-                  placeholder="e.g. Group stage"
+                  defaultValue={event.stage ?? ""}
+                  placeholder="Optional"
                   autoComplete="off"
                   className={inpModal}
                   aria-invalid={fieldErrors.stage ? true : undefined}
-                  aria-describedby={fieldErrors.stage ? "add-event-err-stage" : undefined}
+                  aria-describedby={fieldErrors.stage ? `edit-event-err-stage-${event.id}` : undefined}
                 />
                 {fieldErrors.stage ? (
-                  <p id="add-event-err-stage" className="text-xs text-red-400">
+                  <p id={`edit-event-err-stage-${event.id}`} className="text-xs text-red-400">
                     {fieldErrors.stage}
                   </p>
                 ) : null}
               </div>
 
               <div className="flex flex-col gap-1">
-                <label htmlFor="add-event-country" className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                <label
+                  htmlFor={`edit-event-country-${event.id}`}
+                  className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
+                >
                   Country
                 </label>
                 <input
-                  id="add-event-country"
+                  id={`edit-event-country-${event.id}`}
                   name="country"
+                  defaultValue={event.country ?? ""}
                   placeholder="Optional"
                   autoComplete="off"
                   className={inpModal}
                   aria-invalid={fieldErrors.country ? true : undefined}
-                  aria-describedby={fieldErrors.country ? "add-event-err-country" : undefined}
+                  aria-describedby={fieldErrors.country ? `edit-event-err-country-${event.id}` : undefined}
                 />
                 {fieldErrors.country ? (
-                  <p id="add-event-err-country" className="text-xs text-red-400">
+                  <p id={`edit-event-err-country-${event.id}`} className="text-xs text-red-400">
                     {fieldErrors.country}
                   </p>
                 ) : null}
               </div>
 
               <div className="flex flex-col gap-1 sm:col-span-2">
-                <label htmlFor="add-event-venue" className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                <label
+                  htmlFor={`edit-event-venue-${event.id}`}
+                  className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
+                >
                   Venue
                 </label>
                 <input
-                  id="add-event-venue"
+                  id={`edit-event-venue-${event.id}`}
                   name="venue"
+                  defaultValue={event.venue ?? ""}
                   placeholder="Optional"
                   autoComplete="off"
                   className={inpModal}
                   aria-invalid={fieldErrors.venue ? true : undefined}
-                  aria-describedby={fieldErrors.venue ? "add-event-err-venue" : undefined}
+                  aria-describedby={fieldErrors.venue ? `edit-event-err-venue-${event.id}` : undefined}
                 />
                 {fieldErrors.venue ? (
-                  <p id="add-event-err-venue" className="text-xs text-red-400">
+                  <p id={`edit-event-err-venue-${event.id}`} className="text-xs text-red-400">
                     {fieldErrors.venue}
                   </p>
                 ) : null}
               </div>
 
               <div className="flex flex-col gap-1">
-                <label htmlFor="add-event-prefId" className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                  Pref ID{" "}
-                  <span className="text-[color:color-mix(in_oklab,var(--ticketing-accent)_78%,white_14%)]">*</span>
+                <label
+                  htmlFor={`edit-event-prefId-${event.id}`}
+                  className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
+                >
+                  Pref ID <span className="text-emerald-400/90">*</span>
                 </label>
                 <input
-                  id="add-event-prefId"
+                  id={`edit-event-prefId-${event.id}`}
                   name="prefId"
                   required
-                  placeholder="Primary catalogue pref"
+                  defaultValue={event.prefId}
                   autoComplete="off"
                   className={`${inpModal} font-mono text-xs`}
                   aria-invalid={fieldErrors.prefId ? true : undefined}
-                  aria-describedby={fieldErrors.prefId ? "add-event-err-prefId" : undefined}
+                  aria-describedby={fieldErrors.prefId ? `edit-event-err-prefId-${event.id}` : undefined}
                 />
                 {fieldErrors.prefId ? (
-                  <p id="add-event-err-prefId" className="text-xs text-red-400">
+                  <p id={`edit-event-err-prefId-${event.id}`} className="text-xs text-red-400">
                     {fieldErrors.prefId}
                   </p>
                 ) : null}
               </div>
 
               <div className="flex flex-col gap-1">
-                <label htmlFor="add-event-resalePrefId" className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                <label
+                  htmlFor={`edit-event-resalePrefId-${event.id}`}
+                  className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
+                >
                   Resale pref ID
                 </label>
                 <input
-                  id="add-event-resalePrefId"
+                  id={`edit-event-resalePrefId-${event.id}`}
                   name="resalePrefId"
+                  defaultValue={event.resalePrefId ?? ""}
                   placeholder="Optional"
                   autoComplete="off"
                   className={`${inpModal} font-mono text-xs`}
                   aria-invalid={fieldErrors.resalePrefId ? true : undefined}
-                  aria-describedby={fieldErrors.resalePrefId ? "add-event-err-resalePrefId" : undefined}
+                  aria-describedby={
+                    fieldErrors.resalePrefId ? `edit-event-err-resalePrefId-${event.id}` : undefined
+                  }
                 />
                 {fieldErrors.resalePrefId ? (
-                  <p id="add-event-err-resalePrefId" className="text-xs text-red-400">
+                  <p id={`edit-event-err-resalePrefId-${event.id}`} className="text-xs text-red-400">
                     {fieldErrors.resalePrefId}
                   </p>
                 ) : null}
@@ -274,9 +364,9 @@ export function AddEventDialog({ suggestedSortOrder }: Props) {
                 <button
                   type="submit"
                   disabled={pending}
-                  className="rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_52%,transparent)] bg-[color:var(--ticketing-accent)] px-4 py-2 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter] hover:brightness-[1.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] disabled:opacity-50"
+                  className="rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_52%,transparent)] bg-[color:var(--ticketing-accent)] px-4 py-2 text-sm font-semibold text-emerald-950 shadow-sm shadow-emerald-950/35 transition-[filter] hover:brightness-[1.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] disabled:opacity-50"
                 >
-                  {pending ? "Saving…" : "Create event"}
+                  {pending ? "Saving…" : "Save changes"}
                 </button>
               </div>
             </form>
@@ -286,3 +376,4 @@ export function AddEventDialog({ suggestedSortOrder }: Props) {
     </>
   );
 }
+

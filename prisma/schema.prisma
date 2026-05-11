@@ -29,6 +29,7 @@ model Event {
   matchLabel    String                   @map("match_label")
   sortOrder     Int                      @map("sort_order")
   name          String
+  isImportant   Boolean                  @default(false) @map("is_important")
   /// Match stage / round (e.g. group phase); optional for backfill.
   stage         String?
   venue         String?
@@ -37,7 +38,9 @@ model Event {
   resalePrefId  String?                  @map("resale_pref_id")
   categories    EventCategory[]
   blockPrices   EventCategoryBlockPrice[]
+  blockAvailability EventCategoryBlockAvailability[]
   seatListings  EventSeatListing[]
+  blockSeatNow  EventBlockSeatNow[]
 
   @@index([sortOrder])
   @@index([prefId])
@@ -104,6 +107,39 @@ model EventCategoryBlockPrice {
   @@map("event_category_block_prices")
 }
 
+model EventCategoryBlockAvailability {
+  id                  Int      @id @default(autoincrement())
+  eventId              Int      @map("event_id")
+  event                Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  categoryId           String   @map("category_id")
+  categoryBlockId      String   @map("category_block_id")
+  availability         Int      @map("availability")
+  availabilityResale   Int      @map("availability_resale")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@unique([eventId, categoryId, categoryBlockId])
+  @@index([eventId])
+  @@map("event_category_block_availability")
+}
+
+model EventBlockSeatNow {
+  id                Int      @id @default(autoincrement())
+  eventId            Int      @map("event_id")
+  event              Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  categoryId         String   @map("category_id")
+  categoryName       String   @map("category_name")
+  blockId            String   @map("block_id")
+  availability       Int      @map("availability")
+  availabilityResale Int      @map("availability_resale")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@unique([eventId, categoryId, blockId])
+  @@index([eventId])
+  @@map("event_block_seat_now")
+}
+
 model EventCategory {
   id                  Int    @id @default(autoincrement())
   eventId             Int    @map("event_id")
@@ -113,5 +149,14 @@ model EventCategory {
   categoryBlockName   String @map("category_block_name")
   categoryBlockId     String @map("category_block_id")
 
+  @@unique([eventId, categoryId, categoryBlockId])
   @@index([eventId])
+}
+
+/// Singleton row `id = 1`: round-robin cursor for `GET /api/resale-pref/next`.
+model ResalePrefRotationState {
+  id        Int @id
+  nextIndex Int @default(0) @map("next_index")
+
+  @@map("resale_pref_rotation_state")
 }

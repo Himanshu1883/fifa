@@ -11,15 +11,34 @@ function toSourceEnum(matched: "resale" | "primary"): CataloguePriceSource {
   return matched === "resale" ? "RESELL_PREF" : "PRIMARY_PREF";
 }
 
+function dedupePriceRows(rows: FlatPriceRow[]): FlatPriceRow[] {
+  const seen = new Set<string>();
+  const out: FlatPriceRow[] = [];
+  for (const r of rows) {
+    const key = `${r.categoryId}::${r.categoryBlockId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(r);
+  }
+  return out;
+}
+
 /**
- * Replaces all block price rows for the event + catalogue source (primary vs resale channel).
+ * Insert-only: add new block price rows for the event + catalogue source (primary vs resale channel).
+ * Existing (eventId, categoryId, categoryBlockId, catalogueSource) rows are left untouched.
  */
 export async function syncEventCategoryBlockPrices(
   tx: Tx,
   cataloguePrefId: string,
   rows: FlatPriceRow[],
   lookup: PriceWebhookLookup,
-): Promise<{ eventId: number; catalogueSource: CataloguePriceSource } | null> {
+): Promise<{
+  eventId: number;
+  catalogueSource: CataloguePriceSource;
+  uniqueRowCount: number;
+  insertedCount: number;
+  skippedExistingCount: number;
+} | null> {
   let resolved: { id: number; matched: "resale" | "primary" } | null;
 
   if (lookup === "resale-only") {
@@ -43,22 +62,28 @@ export async function syncEventCategoryBlockPrices(
   const catalogueSource = toSourceEnum(resolved.matched);
   const eventId = resolved.id;
 
-  await tx.eventCategoryBlockPrice.deleteMany({
-    where: { eventId, catalogueSource },
-  });
+  const uniqueRows = dedupePriceRows(rows);
+  const created =
+    uniqueRows.length > 0
+      ? await tx.eventCategoryBlockPrice.createMany({
+          data: uniqueRows.map((r) => ({
+            eventId,
+            categoryId: r.categoryId,
+            categoryBlockId: r.categoryBlockId,
+            minPrice: r.minPrice,
+            maxPrice: r.maxPrice,
+            catalogueSource,
+          })),
+          skipDuplicates: true,
+        })
+      : { count: 0 };
 
-  if (rows.length > 0) {
-    await tx.eventCategoryBlockPrice.createMany({
-      data: rows.map((r) => ({
-        eventId,
-        categoryId: r.categoryId,
-        categoryBlockId: r.categoryBlockId,
-        minPrice: r.minPrice,
-        maxPrice: r.maxPrice,
-        catalogueSource,
-      })),
-    });
-  }
-
-  return { eventId, catalogueSource };
+  const insertedCount = created.count;
+  return {
+    eventId,
+    catalogueSource,
+    uniqueRowCount: uniqueRows.length,
+    insertedCount,
+    skippedExistingCount: uniqueRows.length - insertedCount,
+  };
 }

@@ -7,6 +7,13 @@ export type FlatCatalogueRow = {
   categoryBlockName: string;
 };
 
+export type FlatCatalogueBlockAvailabilityRow = {
+  categoryId: string;
+  categoryBlockId: string;
+  availability: number;
+  availabilityResale: number;
+};
+
 export class CataloguePayloadError extends Error {
   readonly statusCode = 400;
   constructor(message: string) {
@@ -34,7 +41,12 @@ function coerceId(value: unknown): string {
   return String(value);
 }
 
-type IncomingBlock = { id?: unknown; name?: unknown };
+type IncomingBlock = {
+  id?: unknown;
+  name?: unknown;
+  availability?: unknown;
+  availabilityResale?: unknown;
+};
 type IncomingCategory = {
   id?: unknown;
   name?: unknown;
@@ -42,35 +54,56 @@ type IncomingCategory = {
   blocks?: IncomingBlock[];
 };
 
-function dedupeBlocksFirstWins(blocks: IncomingBlock[] | undefined): [string, string][] {
+function coerceNonNegativeInt(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.trunc(value));
+  }
+  if (typeof value === "string") {
+    const n = Number(value.trim());
+    if (Number.isFinite(n)) return Math.max(0, Math.trunc(n));
+  }
+  return 0;
+}
+
+type BlockInfo = {
+  id: string;
+  name: string;
+  availability: number;
+  availabilityResale: number;
+};
+
+function dedupeBlocksFirstWins(blocks: IncomingBlock[] | undefined): BlockInfo[] {
   if (!blocks?.length) return [];
   const seen = new Set<string>();
-  const out: [string, string][] = [];
+  const out: BlockInfo[] = [];
   for (const b of blocks) {
     const bid = coerceId(b.id);
     const label = localizedLabel(b.name);
     if (!bid) continue;
     if (seen.has(bid)) continue;
     seen.add(bid);
-    out.push([bid, label]);
+    out.push({
+      id: bid,
+      name: label,
+      availability: coerceNonNegativeInt(b.availability),
+      availabilityResale: coerceNonNegativeInt(b.availabilityResale),
+    });
   }
   return out;
 }
 
 /** Sort blocks by localized label first, then numeric id */
-function compareBlockRows(a: [string, string], b: [string, string]): number {
-  const [idA, nameA] = a;
-  const [idB, nameB] = b;
-  const na = nameA.trim() || idA;
-  const nb = nameB.trim() || idB;
+function compareBlockRows(a: BlockInfo, b: BlockInfo): number {
+  const na = a.name.trim() || a.id;
+  const nb = b.name.trim() || b.id;
   const labelCmp = na.localeCompare(nb, undefined, {
     sensitivity: "base",
     numeric: true,
   });
   if (labelCmp !== 0) return labelCmp;
 
-  const ida = BigIntSafe(coerceId(idA));
-  const idb = BigIntSafe(coerceId(idB));
+  const ida = BigIntSafe(coerceId(a.id));
+  const idb = BigIntSafe(coerceId(b.id));
   return ida < idb ? -1 : ida > idb ? 1 : 0;
 }
 
@@ -283,12 +316,47 @@ export function priceRangeCategoriesToFlatRows(priceRangeCategories: unknown[]):
     const categoryName = localizedLabel(cat.name);
     const blockPairs = dedupeBlocksFirstWins(cat.blocks);
     blockPairs.sort(compareBlockRows);
-    for (const [categoryBlockId, categoryBlockName] of blockPairs) {
+    for (const b of blockPairs) {
       rows.push({
         categoryId,
         categoryName,
-        categoryBlockId,
-        categoryBlockName,
+        categoryBlockId: b.id,
+        categoryBlockName: b.name,
+      });
+    }
+  }
+  return rows;
+}
+
+export function priceRangeCategoriesToAvailabilityRows(
+  priceRangeCategories: unknown[],
+): FlatCatalogueBlockAvailabilityRow[] {
+  if (!priceRangeCategories.length) {
+    throw new CataloguePayloadError("Categories list is empty");
+  }
+  const normalized = priceRangeCategories
+    .map(normalizeCategory)
+    .filter((c): c is IncomingCategory => c !== null);
+
+  if (!normalized.length) {
+    throw new CataloguePayloadError(
+      'No valid categories (each needs blocks[]). Use "categories" / "priceRangeCategories" or a JSON array.',
+    );
+  }
+
+  normalized.sort(compareCategories);
+
+  const rows: FlatCatalogueBlockAvailabilityRow[] = [];
+  for (const cat of normalized) {
+    const categoryId = coerceId(cat.id);
+    const blocks = dedupeBlocksFirstWins(cat.blocks);
+    blocks.sort(compareBlockRows);
+    for (const b of blocks) {
+      rows.push({
+        categoryId,
+        categoryBlockId: b.id,
+        availability: b.availability,
+        availabilityResale: b.availabilityResale,
       });
     }
   }
@@ -305,6 +373,7 @@ export function priceRangeCategoriesToFlatRows(priceRangeCategories: unknown[]):
 export function catalogueRowsFromPayload(body: unknown, prefIdFallback?: string | null): {
   prefId: string;
   rows: FlatCatalogueRow[];
+  availabilityRows: FlatCatalogueBlockAvailabilityRow[];
 } {
   body = unwrapCatalogueBody(body);
 
@@ -316,7 +385,11 @@ export function catalogueRowsFromPayload(body: unknown, prefIdFallback?: string 
         "Send prefId (?prefId= in URL), or wrap the array as { prefId, categories: [...] }.",
       );
     }
-    return { prefId, rows: priceRangeCategoriesToFlatRows(merged) };
+    return {
+      prefId,
+      rows: priceRangeCategoriesToFlatRows(merged),
+      availabilityRows: priceRangeCategoriesToAvailabilityRows(merged),
+    };
   }
 
   if (!body || typeof body !== "object") {
@@ -341,7 +414,8 @@ export function catalogueRowsFromPayload(body: unknown, prefIdFallback?: string 
   }
 
   const rows = priceRangeCategoriesToFlatRows(catList as unknown[]);
-  return { prefId, rows };
+  const availabilityRows = priceRangeCategoriesToAvailabilityRows(catList as unknown[]);
+  return { prefId, rows, availabilityRows };
 }
 
 /** @deprecated Prefer catalogueRowsFromPayload */

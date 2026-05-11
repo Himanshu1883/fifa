@@ -157,7 +157,7 @@ Choose **one** path:
 | Situation | Steps |
 |-----------|--------|
 | **Railway can match seed** (catalogue JSON in repo, no unique local rows you need to keep) | On your machine: `export DATABASE_URL="<Railway public URL>"` then `npx prisma migrate deploy` and `npx prisma db seed`. The seed **deletes all events** and recreates them — do not run it after a manual dump if you want to keep dumped rows. |
-| **Local DB has data you must preserve** | Run `npx prisma migrate deploy` against Railway first (schema must match migrations). Then from the repo root: `export SOURCE_DATABASE_URL="<local>"` `export TARGET_DATABASE_URL="<Railway public>"` and **`TRUNCATE_TARGET=1 ./scripts/pg-copy-app-data.sh`** for a clean load (requires local `pg_dump` / `psql`). The script copies only **`"Event"`**, **`"EventCategory"`**, and **`users`**. |
+| **Local DB has data you must preserve** | Run `npx prisma migrate deploy` against Railway first (schema must match migrations). Then from the repo root set **`SOURCE_DATABASE_URL`** (Postgres that has your rows) and **`TARGET_DATABASE_URL`** (Railway public URL), then either **`TRUNCATE_TARGET=1 ./scripts/pg-copy-app-data.sh`** (needs `pg_dump` / `psql`) **or** **`TRUNCATE_TARGET=1 npm run db:copy:railway`** (Node/`pg` only). Both copy **`users`**, **`"Event"`**, **`"EventCategory"`**, **`event_category_block_prices`**, and **`event_seat_listings`**. |
 
 Verify row counts without exposing secrets: `DATABASE_URL="<Railway>" npx tsx scripts/db-row-counts.ts` (prints JSON counts only).
 

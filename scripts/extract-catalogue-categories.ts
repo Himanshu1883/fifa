@@ -20,8 +20,6 @@
 
 import * as fs from "node:fs";
 
-type Localized = Record<string, string>;
-
 function localizedLabel(raw: unknown): string {
   if (typeof raw === "string") return raw.trim();
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "";

@@ -1,13 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   groupConsecutiveSeatListings,
   parseSeatIntStrict,
 } from "@/lib/group-consecutive-seats";
 import { formatUsd, formatUsdRangeFromAmounts, priceToNumber } from "@/lib/format-usd";
-
-const SEAT_LISTINGS_DISPLAY_LIMIT = 500;
 
 const searchInpClass =
   "min-h-10 w-full rounded-lg border border-white/[0.09] bg-[#0c1010] px-2.5 py-1.5 text-sm text-zinc-100 shadow-inner shadow-black/35 placeholder:text-zinc-500 transition-[border-color,box-shadow] focus:border-emerald-400/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]";
@@ -42,12 +40,25 @@ export type SeatListingDTO = {
   contingentId: string;
 };
 
-type SeatListingCategoryGroup = {
-  seatCategoryId: string;
-  seatCategoryName: string;
-  rows: SeatListingDTO[];
+export type EventCategoryDTO = {
+  categoryId: string;
+  categoryName: string;
+  categoryBlockId: string;
+  categoryBlockName: string;
+};
+
+type SeatListingBlockGroup = {
+  categoryBlockId: string;
+  categoryBlockName: string;
   /** One entry per table row; entries with length > 1 are consecutive-seat merges. */
   displayRows: SeatListingDTO[][];
+};
+
+type SeatListingCatalogueCategorySection = {
+  categoryKey: string;
+  displayCategoryId: string;
+  displayCategoryName: string;
+  blocks: SeatListingBlockGroup[];
 };
 
 type SortKey = "match" | "price" | "seats";
@@ -57,10 +68,23 @@ function normId(s: string): string {
   return String(s).trim();
 }
 
+function normCategoryId(s: string): string {
+  const t = String(s).trim();
+  if (!t) return "";
+  if (/^\d+$/.test(t)) {
+    try {
+      return BigInt(t).toString();
+    } catch {
+      /* fall through */
+    }
+  }
+  return t;
+}
+
 /** When sync/webhook left human-readable names blank, still show stable IDs in the UI. */
 function seatCategoryDisplayName(name: string, id: string): string {
   const n = String(name).trim();
-  const i = normId(id);
+  const i = normCategoryId(id);
   return n || i || "—";
 }
 
@@ -70,20 +94,20 @@ function categoryBlockDisplayName(name: string, id: string): string {
   return n || i || "—";
 }
 
-function SeatCategorySectionHeading(props: { seatCategoryName: string; seatCategoryId: string }) {
-  const title = seatCategoryDisplayName(props.seatCategoryName, props.seatCategoryId);
-  const id = normId(props.seatCategoryId);
+function CatalogueCategorySectionHeading(props: { displayCategoryName: string; displayCategoryId: string }) {
+  const title = seatCategoryDisplayName(props.displayCategoryName, props.displayCategoryId);
+  const id = normId(props.displayCategoryId);
   const showIdLine = Boolean(id && title !== id);
   return (
     <div className="flex flex-col gap-1 border-b border-white/[0.06] pb-2 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0 space-y-0.5">
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-          Price category
+          Category
         </p>
         <h3 className="text-base font-semibold tracking-tight text-white sm:text-lg">{title}</h3>
         {showIdLine ? (
           <p className="font-mono text-xs text-zinc-500">
-            ID · {props.seatCategoryId}
+            ID · {props.displayCategoryId}
           </p>
         ) : null}
       </div>
@@ -134,7 +158,7 @@ function applyDir(cmp: number, dir: SortDir): number {
 }
 
 function compareMatchListing(a: SeatListingDTO, b: SeatListingDTO, dir: SortDir): number {
-  const cat = compareCatalogueId(normId(a.seatCategoryId), normId(b.seatCategoryId));
+  const cat = compareCatalogueId(normCategoryId(a.seatCategoryId), normCategoryId(b.seatCategoryId));
   if (cat !== 0) return applyDir(cat, dir);
   const blockName = a.categoryBlockName.localeCompare(b.categoryBlockName, undefined, {
     numeric: true,
@@ -183,7 +207,7 @@ function compareSeatListing(a: SeatListingDTO, b: SeatListingDTO, dir: SortDir):
     sensitivity: "base",
   });
   if (blockName !== 0) return applyDir(blockName, dir);
-  return compareCatalogueId(normId(a.seatCategoryId), normId(b.seatCategoryId));
+  return compareCatalogueId(normCategoryId(a.seatCategoryId), normCategoryId(b.seatCategoryId));
 }
 
 function sortRows(rows: SeatListingDTO[], sortKey: SortKey, sortDir: SortDir): void {
@@ -194,32 +218,165 @@ function sortRows(rows: SeatListingDTO[], sortKey: SortKey, sortDir: SortDir): v
   });
 }
 
-function groupByCategory(listings: SeatListingDTO[]): SeatListingCategoryGroup[] {
-  const m = new Map<string, SeatListingCategoryGroup>();
-  for (const listing of listings) {
-    const key = normId(listing.seatCategoryId);
-    let g = m.get(key);
-    if (!g) {
-      g = {
-        seatCategoryId: listing.seatCategoryId,
-        seatCategoryName: listing.seatCategoryName,
-        rows: [],
-        displayRows: [],
-      };
-      m.set(key, g);
+type CatalogueCategoryName = { displayCategoryId: string; displayCategoryName: string };
+
+function indexCatalogueCategoryNames(eventCategories: EventCategoryDTO[]): Map<string, CatalogueCategoryName> {
+  const m = new Map<string, CatalogueCategoryName>();
+  for (const c of eventCategories) {
+    const k = normCategoryId(c.categoryId);
+    const name = String(c.categoryName).trim();
+    if (!k || !name) continue;
+    if (!m.has(k)) {
+      m.set(k, { displayCategoryId: c.categoryId, displayCategoryName: name });
     }
-    g.rows.push(listing);
   }
-  return Array.from(m.values()).sort((a, b) =>
-    compareCatalogueId(a.seatCategoryId, b.seatCategoryId),
-  );
+  return m;
 }
 
-function minPriceInGroup(g: SeatListingCategoryGroup): number {
+function compareCategoryKey(a: string, b: string): number {
+  const aCat = /^\d+$/.test(a);
+  const bCat = /^\d+$/.test(b);
+  if (aCat && bCat) return compareCatalogueId(a, b);
+  if (aCat !== bCat) return aCat ? -1 : 1;
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function resolveListingDisplayCategory(
+  listing: SeatListingDTO,
+  catalogueById: Map<string, CatalogueCategoryName>,
+): { categoryKey: string; displayCategoryId: string; displayCategoryName: string } {
+  const rawId = String(listing.seatCategoryId).trim();
+  const key = normCategoryId(rawId);
+  if (key) {
+    const catalogue = catalogueById.get(key);
+    return {
+      categoryKey: key,
+      displayCategoryId: rawId,
+      displayCategoryName: catalogue?.displayCategoryName ?? listing.seatCategoryName,
+    };
+  }
+  const title = seatCategoryDisplayName(listing.seatCategoryName, listing.seatCategoryId);
+  return {
+    categoryKey: `uncategorized:${normId(listing.categoryBlockId)}:${title}`,
+    displayCategoryId: rawId,
+    displayCategoryName: listing.seatCategoryName,
+  };
+}
+
+function compareBlocksInCategory(a: SeatListingBlockGroup, b: SeatListingBlockGroup): number {
+  const nameCmp = a.categoryBlockName.localeCompare(b.categoryBlockName, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+  if (nameCmp !== 0) return nameCmp;
+  return normId(a.categoryBlockId).localeCompare(normId(b.categoryBlockId));
+}
+
+function groupListingsByCatalogueCategoryAndBlock(
+  listings: SeatListingDTO[],
+  eventCategories: EventCategoryDTO[],
+  sortKey: SortKey,
+  sortDir: SortDir,
+): SeatListingCatalogueCategorySection[] {
+  const catalogueById = indexCatalogueCategoryNames(eventCategories);
+
+  /** categoryKey → section meta + listings */
+  const catMap = new Map<
+    string,
+    {
+      displayCategoryId: string;
+      displayCategoryName: string;
+      rows: SeatListingDTO[];
+    }
+  >();
+
+  for (const listing of listings) {
+    const resolved = resolveListingDisplayCategory(listing, catalogueById);
+    let bucket = catMap.get(resolved.categoryKey);
+    if (!bucket) {
+      bucket = {
+        displayCategoryId: resolved.displayCategoryId,
+        displayCategoryName: resolved.displayCategoryName,
+        rows: [],
+      };
+      catMap.set(resolved.categoryKey, bucket);
+    }
+    bucket.rows.push(listing);
+  }
+
+  const sections: SeatListingCatalogueCategorySection[] = [];
+
+  const sortedCatKeys = Array.from(catMap.keys()).sort(compareCategoryKey);
+
+  for (const categoryKey of sortedCatKeys) {
+    const bucket = catMap.get(categoryKey)!;
+
+    /** blockKey (id) → block group raw rows */
+    const blockBuckets = new Map<
+      string,
+      { categoryBlockId: string; categoryBlockName: string; rows: SeatListingDTO[] }
+    >();
+    for (const r of bucket.rows) {
+      const bk = normId(r.categoryBlockId);
+      let bg = blockBuckets.get(bk);
+      if (!bg) {
+        bg = {
+          categoryBlockId: r.categoryBlockId,
+          categoryBlockName: r.categoryBlockName,
+          rows: [],
+        };
+        blockBuckets.set(bk, bg);
+      }
+      bg.rows.push(r);
+    }
+
+    const blocks: SeatListingBlockGroup[] = Array.from(blockBuckets.values())
+      .map((bg) => {
+        sortRows(bg.rows, sortKey, sortDir);
+        const displayRows = groupConsecutiveSeatListings(bg.rows);
+        sortDisplayRows(displayRows, sortKey, sortDir);
+        return {
+          categoryBlockId: bg.categoryBlockId,
+          categoryBlockName: bg.categoryBlockName,
+          displayRows,
+        };
+      })
+      .sort(compareBlocksInCategory);
+
+    sections.push({
+      categoryKey,
+      displayCategoryId: bucket.displayCategoryId,
+      displayCategoryName: bucket.displayCategoryName,
+      blocks,
+    });
+  }
+
+  if (sortKey === "price") {
+    sections.sort((a, b) => {
+      const ma = minPriceInCategorySection(a);
+      const mb = minPriceInCategorySection(b);
+      const aOk = Number.isFinite(ma);
+      const bOk = Number.isFinite(mb);
+      if (!aOk && !bOk) return compareCategoryKey(a.categoryKey, b.categoryKey);
+      if (!aOk) return sortDir === "asc" ? 1 : -1;
+      if (!bOk) return sortDir === "asc" ? -1 : 1;
+      if (ma !== mb) return sortDir === "asc" ? (ma < mb ? -1 : 1) : ma < mb ? 1 : -1;
+      return compareCategoryKey(a.categoryKey, b.categoryKey);
+    });
+  }
+
+  return sections;
+}
+
+function minPriceInCategorySection(s: SeatListingCatalogueCategorySection): number {
   let min = Number.POSITIVE_INFINITY;
-  for (const r of g.rows) {
-    const p = priceToNumber(r.amount);
-    if (Number.isFinite(p) && p < min) min = p;
+  for (const b of s.blocks) {
+    for (const row of b.displayRows) {
+      for (const r of row) {
+        const p = priceToNumber(r.amount);
+        if (Number.isFinite(p) && p < min) min = p;
+      }
+    }
   }
   return Number.isFinite(min) ? min : Number.NaN;
 }
@@ -388,12 +545,13 @@ function SortToggle(props: {
 
 export function SeatListingsPanel(props: {
   listings: SeatListingDTO[];
+  eventCategories: EventCategoryDTO[];
   truncated: boolean;
   totalCount: number;
   /** When true, panel sits inside the event detail card — tighter horizontal padding, no duplicate page heading. */
   embedInParentCard?: boolean;
 }) {
-  const { listings, truncated, totalCount, embedInParentCard = false } = props;
+  const { listings, eventCategories, truncated, totalCount, embedInParentCard = false } = props;
 
   const mdUp = useMediaQuery("(min-width: 768px)");
   const [mobileMoreFiltersOpen, setMobileMoreFiltersOpen] = useState(false);
@@ -424,17 +582,25 @@ export function SeatListingsPanel(props: {
   const [sortKey, setSortKey] = useState<SortKey>("match");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
+  const catalogueCategoryNames = useMemo(
+    () => indexCatalogueCategoryNames(eventCategories),
+    [eventCategories],
+  );
+
   const categoryOptions = useMemo(() => {
     const m = new Map<string, string>();
     for (const r of listings) {
-      const id = normId(r.seatCategoryId);
+      const id = normCategoryId(r.seatCategoryId);
       if (!id) continue;
-      if (!m.has(id)) m.set(id, r.seatCategoryName.trim() || id);
+      if (!m.has(id)) {
+        const catalogueName = catalogueCategoryNames.get(id)?.displayCategoryName;
+        m.set(id, catalogueName?.trim() || r.seatCategoryName.trim() || id);
+      }
     }
     return Array.from(m.entries())
       .map(([key, label]) => ({ key, label }))
       .sort((a, b) => compareCatalogueId(a.key, b.key));
-  }, [listings]);
+  }, [listings, catalogueCategoryNames]);
 
   const areaOptions = useMemo(() => {
     const m = new Map<string, string>();
@@ -464,7 +630,7 @@ export function SeatListingsPanel(props: {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return listings.filter((r) => {
-      if (categoryFilter && normId(r.seatCategoryId) !== categoryFilter) return false;
+      if (categoryFilter && normCategoryId(r.seatCategoryId) !== categoryFilter) return false;
       if (areaFilter && normId(r.areaId) !== areaFilter) return false;
       if (contingentFilter && normId(r.contingentId) !== contingentFilter) return false;
       if (!q) return true;
@@ -484,33 +650,17 @@ export function SeatListingsPanel(props: {
     });
   }, [listings, search, categoryFilter, areaFilter, contingentFilter]);
 
-  // Filter → per-category row sort → merge consecutive seats (see group-consecutive-seats.ts) →
-  // re-sort display rows to preserve active ordering (price uses min listing price per merged row).
-  const groups = useMemo(() => {
-    const g = groupByCategory(filtered);
-    for (const block of g) {
-      sortRows(block.rows, sortKey, sortDir);
-      const displayRows = groupConsecutiveSeatListings(block.rows);
-      sortDisplayRows(displayRows, sortKey, sortDir);
-      block.displayRows = displayRows;
-    }
-    if (sortKey === "price") {
-      g.sort((a, b) => {
-        const ma = minPriceInGroup(a);
-        const mb = minPriceInGroup(b);
-        const aOk = Number.isFinite(ma);
-        const bOk = Number.isFinite(mb);
-        if (!aOk && !bOk) return compareCatalogueId(a.seatCategoryId, b.seatCategoryId);
-        if (!aOk) return sortDir === "asc" ? 1 : -1;
-        if (!bOk) return sortDir === "asc" ? -1 : 1;
-        if (ma !== mb) return sortDir === "asc" ? (ma < mb ? -1 : 1) : ma < mb ? 1 : -1;
-        return compareCatalogueId(a.seatCategoryId, b.seatCategoryId);
-      });
-    }
-    return g;
-  }, [filtered, sortKey, sortDir]);
+  // Filter → resolve catalogue category + block → per-block sort → merge consecutive seats (block+row) →
+  // re-sort display rows; category order follows match (category key) or min price when sorting by price.
+  const sections = useMemo(
+    () => groupListingsByCatalogueCategoryAndBlock(filtered, eventCategories, sortKey, sortDir),
+    [filtered, eventCategories, sortKey, sortDir],
+  );
 
-  const rowCount = groups.reduce((n, g) => n + g.displayRows.length, 0);
+  const rowCount = sections.reduce(
+    (n, s) => n + s.blocks.reduce((nb, b) => nb + b.displayRows.length, 0),
+    0,
+  );
 
   const showAreaPills = areaOptions.length > 1;
   const showContingentPills = contingentOptions.length > 1;
@@ -650,11 +800,21 @@ export function SeatListingsPanel(props: {
 
               <p className="text-[11px] leading-snug text-zinc-500">
                 <span className="tabular-nums text-zinc-400">{rowCount.toLocaleString("en-US")}</span>
-                <span> matching </span>
+                <span> rows (merged) from </span>
                 <span className="tabular-nums text-zinc-400">
-                  {listings.length.toLocaleString("en-US")}
+                  {filtered.length.toLocaleString("en-US")}
                 </span>
-                <span> loaded{truncated ? " (partial DB load — see below)" : ""}.</span>
+                <span> listings shown · </span>
+                <span className="tabular-nums text-zinc-400">{listings.length.toLocaleString("en-US")}</span>
+                <span> loaded</span>
+                {truncated && totalCount > listings.length ? (
+                  <span>
+                    {" "}
+                    (DB total{" "}
+                    <span className="tabular-nums text-zinc-400">{totalCount.toLocaleString("en-US")}</span>)
+                  </span>
+                ) : null}
+                <span>.</span>
               </p>
             </div>
 
@@ -670,11 +830,11 @@ export function SeatListingsPanel(props: {
               </div>
             ) : (
               <div className="flex flex-col gap-6">
-                {groups.map((group) => (
-                  <div key={normId(group.seatCategoryId)} className="flex flex-col gap-4">
-                    <SeatCategorySectionHeading
-                      seatCategoryName={group.seatCategoryName}
-                      seatCategoryId={group.seatCategoryId}
+                {sections.map((section) => (
+                  <div key={section.categoryKey} className="flex flex-col gap-4">
+                    <CatalogueCategorySectionHeading
+                      displayCategoryName={section.displayCategoryName}
+                      displayCategoryId={section.displayCategoryId}
                     />
                     <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#080c0b] shadow-[0_16px_48px_-20px_rgba(0,0,0,0.75)] ring-1 ring-white/[0.05]">
                       <div className="overflow-x-auto scroll-pl-4 scroll-pr-4 [-webkit-overflow-scrolling:touch]">
@@ -702,110 +862,142 @@ export function SeatListingsPanel(props: {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-white/[0.05]">
-                            {group.displayRows.map((listings) => {
-                              if (listings.length === 1) {
-                                const listing = listings[0];
-                                const blockPrimary = categoryBlockDisplayName(
-                                  listing.categoryBlockName,
-                                  listing.categoryBlockId,
-                                );
-                                const showBlockId =
-                                  Boolean(normId(listing.categoryBlockId)) &&
-                                  blockPrimary !== normId(listing.categoryBlockId);
-                                const basketAria = `Add to basket: ${blockPrimary}, row ${listing.rowLabel}, seat ${listing.seatNumber}, ${formatUsd(listing.amount)}`;
-                                return (
+                            {section.blocks.map((block, blockIndex) => (
+                              <Fragment
+                                key={`${section.categoryKey}:${normId(block.categoryBlockId)}:${blockIndex}`}
+                              >
+                                {section.blocks.length > 1 ? (
                                   <tr
-                                    key={listing.id}
-                                    className="text-zinc-200 transition-colors hover:bg-emerald-500/[0.06]"
+                                    className={
+                                      blockIndex > 0
+                                        ? "border-t border-white/[0.06] bg-white/[0.03]"
+                                        : "bg-white/[0.03]"
+                                    }
                                   >
-                                    <td className="max-w-[12rem] px-4 py-3 pl-5 align-top sm:max-w-none sm:pl-6">
-                                      <div className="font-medium leading-snug text-zinc-50">
-                                        {blockPrimary}
+                                    <td colSpan={5} className="px-4 py-2.5 pl-5 sm:pl-6">
+                                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                                        Block ·{" "}
+                                        <span className="font-sans normal-case tracking-normal text-zinc-300">
+                                          {categoryBlockDisplayName(block.categoryBlockName, block.categoryBlockId)}
+                                        </span>
+                                        {normId(block.categoryBlockId) &&
+                                        categoryBlockDisplayName(block.categoryBlockName, block.categoryBlockId) !==
+                                          normId(block.categoryBlockId) ? (
+                                          <span className="ml-2 font-mono text-[10px] font-medium normal-case tracking-normal text-zinc-600">
+                                            {block.categoryBlockId}
+                                          </span>
+                                        ) : null}
                                       </div>
-                                      {showBlockId ? (
-                                        <div className="mt-1 font-mono text-[11px] leading-snug text-zinc-500">
-                                          {listing.categoryBlockId}
-                                        </div>
-                                      ) : null}
-                                    </td>
-                                    <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
-                                      {listing.rowLabel}
-                                    </td>
-                                    <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
-                                      {listing.seatNumber}
-                                    </td>
-                                    <td className="whitespace-nowrap px-4 py-3 pr-4 text-right text-sm font-semibold tabular-nums text-emerald-300">
-                                      {formatUsd(listing.amount)}
-                                    </td>
-                                    <td className="px-4 py-3 pr-5 align-middle sm:pr-6">
-                                      <AddToBasketButton
-                                        ariaLabel={basketAria}
-                                        onPlaceholderClick={notifyBasketPlaceholder}
-                                      />
                                     </td>
                                   </tr>
-                                );
-                              }
-                              const first = listings[0];
-                              const blockPrimary = categoryBlockDisplayName(
-                                first.categoryBlockName,
-                                first.categoryBlockId,
-                              );
-                              const showBlockId =
-                                Boolean(normId(first.categoryBlockId)) &&
-                                blockPrimary !== normId(first.categoryBlockId);
-                              const lo = parseSeatIntStrict(first.seatNumber)!;
-                              const hi = parseSeatIntStrict(listings[listings.length - 1].seatNumber)!;
-                              const seatSpan = lo === hi ? String(lo) : `${lo}-${hi}`;
-                              const n = listings.length;
-                              const rowKey = listings.map((l) => l.id).join("-");
-                              const mergedPriceLabel = formatUsdRangeFromAmounts(
-                                listings.map((l) => l.amount),
-                              );
-                              const basketAria = `Add to basket: ${blockPrimary}, row ${first.rowLabel}, seats ${seatSpan} (${n} together), ${mergedPriceLabel}`;
-                              return (
-                                <tr
-                                  key={rowKey}
-                                  className="text-zinc-200 transition-colors hover:bg-emerald-500/[0.06]"
-                                >
-                                  <td className="max-w-[12rem] px-4 py-3 pl-5 align-top sm:max-w-none sm:pl-6">
-                                    <div className="font-medium leading-snug text-zinc-50">
-                                      {blockPrimary}
-                                    </div>
-                                    {showBlockId ? (
-                                      <div className="mt-1 font-mono text-[11px] leading-snug text-zinc-500">
-                                        {first.categoryBlockId}
-                                      </div>
-                                    ) : null}
-                                  </td>
-                                  <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
-                                    {first.rowLabel}
-                                  </td>
-                                  <td className="px-4 py-3 align-middle font-mono text-xs tabular-nums text-zinc-400">
-                                    <div className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
-                                      <span className="whitespace-nowrap">{seatSpan}</span>
-                                      <span className="inline-flex w-fit shrink-0 font-sans">
-                                        <span
-                                          className="rounded-full bg-rose-500/14 px-2 py-0.5 text-[11px] font-semibold tracking-tight text-rose-100 ring-1 ring-rose-400/35"
-                                          title={`${n} consecutive seats sold together`}
-                                        >
-                                          ({n} Together)
-                                        </span>
-                                      </span>
-                                    </div>
-                                  </td>
-                                  <td className="whitespace-nowrap px-4 py-3 pr-4 text-right text-sm font-semibold tabular-nums text-emerald-300">
-                                    {formatUsdRangeFromAmounts(listings.map((l) => l.amount))}
-                                  </td>
-                                  <td className="px-4 py-3 pr-5 align-middle sm:pr-6">
-                                    <AddToBasketButton
-                                      ariaLabel={basketAria}
-                                      onPlaceholderClick={notifyBasketPlaceholder}
-                                    />
-                                  </td>
-                                </tr>
-                              );
-                            })}
+                                ) : null}
+                                {block.displayRows.map((listings) => {
+                                  if (listings.length === 1) {
+                                    const listing = listings[0];
+                                    const blockPrimary = categoryBlockDisplayName(
+                                      listing.categoryBlockName,
+                                      listing.categoryBlockId,
+                                    );
+                                    const showBlockId =
+                                      Boolean(normId(listing.categoryBlockId)) &&
+                                      blockPrimary !== normId(listing.categoryBlockId);
+                                    const basketAria = `Add to basket: ${blockPrimary}, row ${listing.rowLabel}, seat ${listing.seatNumber}, ${formatUsd(listing.amount)}`;
+                                    return (
+                                      <tr
+                                        key={listing.id}
+                                        className="text-zinc-200 transition-colors hover:bg-emerald-500/[0.06]"
+                                      >
+                                        <td className="max-w-[12rem] px-4 py-3 pl-5 align-top sm:max-w-none sm:pl-6">
+                                          <div className="font-medium leading-snug text-zinc-50">
+                                            {blockPrimary}
+                                          </div>
+                                          {showBlockId ? (
+                                            <div className="mt-1 font-mono text-[11px] leading-snug text-zinc-500">
+                                              {listing.categoryBlockId}
+                                            </div>
+                                          ) : null}
+                                        </td>
+                                        <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
+                                          {listing.rowLabel}
+                                        </td>
+                                        <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
+                                          {listing.seatNumber}
+                                        </td>
+                                        <td className="whitespace-nowrap px-4 py-3 pr-4 text-right text-sm font-semibold tabular-nums text-emerald-300">
+                                          {formatUsd(listing.amount)}
+                                        </td>
+                                        <td className="px-4 py-3 pr-5 align-middle sm:pr-6">
+                                          <AddToBasketButton
+                                            ariaLabel={basketAria}
+                                            onPlaceholderClick={notifyBasketPlaceholder}
+                                          />
+                                        </td>
+                                      </tr>
+                                    );
+                                  }
+                                  const first = listings[0];
+                                  const blockPrimary = categoryBlockDisplayName(
+                                    first.categoryBlockName,
+                                    first.categoryBlockId,
+                                  );
+                                  const showBlockId =
+                                    Boolean(normId(first.categoryBlockId)) &&
+                                    blockPrimary !== normId(first.categoryBlockId);
+                                  const lo = parseSeatIntStrict(first.seatNumber)!;
+                                  const hi =
+                                    parseSeatIntStrict(listings[listings.length - 1].seatNumber)!;
+                                  const seatSpan = lo === hi ? String(lo) : `${lo}-${hi}`;
+                                  const n = listings.length;
+                                  const rowKey = listings.map((l) => l.id).join("-");
+                                  const mergedPriceLabel = formatUsdRangeFromAmounts(
+                                    listings.map((l) => l.amount),
+                                  );
+                                  const basketAria = `Add to basket: ${blockPrimary}, row ${first.rowLabel}, seats ${seatSpan} (${n} together), ${mergedPriceLabel}`;
+                                  return (
+                                    <tr
+                                      key={rowKey}
+                                      className="text-zinc-200 transition-colors hover:bg-emerald-500/[0.06]"
+                                    >
+                                      <td className="max-w-[12rem] px-4 py-3 pl-5 align-top sm:max-w-none sm:pl-6">
+                                        <div className="font-medium leading-snug text-zinc-50">
+                                          {blockPrimary}
+                                        </div>
+                                        {showBlockId ? (
+                                          <div className="mt-1 font-mono text-[11px] leading-snug text-zinc-500">
+                                            {first.categoryBlockId}
+                                          </div>
+                                        ) : null}
+                                      </td>
+                                      <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
+                                        {first.rowLabel}
+                                      </td>
+                                      <td className="px-4 py-3 align-middle font-mono text-xs tabular-nums text-zinc-400">
+                                        <div className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+                                          <span className="whitespace-nowrap">{seatSpan}</span>
+                                          <span className="inline-flex w-fit shrink-0 font-sans">
+                                            <span
+                                              className="rounded-full bg-rose-500/14 px-2 py-0.5 text-[11px] font-semibold tracking-tight text-rose-100 ring-1 ring-rose-400/35"
+                                              title={`${n} consecutive seats sold together`}
+                                            >
+                                              ({n} Together)
+                                            </span>
+                                          </span>
+                                        </div>
+                                      </td>
+                                      <td className="whitespace-nowrap px-4 py-3 pr-4 text-right text-sm font-semibold tabular-nums text-emerald-300">
+                                        {formatUsdRangeFromAmounts(listings.map((l) => l.amount))}
+                                      </td>
+                                      <td className="px-4 py-3 pr-5 align-middle sm:pr-6">
+                                        <AddToBasketButton
+                                          ariaLabel={basketAria}
+                                          onPlaceholderClick={notifyBasketPlaceholder}
+                                        />
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </Fragment>
+                            ))}
                           </tbody>
                         </table>
                       </div>
@@ -819,16 +1011,6 @@ export function SeatListingsPanel(props: {
               </div>
             )}
 
-            {truncated && rowCount > 0 ? (
-              <div className="rounded-lg border border-amber-500/25 bg-amber-500/[0.08] px-4 py-3 text-sm text-amber-100/95 ring-1 ring-amber-400/20">
-                <p className="font-semibold text-amber-50">Partial load</p>
-                <p className="mt-1 text-amber-100/85">
-                  Only the first {SEAT_LISTINGS_DISPLAY_LIMIT.toLocaleString("en-US")} of{" "}
-                  <span className="tabular-nums font-medium">{totalCount.toLocaleString("en-US")}</span>{" "}
-                  database listings are loaded. Filters apply to this slice only.
-                </p>
-              </div>
-            ) : null}
           </>
         )}
       </div>

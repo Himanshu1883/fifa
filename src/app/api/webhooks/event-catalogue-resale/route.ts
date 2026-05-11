@@ -4,7 +4,10 @@ import {
   CataloguePayloadError,
   parseCatalogueWebhookBody,
 } from "@/lib/price-range-catalogue";
-import { syncEventCategoriesFromCatalogue } from "@/lib/sync-event-catalogue";
+import {
+  syncEventCategoriesFromCatalogue,
+  upsertEventCategoryBlockAvailabilityFromCatalogue,
+} from "@/lib/sync-event-catalogue";
 
 /** Prisma Client uses the `pg` driver; use Node runtime (not Edge). */
 export const runtime = "nodejs";
@@ -24,12 +27,17 @@ export async function POST(req: NextRequest) {
   const prefQs =
     req.nextUrl.searchParams.get("resalePrefId") ?? req.nextUrl.searchParams.get("prefId");
   try {
-    const { prefId, rows } = parseCatalogueWebhookBody(raw, prefQs);
+    const { prefId, rows, availabilityRows } = parseCatalogueWebhookBody(raw, prefQs);
 
     const result = await prisma.$transaction(async (tx) => {
       const synced = await syncEventCategoriesFromCatalogue(tx, prefId, rows, "resale-only");
       if (!synced) return { missingEvent: true as const };
-      return { missingEvent: false as const, eventId: synced.eventId };
+      const availability = await upsertEventCategoryBlockAvailabilityFromCatalogue(
+        tx,
+        synced.eventId,
+        availabilityRows,
+      );
+      return { missingEvent: false as const, ...synced, ...availability };
     });
 
     if (result.missingEvent) {
@@ -49,6 +57,11 @@ export async function POST(req: NextRequest) {
       resalePrefId: prefId,
       eventId: result.eventId,
       rowCount: rows.length,
+      uniqueRowCount: result.uniqueRowCount,
+      insertedCount: result.insertedCount,
+      skippedExistingCount: result.skippedExistingCount,
+      availabilityUniqueRowCount: result.availabilityUniqueRowCount,
+      availabilityUpsertedCount: result.availabilityUpsertedCount,
       categoryCount: uniqueCategoryIds.size,
     });
   } catch (err) {

@@ -4,12 +4,15 @@ import {
   CataloguePayloadError,
   parseCatalogueWebhookBody,
 } from "@/lib/price-range-catalogue";
-import { syncEventCategoriesFromCatalogue } from "@/lib/sync-event-catalogue";
+import {
+  syncEventCategoriesFromCatalogue,
+  upsertEventCategoryBlockAvailabilityFromCatalogue,
+} from "@/lib/sync-event-catalogue";
 
 /** Prisma Client uses the `pg` driver; use Node runtime (not Edge). */
 export const runtime = "nodejs";
 
-/** POST `{ prefId?, priceRangeCategories? | categories?: [...] }`, or raw `[...]` + `?prefId=`. Replaces EventCategory rows after sorting. No auth. */
+/** POST `{ prefId?, priceRangeCategories? | categories?: [...] }`, or raw `[...]` + `?prefId=`. Snapshot replace: replaces category×block rows + availability for the event. No auth. */
 export async function POST(req: NextRequest) {
   let raw: unknown;
   try {
@@ -20,12 +23,29 @@ export async function POST(req: NextRequest) {
 
   const prefQs = req.nextUrl.searchParams.get("prefId");
   try {
-    const { prefId, rows } = parseCatalogueWebhookBody(raw, prefQs);
+    const { prefId, rows, availabilityRows } = parseCatalogueWebhookBody(raw, prefQs);
 
     const result = await prisma.$transaction(async (tx) => {
-      const synced = await syncEventCategoriesFromCatalogue(tx, prefId, rows, "pref-or-resale");
+      const synced = await syncEventCategoriesFromCatalogue(tx, prefId, rows, "pref-or-resale", {
+        mode: "replace",
+      });
       if (!synced) return { missingEvent: true as const };
-      return { missingEvent: false as const, eventId: synced.eventId };
+
+      const deletedAvailability = await tx.eventCategoryBlockAvailability.deleteMany({
+        where: { eventId: synced.eventId },
+      });
+
+      const availability = await upsertEventCategoryBlockAvailabilityFromCatalogue(
+        tx,
+        synced.eventId,
+        availabilityRows,
+      );
+      return {
+        missingEvent: false as const,
+        ...synced,
+        deletedAvailabilityCount: deletedAvailability.count,
+        ...availability,
+      };
     });
 
     if (result.missingEvent) {
@@ -42,9 +62,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       lookup: "pref-or-resale",
+      syncMode: "replace",
       prefId,
       eventId: result.eventId,
       rowCount: rows.length,
+      uniqueRowCount: result.uniqueRowCount,
+      deletedCategoryCount: result.deletedCategoryCount ?? 0,
+      insertedCount: result.insertedCount,
+      skippedExistingCount: result.skippedExistingCount,
+      deletedAvailabilityCount: result.deletedAvailabilityCount,
+      availabilityUniqueRowCount: result.availabilityUniqueRowCount,
+      availabilityUpsertedCount: result.availabilityUpsertedCount,
       categoryCount: uniqueCategoryIds.size,
     });
   } catch (err) {
@@ -62,14 +90,14 @@ export async function GET(req: NextRequest) {
     method: "POST",
     fullUrl,
     notes:
-      "No token or Authorization header — anyone who can reach this URL can replace category data for an event prefId.",
+      "No token or Authorization header — anyone who can reach this URL can replace an event's category×block snapshot by prefId. Missing blocks/categories in the payload are deleted.",
     body: {
       prefId: "catalogue pref (or omit and use query ?prefId=)",
       priceRangeCategories:
         'array — same shape as ticketing API exports (alias: "categories" on the wrapper object)',
     },
     usage:
-      'Body `prefId` is the catalogue/ticketing pref. Rows replace categories on the event whose `prefId` matches, or whose `resalePrefId` matches (e.g. Mexico vs South Africa + resale snapshot 10229225516056).',
+      'Body `prefId` is the catalogue/ticketing pref. Rows are replaced for the event whose `prefId` matches, or whose `resalePrefId` matches (e.g. Mexico vs South Africa + resale snapshot 10229225516056). The payload is treated as a full snapshot (old category×block + availability rows are removed).',
     resaleOnlyWebhook: new URL(
       "/api/webhooks/event-catalogue-resale",
       req.nextUrl.origin,
