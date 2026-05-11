@@ -6,6 +6,9 @@ import { formatUsd, priceToNumber } from "@/lib/format-usd";
 const searchInpClass =
   "min-h-10 w-full rounded-lg border border-white/[0.09] bg-[#0c1010] px-2.5 py-1.5 text-sm text-zinc-100 shadow-inner shadow-black/35 placeholder:text-zinc-500 transition-[border-color,box-shadow] focus:border-emerald-400/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]";
 
+const controlClass =
+  "min-h-10 w-full rounded-lg border border-white/[0.09] bg-[#0c1010] px-2.5 py-1.5 text-sm text-zinc-100 shadow-inner shadow-black/35 placeholder:text-zinc-500 transition-[border-color,box-shadow] focus:border-emerald-400/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]";
+
 export type SockAvailableDTO = {
   id: number;
   amount: string | null;
@@ -39,6 +42,13 @@ function formatSockUsd(amount: string | null): string {
   return formatUsd(String(cents));
 }
 
+function amountRawToUsdNumber(amount: string | null): number {
+  if (!amount) return Number.NaN;
+  const n = priceToNumber(amount);
+  if (!Number.isFinite(n)) return Number.NaN;
+  return n / 1000;
+}
+
 function formatTsCompact(ts: string): string {
   // "2026-05-11T18:22:33.123Z" -> "2026-05-11 18:22:33"
   if (!ts) return "—";
@@ -60,10 +70,37 @@ function InfoIcon() {
   );
 }
 
+type SortKey =
+  | "created_desc"
+  | "created_asc"
+  | "updated_desc"
+  | "updated_asc"
+  | "amount_desc"
+  | "amount_asc"
+  | "area_asc"
+  | "category_asc"
+  | "block_asc"
+  | "row_asc"
+  | "seat_asc";
+
 export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInParentCard?: boolean }) {
   const { rows, embedInParentCard = false } = props;
   const [search, setSearch] = useState("");
   const [openRow, setOpenRow] = useState<SockAvailableDTO | null>(null);
+
+  const [area, setArea] = useState<string>("");
+  const [category, setCategory] = useState<string>("");
+  const [block, setBlock] = useState<string>("");
+  const [row, setRow] = useState<string>("");
+  const [seat, setSeat] = useState<string>("");
+  const [contingent, setContingent] = useState<string>("");
+  const [movement, setMovement] = useState<string>("");
+  const [minUsd, setMinUsd] = useState<string>("");
+  const [maxUsd, setMaxUsd] = useState<string>("");
+  const [createdFrom, setCreatedFrom] = useState<string>("");
+  const [createdTo, setCreatedTo] = useState<string>("");
+  const [sortKey, setSortKey] = useState<SortKey>("created_desc");
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
 
   useEffect(() => {
     if (!openRow) return;
@@ -74,10 +111,72 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [openRow]);
 
+  const areaOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      const v = norm(r.areaName);
+      if (v) set.add(v);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
+  const categoryOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      const v = norm(r.categoryName);
+      if (v) set.add(v);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
+  const blockOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      const v = norm(r.blockName);
+      if (v) set.add(v);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) => {
+    const areaQ = norm(area).toLowerCase();
+    const categoryQ = norm(category).toLowerCase();
+    const blockQ = norm(block).toLowerCase();
+    const rowQ = norm(row).toLowerCase();
+    const seatQ = norm(seat).toLowerCase();
+    const contingentQ = norm(contingent).toLowerCase();
+    const movementQ = norm(movement).toLowerCase();
+
+    const minN = priceToNumber(minUsd);
+    const maxN = priceToNumber(maxUsd);
+    const hasMin = Number.isFinite(minN);
+    const hasMax = Number.isFinite(maxN);
+
+    const fromMs = createdFrom ? Date.parse(createdFrom) : Number.NaN;
+    const toMs = createdTo ? Date.parse(createdTo) : Number.NaN;
+    const hasFrom = Number.isFinite(fromMs);
+    const hasTo = Number.isFinite(toMs);
+
+    const out = rows.filter((r) => {
+      if (areaQ && norm(r.areaName).toLowerCase() !== areaQ) return false;
+      if (categoryQ && norm(r.categoryName).toLowerCase() !== categoryQ) return false;
+      if (blockQ && norm(r.blockName).toLowerCase() !== blockQ) return false;
+
+      if (rowQ && !norm(r.row).toLowerCase().includes(rowQ)) return false;
+      if (seatQ && !norm(r.seatNumber).toLowerCase().includes(seatQ)) return false;
+      if (contingentQ && !norm(r.contingentId).toLowerCase().includes(contingentQ)) return false;
+      if (movementQ && !norm(r.resaleMovementId).toLowerCase().includes(movementQ)) return false;
+
+      const usd = amountRawToUsdNumber(r.amount);
+      if (hasMin && (!Number.isFinite(usd) || usd < minN)) return false;
+      if (hasMax && (!Number.isFinite(usd) || usd > maxN)) return false;
+
+      const createdMs = Date.parse(r.createdAt);
+      if (hasFrom && (!Number.isFinite(createdMs) || createdMs < fromMs)) return false;
+      if (hasTo && (!Number.isFinite(createdMs) || createdMs > toMs)) return false;
+
+      if (!q) return true;
       const hay = [
         r.amount ?? "",
         r.areaName,
@@ -99,7 +198,53 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [rows, search]);
+
+    const sorted = [...out].sort((a, b) => {
+      switch (sortKey) {
+        case "created_desc":
+          return Date.parse(b.createdAt) - Date.parse(a.createdAt);
+        case "created_asc":
+          return Date.parse(a.createdAt) - Date.parse(b.createdAt);
+        case "updated_desc":
+          return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
+        case "updated_asc":
+          return Date.parse(a.updatedAt) - Date.parse(b.updatedAt);
+        case "amount_desc":
+          return amountRawToUsdNumber(b.amount) - amountRawToUsdNumber(a.amount);
+        case "amount_asc":
+          return amountRawToUsdNumber(a.amount) - amountRawToUsdNumber(b.amount);
+        case "area_asc":
+          return norm(a.areaName).localeCompare(norm(b.areaName));
+        case "category_asc":
+          return norm(a.categoryName).localeCompare(norm(b.categoryName));
+        case "block_asc":
+          return norm(a.blockName).localeCompare(norm(b.blockName));
+        case "row_asc":
+          return norm(a.row).localeCompare(norm(b.row), undefined, { numeric: true, sensitivity: "base" });
+        case "seat_asc":
+          return norm(a.seatNumber).localeCompare(norm(b.seatNumber), undefined, { numeric: true, sensitivity: "base" });
+        default:
+          return 0;
+      }
+    });
+
+    return sorted;
+  }, [
+    area,
+    block,
+    category,
+    contingent,
+    createdFrom,
+    createdTo,
+    maxUsd,
+    minUsd,
+    movement,
+    row,
+    rows,
+    search,
+    seat,
+    sortKey,
+  ]);
 
   const sectionPad = embedInParentCard ? "px-4 sm:px-7" : "";
 
@@ -135,24 +280,215 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
         </div>
       ) : (
         <>
-          <div className="flex flex-col gap-2.5 rounded-xl border border-white/[0.07] bg-zinc-900/25 p-3.5 ring-1 ring-white/[0.04] backdrop-blur-sm sm:p-4">
-            <div className="flex min-w-0 flex-col gap-1">
-              <label
-                htmlFor="sock-available-search"
-                className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500"
-              >
-                Search rows
-              </label>
-              <input
-                id="sock-available-search"
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Seat, row, category, movement, area…"
-                className={searchInpClass}
-                autoComplete="off"
-                enterKeyHint="search"
-              />
+          <div className="flex flex-col gap-3 rounded-xl border border-white/[0.07] bg-zinc-900/25 p-3.5 ring-1 ring-white/[0.04] backdrop-blur-sm sm:p-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="flex min-w-0 flex-col gap-1">
+                <label
+                  htmlFor="sock-available-search"
+                  className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500"
+                >
+                  Search
+                </label>
+                <input
+                  id="sock-available-search"
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Any field…"
+                  className={searchInpClass}
+                  autoComplete="off"
+                  enterKeyHint="search"
+                />
+              </div>
+
+              <div className="flex min-w-0 flex-col gap-1">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  Area
+                </label>
+                <select value={area} onChange={(e) => setArea(e.target.value)} className={controlClass}>
+                  <option value="">All</option>
+                  {areaOptions.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex min-w-0 flex-col gap-1">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  Category
+                </label>
+                <select value={category} onChange={(e) => setCategory(e.target.value)} className={controlClass}>
+                  <option value="">All</option>
+                  {categoryOptions.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex min-w-0 flex-col gap-1">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  Block
+                </label>
+                <select value={block} onChange={(e) => setBlock(e.target.value)} className={controlClass}>
+                  <option value="">All</option>
+                  {blockOptions.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="flex min-w-0 flex-col gap-1">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  Row contains
+                </label>
+                <input value={row} onChange={(e) => setRow(e.target.value)} className={controlClass} placeholder="e.g. Q" />
+              </div>
+              <div className="flex min-w-0 flex-col gap-1">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  Seat contains
+                </label>
+                <input
+                  value={seat}
+                  onChange={(e) => setSeat(e.target.value)}
+                  className={controlClass}
+                  placeholder="e.g. 24"
+                />
+              </div>
+              <div className="flex min-w-0 flex-col gap-1">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  Amount USD min
+                </label>
+                <input
+                  inputMode="decimal"
+                  value={minUsd}
+                  onChange={(e) => setMinUsd(e.target.value)}
+                  className={controlClass}
+                  placeholder="e.g. 100"
+                />
+              </div>
+              <div className="flex min-w-0 flex-col gap-1">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  Amount USD max
+                </label>
+                <input
+                  inputMode="decimal"
+                  value={maxUsd}
+                  onChange={(e) => setMaxUsd(e.target.value)}
+                  className={controlClass}
+                  placeholder="e.g. 500"
+                />
+              </div>
+            </div>
+
+            {showMoreFilters ? (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="flex min-w-0 flex-col gap-1">
+                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    Contingent contains
+                  </label>
+                  <input
+                    value={contingent}
+                    onChange={(e) => setContingent(e.target.value)}
+                    className={controlClass}
+                    placeholder="e.g. 1140…"
+                  />
+                </div>
+                <div className="flex min-w-0 flex-col gap-1">
+                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    Movement contains
+                  </label>
+                  <input
+                    value={movement}
+                    onChange={(e) => setMovement(e.target.value)}
+                    className={controlClass}
+                    placeholder="e.g. 10229…"
+                  />
+                </div>
+                <div className="flex min-w-0 flex-col gap-1">
+                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    Created from
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={createdFrom}
+                    onChange={(e) => setCreatedFrom(e.target.value)}
+                    className={controlClass}
+                  />
+                </div>
+                <div className="flex min-w-0 flex-col gap-1">
+                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    Created to
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={createdTo}
+                    onChange={(e) => setCreatedTo(e.target.value)}
+                    className={controlClass}
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-xs font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
+                  onClick={() => setShowMoreFilters((v) => !v)}
+                >
+                  {showMoreFilters ? "Hide more filters" : "More filters"}
+                </button>
+
+                <button
+                  type="button"
+                  className="rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-xs font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
+                  onClick={() => {
+                    setSearch("");
+                    setArea("");
+                    setCategory("");
+                    setBlock("");
+                    setRow("");
+                    setSeat("");
+                    setContingent("");
+                    setMovement("");
+                    setMinUsd("");
+                    setMaxUsd("");
+                    setCreatedFrom("");
+                    setCreatedTo("");
+                    setSortKey("created_desc");
+                    setShowMoreFilters(false);
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  Sort
+                </label>
+                <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)} className={controlClass}>
+                  <option value="created_desc">Created (newest)</option>
+                  <option value="created_asc">Created (oldest)</option>
+                  <option value="updated_desc">Updated (newest)</option>
+                  <option value="updated_asc">Updated (oldest)</option>
+                  <option value="amount_asc">Amount (low to high)</option>
+                  <option value="amount_desc">Amount (high to low)</option>
+                  <option value="area_asc">Area (A→Z)</option>
+                  <option value="category_asc">Category (A→Z)</option>
+                  <option value="block_asc">Block (A→Z)</option>
+                  <option value="row_asc">Row (A→Z)</option>
+                  <option value="seat_asc">Seat (low to high)</option>
+                </select>
+              </div>
             </div>
           </div>
 
