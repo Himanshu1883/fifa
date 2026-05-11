@@ -129,9 +129,6 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                 <table className="w-full min-w-[110rem] border-collapse text-sm">
                   <thead>
                     <tr className="sticky top-0 z-10 border-b border-white/[0.08] bg-[#0f1513]/95 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 backdrop-blur-md">
-                      <th scope="col" className="px-4 py-3 pl-5 font-medium text-zinc-400 sm:pl-6">
-                        Amount
-                      </th>
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
                         Area
                       </th>
@@ -146,6 +143,9 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                       </th>
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
                         Seat #
+                      </th>
+                      <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
+                        Amount
                       </th>
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
                         Seat ID
@@ -176,9 +176,6 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                   <tbody className="divide-y divide-white/[0.05]">
                     {filtered.map((r) => (
                       <tr key={r.id} className="text-zinc-200 transition-colors hover:bg-emerald-500/[0.06]">
-                        <td className="whitespace-nowrap px-4 py-3 pl-5 font-mono text-xs tabular-nums text-emerald-300 sm:pl-6">
-                          {r.amount ?? "—"}
-                        </td>
                         <td className="px-4 py-3 text-sm font-medium text-zinc-50">{r.areaName}</td>
                         <td className="px-4 py-3 text-sm font-medium text-zinc-50">{r.blockName}</td>
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
@@ -189,6 +186,9 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
                           {r.seatNumber}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-emerald-300">
+                          {r.amount ?? "—"}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500">
                           {r.seatId}
