@@ -146,6 +146,11 @@ function cellText(value: string | null | undefined): string {
   return t ? t : "—";
 }
 
+function cellUsdFromCentsString(value: string | null | undefined): string {
+  const t = value?.trim();
+  return t ? formatUsd(t) : "—";
+}
+
 function sockAmountRawToCentsString(value: string | null): string | null {
   if (!value) return null;
   const n = priceToNumber(value);
@@ -154,6 +159,16 @@ function sockAmountRawToCentsString(value: string | null): string | null {
   // formatUsd expects cents, so dollars = n/1000 => cents = n/10.
   const cents = n / 10;
   return Number.isFinite(cents) ? String(cents) : null;
+}
+
+function catNumberFromSockCategoryName(name: string): 1 | 2 | 3 | 4 | null {
+  const s = String(name ?? "").trim().toLowerCase();
+  if (!s) return null;
+  const m = s.match(/(\d+)/);
+  if (!m) return null;
+  const n = Number.parseInt(m[1] ?? "", 10);
+  if (n === 1 || n === 2 || n === 3 || n === 4) return n;
+  return null;
 }
 
 function firstQs(v: string | string[] | undefined): string | undefined {
@@ -279,20 +294,21 @@ export default async function Home({ searchParams }: Props) {
     ]);
 
     const eventIds = rows.map((r) => r.id);
-    const [sockAgg, seatNowRows, buyingCriteriaRows] = await Promise.all([
+    const [sockAgg, sockAggByCategory, seatNowRows] = await Promise.all([
       prisma.sockAvailable.groupBy({
         by: ["eventId"],
         where: { eventId: { in: eventIds } },
         _count: { _all: true },
         _min: { amount: true },
       }),
+      prisma.sockAvailable.groupBy({
+        by: ["eventId", "categoryName"],
+        where: { eventId: { in: eventIds } },
+        _min: { amount: true },
+      }),
       prisma.eventBlockSeatNow.findMany({
         where: { eventId: { in: eventIds } },
         select: { eventId: true, categoryId: true, blockId: true, availabilityResale: true },
-      }),
-      prisma.eventBuyingCriteria.findMany({
-        where: { eventId: { in: eventIds } },
-        select: { eventId: true, cat1: true, cat2: true, cat3: true, cat4: true },
       }),
     ]);
 
@@ -310,32 +326,37 @@ export default async function Home({ searchParams }: Props) {
       });
     }
 
-    const criteriaByEvent = new Map<
-      number,
-      { cat1: string | null; cat2: string | null; cat3: string | null; cat4: string | null }
-    >();
-    for (const r of buyingCriteriaRows) {
-      criteriaByEvent.set(r.eventId, {
-        cat1: r.cat1,
-        cat2: r.cat2,
-        cat3: r.cat3,
-        cat4: r.cat4,
-      });
+    const catMinByEvent = new Map<number, { cat1: string | null; cat2: string | null; cat3: string | null; cat4: string | null }>();
+    for (const g of sockAggByCategory) {
+      const catNum = catNumberFromSockCategoryName(g.categoryName);
+      if (!catNum) continue;
+      const cents = g._min.amount != null ? sockAmountRawToCentsString(g._min.amount.toString()) : null;
+      const prev = catMinByEvent.get(g.eventId) ?? { cat1: null, cat2: null, cat3: null, cat4: null };
+      const key = catNum === 1 ? "cat1" : catNum === 2 ? "cat2" : catNum === 3 ? "cat3" : "cat4";
+      const prevVal = prev[key];
+      if (!prevVal) {
+        prev[key] = cents;
+      } else if (cents) {
+        const a = priceToNumber(prevVal);
+        const b = priceToNumber(cents);
+        if (Number.isFinite(a) && Number.isFinite(b) && b < a) prev[key] = cents;
+      }
+      catMinByEvent.set(g.eventId, prev);
     }
 
     eventsAll = rows.map((e) => {
       const agg = byEvent.get(e.id);
       const catBlk = categoryBlockByEvent.get(e.id);
-      const criteria = criteriaByEvent.get(e.id);
+      const cats = catMinByEvent.get(e.id);
       return {
         ...e,
         matchNum: parseEventMatchNumber(e.matchLabel, e.name),
         ticketsCount: agg?.ticketsCount ?? 0,
         lowestPriceCents: agg?.lowestPriceCents ?? null,
-        cat1: criteria?.cat1 ?? null,
-        cat2: criteria?.cat2 ?? null,
-        cat3: criteria?.cat3 ?? null,
-        cat4: criteria?.cat4 ?? null,
+        cat1: cats?.cat1 ?? null,
+        cat2: cats?.cat2 ?? null,
+        cat3: cats?.cat3 ?? null,
+        cat4: cats?.cat4 ?? null,
         categoryCount: catBlk?.categoryCount ?? 0,
         blockCount: catBlk?.blockCount ?? 0,
         categoryBlockHierarchy: catBlk?.hierarchy ?? [],
@@ -605,25 +626,25 @@ export default async function Home({ searchParams }: Props) {
                                 <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                                   Cat1
                                 </dt>
-                                <dd className="mt-0.5 font-medium text-zinc-200">{cellText(event.cat1)}</dd>
+                                <dd className="mt-0.5 font-medium text-zinc-200">{cellUsdFromCentsString(event.cat1)}</dd>
                               </div>
                               <div>
                                 <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                                   Cat2
                                 </dt>
-                                <dd className="mt-0.5 font-medium text-zinc-200">{cellText(event.cat2)}</dd>
+                                <dd className="mt-0.5 font-medium text-zinc-200">{cellUsdFromCentsString(event.cat2)}</dd>
                               </div>
                               <div>
                                 <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                                   Cat3
                                 </dt>
-                                <dd className="mt-0.5 font-medium text-zinc-200">{cellText(event.cat3)}</dd>
+                                <dd className="mt-0.5 font-medium text-zinc-200">{cellUsdFromCentsString(event.cat3)}</dd>
                               </div>
                               <div className="col-span-2 sm:col-span-1">
                                 <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                                   Cat4
                                 </dt>
-                                <dd className="mt-0.5 font-medium text-zinc-200">{cellText(event.cat4)}</dd>
+                                <dd className="mt-0.5 font-medium text-zinc-200">{cellUsdFromCentsString(event.cat4)}</dd>
                               </div>
                             </dl>
 
@@ -753,16 +774,16 @@ export default async function Home({ searchParams }: Props) {
                                   {cellText(event.country)}
                                 </td>
                                 <td className="max-w-[12rem] px-3 py-3 align-middle text-zinc-300 sm:px-4">
-                                  {cellText(event.cat1)}
+                                  {cellUsdFromCentsString(event.cat1)}
                                 </td>
                                 <td className="max-w-[12rem] px-3 py-3 align-middle text-zinc-300 sm:px-4">
-                                  {cellText(event.cat2)}
+                                  {cellUsdFromCentsString(event.cat2)}
                                 </td>
                                 <td className="max-w-[12rem] px-3 py-3 align-middle text-zinc-300 sm:px-4">
-                                  {cellText(event.cat3)}
+                                  {cellUsdFromCentsString(event.cat3)}
                                 </td>
                                 <td className="max-w-[12rem] px-3 py-3 align-middle text-zinc-300 sm:px-4">
-                                  {cellText(event.cat4)}
+                                  {cellUsdFromCentsString(event.cat4)}
                                 </td>
                                 <HomeEventCategoryBlockCells
                                   eventName={event.name}
