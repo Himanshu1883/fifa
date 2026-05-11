@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { formatUsd, priceToNumber } from "@/lib/format-usd";
 
 const searchInpClass =
   "min-h-10 w-full rounded-lg border border-white/[0.09] bg-[#0c1010] px-2.5 py-1.5 text-sm text-zinc-100 shadow-inner shadow-black/35 placeholder:text-zinc-500 transition-[border-color,box-shadow] focus:border-emerald-400/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]";
@@ -25,6 +26,17 @@ export type SockAvailableDTO = {
 
 function norm(s: string): string {
   return String(s ?? "").trim();
+}
+
+function formatSockUsd(amount: string | null): string {
+  if (!amount) return "—";
+  const n = priceToNumber(amount);
+  if (!Number.isFinite(n)) return "—";
+
+  // User data uses "amount" in units that should be displayed as USD via /1000.
+  // formatUsd expects minor units (cents), so convert: dollars = n/1000 => cents = n/10.
+  const cents = n / 10;
+  return formatUsd(String(cents));
 }
 
 export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInParentCard?: boolean }) {
@@ -188,7 +200,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                           {r.seatNumber}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-emerald-300">
-                          {r.amount ?? "—"}
+                          {formatSockUsd(r.amount)}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500">
                           {r.seatId}
