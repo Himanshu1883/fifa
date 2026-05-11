@@ -682,6 +682,7 @@ export function SeatListingsPanel(props: {
   const { listings, eventCategories, truncated, totalCount, embedInParentCard = false } = props;
 
   const mdUp = useMediaQuery("(min-width: 768px)");
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [mobileMoreFiltersOpen, setMobileMoreFiltersOpen] = useState(false);
   const [includeEmptyCatalogueCategories, setIncludeEmptyCatalogueCategories] = useState(false);
 
@@ -711,6 +712,10 @@ export function SeatListingsPanel(props: {
   const [togetherFilter, setTogetherFilter] = useState<"" | "1" | "2" | "3" | "4" | "5" | "6+">("");
   const [sortKey, setSortKey] = useState<SortKey>("match");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  useEffect(() => {
+    if (mdUp) setMobileFiltersOpen(true);
+  }, [mdUp]);
 
   const catalogueCategoryNames = useMemo(
     () => indexCatalogueCategoryNames(eventCategories),
@@ -871,6 +876,18 @@ export function SeatListingsPanel(props: {
   const showContingentPills = contingentOptions.length > 1;
   const hasSecondaryFilters = showAreaPills || showContingentPills;
   const secondaryFiltersVisible = mdUp || mobileMoreFiltersOpen;
+  const primaryFiltersVisible = mdUp || mobileFiltersOpen;
+
+  const hasAnyFilters = Boolean(
+    search.trim() ||
+      categoryFilter ||
+      areaFilter ||
+      contingentFilter ||
+      togetherFilter ||
+      sortKey !== "match" ||
+      sortDir !== "asc" ||
+      includeEmptyCatalogueCategories,
+  );
 
   const sectionPad = embedInParentCard
     ? "px-4 sm:px-7"
@@ -923,68 +940,99 @@ export function SeatListingsPanel(props: {
                   />
                 </div>
 
-                <div className="min-w-0 md:col-span-4">
-                  <SortToggle
-                    sortKey={sortKey}
-                    sortDir={sortDir}
-                    onSortChange={(k, d) => {
-                      setSortKey(k);
-                      setSortDir(d);
-                    }}
-                  />
-                </div>
+                {!mdUp ? (
+                  <div className="flex min-w-0 flex-col gap-2 md:col-span-7">
+                    <button
+                      type="button"
+                      onClick={() => setMobileFiltersOpen((v) => !v)}
+                      aria-expanded={mobileFiltersOpen}
+                      className={
+                        hasAnyFilters
+                          ? "flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-3 py-2 text-left text-sm font-semibold text-emerald-50 ring-1 ring-emerald-400/20 outline-none transition-colors hover:border-emerald-400/35 hover:bg-emerald-500/15 focus-visible:ring-2 focus-visible:ring-emerald-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
+                          : "flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-white/[0.10] bg-black/30 px-3 py-2 text-left text-sm font-semibold text-zinc-100 ring-1 ring-white/[0.04] outline-none transition-colors hover:border-white/16 hover:bg-black/40 focus-visible:ring-2 focus-visible:ring-emerald-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
+                      }
+                    >
+                      <span>Filters</span>
+                      <span className="tabular-nums text-zinc-400" aria-hidden>
+                        {mobileFiltersOpen ? "▴" : "▾"}
+                      </span>
+                    </button>
 
-                <div className="flex min-w-0 flex-col gap-1 md:col-span-3">
-                  <label
-                    htmlFor="price-category-select"
-                    className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500"
-                  >
-                    Category
-                  </label>
-                  <select
-                    id="price-category-select"
-                    value={categoryFilter ?? ""}
-                    onChange={(e) => setCategoryFilter(e.target.value ? e.target.value : null)}
-                    className={selectClass}
-                    aria-describedby="seat-category-hint"
-                  >
-                    <option value="">All categories</option>
-                    {categoryOptions.map((o) => (
-                      <option key={o.key} value={o.key}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                  <p id="seat-category-hint" className="sr-only">
-                    Narrows the table to one catalogue price category when chosen.
-                  </p>
-                </div>
+                    <p className="text-[11px] leading-snug text-zinc-500">
+                      <span className="tabular-nums text-zinc-300">{rowCount.toLocaleString("en-US")}</span>
+                      <span> rows (merged) · </span>
+                      <span className="tabular-nums text-zinc-400">{filtered.length.toLocaleString("en-US")}</span>
+                      <span> listings</span>
+                    </p>
+                  </div>
+                ) : null}
 
-                <div className="flex min-w-0 flex-col gap-1 md:col-span-3">
-                  <label
-                    htmlFor="together-select"
-                    className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500"
-                  >
-                    Seats together
-                  </label>
-                  <select
-                    id="together-select"
-                    value={togetherFilter}
-                    onChange={(e) => setTogetherFilter((e.target.value as typeof togetherFilter) || "")}
-                    className={selectClass}
-                  >
-                    <option value="">All</option>
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                    <option value="3">3</option>
-                    <option value="4">4</option>
-                    <option value="5">5</option>
-                    <option value="6+">6+</option>
-                  </select>
-                </div>
+                {primaryFiltersVisible ? (
+                  <>
+                    <div className="min-w-0 md:col-span-4">
+                      <SortToggle
+                        sortKey={sortKey}
+                        sortDir={sortDir}
+                        onSortChange={(k, d) => {
+                          setSortKey(k);
+                          setSortDir(d);
+                        }}
+                      />
+                    </div>
+
+                    <div className="flex min-w-0 flex-col gap-1 md:col-span-3">
+                      <label
+                        htmlFor="price-category-select"
+                        className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500"
+                      >
+                        Category
+                      </label>
+                      <select
+                        id="price-category-select"
+                        value={categoryFilter ?? ""}
+                        onChange={(e) => setCategoryFilter(e.target.value ? e.target.value : null)}
+                        className={selectClass}
+                        aria-describedby="seat-category-hint"
+                      >
+                        <option value="">All categories</option>
+                        {categoryOptions.map((o) => (
+                          <option key={o.key} value={o.key}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                      <p id="seat-category-hint" className="sr-only">
+                        Narrows the table to one catalogue price category when chosen.
+                      </p>
+                    </div>
+
+                    <div className="flex min-w-0 flex-col gap-1 md:col-span-3">
+                      <label
+                        htmlFor="together-select"
+                        className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500"
+                      >
+                        Seats together
+                      </label>
+                      <select
+                        id="together-select"
+                        value={togetherFilter}
+                        onChange={(e) => setTogetherFilter((e.target.value as typeof togetherFilter) || "")}
+                        className={selectClass}
+                      >
+                        <option value="">All</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                        <option value="6+">6+</option>
+                      </select>
+                    </div>
+                  </>
+                ) : null}
               </div>
 
-              {catalogueCategories.length > 0 ? (
+              {primaryFiltersVisible && catalogueCategories.length > 0 ? (
                 <label className="mt-0.5 inline-flex items-start gap-2 text-xs text-zinc-300">
                   <input
                     type="checkbox"
@@ -1002,7 +1050,7 @@ export function SeatListingsPanel(props: {
                 </label>
               ) : null}
 
-              {hasSecondaryFilters ? (
+              {primaryFiltersVisible && hasSecondaryFilters ? (
                 <div className="border-t border-white/[0.06] pt-2.5">
                   {!mdUp ? (
                     <button
@@ -1044,24 +1092,47 @@ export function SeatListingsPanel(props: {
                 </div>
               ) : null}
 
-              <p className="text-[11px] leading-snug text-zinc-500">
-                <span className="tabular-nums text-zinc-400">{rowCount.toLocaleString("en-US")}</span>
-                <span> rows (merged) from </span>
-                <span className="tabular-nums text-zinc-400">
-                  {filtered.length.toLocaleString("en-US")}
-                </span>
-                <span> listings shown · </span>
-                <span className="tabular-nums text-zinc-400">{listings.length.toLocaleString("en-US")}</span>
-                <span> loaded</span>
-                {truncated && totalCount > listings.length ? (
-                  <span>
-                    {" "}
-                    (DB total{" "}
-                    <span className="tabular-nums text-zinc-400">{totalCount.toLocaleString("en-US")}</span>)
-                  </span>
-                ) : null}
-                <span>.</span>
-              </p>
+              {mdUp ? (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[11px] leading-snug text-zinc-500">
+                    <span className="tabular-nums text-zinc-400">{rowCount.toLocaleString("en-US")}</span>
+                    <span> rows (merged) from </span>
+                    <span className="tabular-nums text-zinc-400">{filtered.length.toLocaleString("en-US")}</span>
+                    <span> listings shown · </span>
+                    <span className="tabular-nums text-zinc-400">{listings.length.toLocaleString("en-US")}</span>
+                    <span> loaded</span>
+                    {truncated && totalCount > listings.length ? (
+                      <span>
+                        {" "}
+                        (DB total{" "}
+                        <span className="tabular-nums text-zinc-400">{totalCount.toLocaleString("en-US")}</span>)
+                      </span>
+                    ) : null}
+                    <span>.</span>
+                  </p>
+                  {hasAnyFilters ? (
+                    <button
+                      type="button"
+                      className="rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-xs font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
+                      onClick={() => {
+                        setSearch("");
+                        setCategoryFilter(null);
+                        setAreaFilter(null);
+                        setContingentFilter(null);
+                        setTogetherFilter("");
+                        setSortKey("match");
+                        setSortDir("asc");
+                        setIncludeEmptyCatalogueCategories(false);
+                        setMobileMoreFiltersOpen(false);
+                        if (!mdUp) setMobileFiltersOpen(false);
+                      }}
+                      aria-label="Clear all filters"
+                    >
+                      Clear
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
 
             {renderItems.length === 0 || rowCount === 0 ? (

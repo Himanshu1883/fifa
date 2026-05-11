@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { formatUsd, priceToNumber } from "@/lib/format-usd";
 
 const searchInpClass =
@@ -8,6 +8,18 @@ const searchInpClass =
 
 const controlClass =
   "min-h-10 w-full rounded-lg border border-white/[0.09] bg-[#0c1010] px-2.5 py-1.5 text-sm text-zinc-100 shadow-inner shadow-black/35 placeholder:text-zinc-500 transition-[border-color,box-shadow] focus:border-emerald-400/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]";
+
+function useMediaQuery(query: string): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const mq = window.matchMedia(query);
+      mq.addEventListener("change", onChange);
+      return () => mq.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(query).matches,
+    () => false,
+  );
+}
 
 export type SockAvailableDTO = {
   id: number;
@@ -85,6 +97,8 @@ type SortKey =
 
 export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInParentCard?: boolean }) {
   const { rows, embedInParentCard = false } = props;
+  const smUp = useMediaQuery("(min-width: 640px)");
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [openRow, setOpenRow] = useState<SockAvailableDTO | null>(null);
 
@@ -101,6 +115,10 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
   const [createdTo, setCreatedTo] = useState<string>("");
   const [sortKey, setSortKey] = useState<SortKey>("created_desc");
   const [showMoreFilters, setShowMoreFilters] = useState(false);
+
+  useEffect(() => {
+    if (smUp) setMobileFiltersOpen(true);
+  }, [smUp]);
 
   useEffect(() => {
     if (!openRow) return;
@@ -247,6 +265,22 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
   ]);
 
   const sectionPad = embedInParentCard ? "px-4 sm:px-7" : "";
+  const filtersVisible = smUp || mobileFiltersOpen;
+  const hasAnyFilters = Boolean(
+    search.trim() ||
+      area ||
+      category ||
+      block ||
+      row ||
+      seat ||
+      contingent ||
+      movement ||
+      minUsd ||
+      maxUsd ||
+      createdFrom ||
+      createdTo ||
+      sortKey !== "created_desc",
+  );
 
   return (
     <section className={`relative flex flex-col gap-3 sm:gap-4 ${sectionPad}`} aria-label="Sock available table">
@@ -303,150 +337,204 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
 
               <div className="flex min-w-0 flex-col gap-1">
                 <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                  Area
+                  Sort
                 </label>
-                <select value={area} onChange={(e) => setArea(e.target.value)} className={controlClass}>
-                  <option value="">All</option>
-                  {areaOptions.map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
+                <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)} className={controlClass}>
+                  <option value="created_desc">Created (newest)</option>
+                  <option value="created_asc">Created (oldest)</option>
+                  <option value="updated_desc">Updated (newest)</option>
+                  <option value="updated_asc">Updated (oldest)</option>
+                  <option value="amount_asc">Amount (low to high)</option>
+                  <option value="amount_desc">Amount (high to low)</option>
+                  <option value="area_asc">Area (A→Z)</option>
+                  <option value="category_asc">Category (A→Z)</option>
+                  <option value="block_asc">Block (A→Z)</option>
+                  <option value="row_asc">Row (A→Z)</option>
+                  <option value="seat_asc">Seat (low to high)</option>
                 </select>
               </div>
 
-              <div className="flex min-w-0 flex-col gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                  Category
-                </label>
-                <select value={category} onChange={(e) => setCategory(e.target.value)} className={controlClass}>
-                  <option value="">All</option>
-                  {categoryOptions.map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex min-w-0 flex-col gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                  Block
-                </label>
-                <select value={block} onChange={(e) => setBlock(e.target.value)} className={controlClass}>
-                  <option value="">All</option>
-                  {blockOptions.map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {!smUp ? (
+                <button
+                  type="button"
+                  onClick={() => setMobileFiltersOpen((v) => !v)}
+                  aria-expanded={mobileFiltersOpen}
+                  className={
+                    hasAnyFilters
+                      ? "flex min-h-10 items-center justify-between gap-2 rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-3 py-2 text-left text-sm font-semibold text-emerald-50 ring-1 ring-emerald-400/20 outline-none transition-colors hover:border-emerald-400/35 hover:bg-emerald-500/15 focus-visible:ring-2 focus-visible:ring-emerald-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e] sm:col-span-2 lg:col-span-4"
+                      : "flex min-h-10 items-center justify-between gap-2 rounded-lg border border-white/[0.10] bg-black/30 px-3 py-2 text-left text-sm font-semibold text-zinc-100 ring-1 ring-white/[0.04] outline-none transition-colors hover:border-white/16 hover:bg-black/40 focus-visible:ring-2 focus-visible:ring-emerald-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e] sm:col-span-2 lg:col-span-4"
+                  }
+                >
+                  <span>Filters</span>
+                  <span className="tabular-nums text-zinc-400" aria-hidden>
+                    {mobileFiltersOpen ? "▴" : "▾"}
+                  </span>
+                </button>
+              ) : null}
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="flex min-w-0 flex-col gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                  Row contains
-                </label>
-                <input value={row} onChange={(e) => setRow(e.target.value)} className={controlClass} placeholder="e.g. Q" />
-              </div>
-              <div className="flex min-w-0 flex-col gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                  Seat contains
-                </label>
-                <input
-                  value={seat}
-                  onChange={(e) => setSeat(e.target.value)}
-                  className={controlClass}
-                  placeholder="e.g. 24"
-                />
-              </div>
-              <div className="flex min-w-0 flex-col gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                  Amount USD min
-                </label>
-                <input
-                  inputMode="decimal"
-                  value={minUsd}
-                  onChange={(e) => setMinUsd(e.target.value)}
-                  className={controlClass}
-                  placeholder="e.g. 100"
-                />
-              </div>
-              <div className="flex min-w-0 flex-col gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                  Amount USD max
-                </label>
-                <input
-                  inputMode="decimal"
-                  value={maxUsd}
-                  onChange={(e) => setMaxUsd(e.target.value)}
-                  className={controlClass}
-                  placeholder="e.g. 500"
-                />
-              </div>
-            </div>
+            {filtersVisible ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      Area
+                    </label>
+                    <select value={area} onChange={(e) => setArea(e.target.value)} className={controlClass}>
+                      <option value="">All</option>
+                      {areaOptions.map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-            {showMoreFilters ? (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="flex min-w-0 flex-col gap-1">
-                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                    Contingent contains
-                  </label>
-                  <input
-                    value={contingent}
-                    onChange={(e) => setContingent(e.target.value)}
-                    className={controlClass}
-                    placeholder="e.g. 1140…"
-                  />
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      Category
+                    </label>
+                    <select value={category} onChange={(e) => setCategory(e.target.value)} className={controlClass}>
+                      <option value="">All</option>
+                      {categoryOptions.map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      Block
+                    </label>
+                    <select value={block} onChange={(e) => setBlock(e.target.value)} className={controlClass}>
+                      <option value="">All</option>
+                      {blockOptions.map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      Row contains
+                    </label>
+                    <input
+                      value={row}
+                      onChange={(e) => setRow(e.target.value)}
+                      className={controlClass}
+                      placeholder="e.g. Q"
+                    />
+                  </div>
                 </div>
-                <div className="flex min-w-0 flex-col gap-1">
-                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                    Movement contains
-                  </label>
-                  <input
-                    value={movement}
-                    onChange={(e) => setMovement(e.target.value)}
-                    className={controlClass}
-                    placeholder="e.g. 10229…"
-                  />
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      Seat contains
+                    </label>
+                    <input
+                      value={seat}
+                      onChange={(e) => setSeat(e.target.value)}
+                      className={controlClass}
+                      placeholder="e.g. 24"
+                    />
+                  </div>
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      Amount USD min
+                    </label>
+                    <input
+                      inputMode="decimal"
+                      value={minUsd}
+                      onChange={(e) => setMinUsd(e.target.value)}
+                      className={controlClass}
+                      placeholder="e.g. 100"
+                    />
+                  </div>
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      Amount USD max
+                    </label>
+                    <input
+                      inputMode="decimal"
+                      value={maxUsd}
+                      onChange={(e) => setMaxUsd(e.target.value)}
+                      className={controlClass}
+                      placeholder="e.g. 500"
+                    />
+                  </div>
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      Advanced
+                    </label>
+                    <button
+                      type="button"
+                      className="min-h-10 rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-left text-sm font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
+                      onClick={() => setShowMoreFilters((v) => !v)}
+                      aria-expanded={showMoreFilters}
+                    >
+                      {showMoreFilters ? "Hide advanced" : "Show advanced"}
+                    </button>
+                  </div>
                 </div>
-                <div className="flex min-w-0 flex-col gap-1">
-                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                    Created from
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={createdFrom}
-                    onChange={(e) => setCreatedFrom(e.target.value)}
-                    className={controlClass}
-                  />
-                </div>
-                <div className="flex min-w-0 flex-col gap-1">
-                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                    Created to
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={createdTo}
-                    onChange={(e) => setCreatedTo(e.target.value)}
-                    className={controlClass}
-                  />
-                </div>
-              </div>
+
+                {showMoreFilters ? (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                        Contingent contains
+                      </label>
+                      <input
+                        value={contingent}
+                        onChange={(e) => setContingent(e.target.value)}
+                        className={controlClass}
+                        placeholder="e.g. 1140…"
+                      />
+                    </div>
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                        Movement contains
+                      </label>
+                      <input
+                        value={movement}
+                        onChange={(e) => setMovement(e.target.value)}
+                        className={controlClass}
+                        placeholder="e.g. 10229…"
+                      />
+                    </div>
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                        Created from
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={createdFrom}
+                        onChange={(e) => setCreatedFrom(e.target.value)}
+                        className={controlClass}
+                      />
+                    </div>
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                        Created to
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={createdTo}
+                        onChange={(e) => setCreatedTo(e.target.value)}
+                        className={controlClass}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </>
             ) : null}
 
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  className="rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-xs font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
-                  onClick={() => setShowMoreFilters((v) => !v)}
-                >
-                  {showMoreFilters ? "Hide more filters" : "More filters"}
-                </button>
-
                 <button
                   type="button"
                   className="rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-xs font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
@@ -465,29 +553,11 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                     setCreatedTo("");
                     setSortKey("created_desc");
                     setShowMoreFilters(false);
+                    if (!smUp) setMobileFiltersOpen(false);
                   }}
                 >
                   Clear
                 </button>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                  Sort
-                </label>
-                <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)} className={controlClass}>
-                  <option value="created_desc">Created (newest)</option>
-                  <option value="created_asc">Created (oldest)</option>
-                  <option value="updated_desc">Updated (newest)</option>
-                  <option value="updated_asc">Updated (oldest)</option>
-                  <option value="amount_asc">Amount (low to high)</option>
-                  <option value="amount_desc">Amount (high to low)</option>
-                  <option value="area_asc">Area (A→Z)</option>
-                  <option value="category_asc">Category (A→Z)</option>
-                  <option value="block_asc">Block (A→Z)</option>
-                  <option value="row_asc">Row (A→Z)</option>
-                  <option value="seat_asc">Seat (low to high)</option>
-                </select>
               </div>
             </div>
           </div>
