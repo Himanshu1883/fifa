@@ -117,10 +117,6 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
   const [showMoreFilters, setShowMoreFilters] = useState(false);
 
   useEffect(() => {
-    if (smUp) setMobileFiltersOpen(true);
-  }, [smUp]);
-
-  useEffect(() => {
     if (!openRow) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpenRow(null);
