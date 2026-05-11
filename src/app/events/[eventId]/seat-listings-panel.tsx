@@ -61,6 +61,22 @@ type SeatListingCatalogueCategorySection = {
   blocks: SeatListingBlockGroup[];
 };
 
+type CatalogueBlockMeta = {
+  categoryBlockId: string;
+  categoryBlockName: string;
+};
+
+type CatalogueCategoryMeta = {
+  categoryKey: string;
+  displayCategoryId: string;
+  displayCategoryName: string;
+  blocks: CatalogueBlockMeta[];
+};
+
+type RenderSectionItem =
+  | { type: "listing"; section: SeatListingCatalogueCategorySection }
+  | { type: "empty"; meta: CatalogueCategoryMeta };
+
 type SortKey = "match" | "price" | "seats";
 type SortDir = "asc" | "desc";
 
@@ -270,6 +286,118 @@ function compareBlocksInCategory(a: SeatListingBlockGroup, b: SeatListingBlockGr
   });
   if (nameCmp !== 0) return nameCmp;
   return normId(a.categoryBlockId).localeCompare(normId(b.categoryBlockId));
+}
+
+function compareBlocksInCategoryMeta(a: CatalogueBlockMeta, b: CatalogueBlockMeta): number {
+  const nameCmp = a.categoryBlockName.localeCompare(b.categoryBlockName, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+  if (nameCmp !== 0) return nameCmp;
+  return normId(a.categoryBlockId).localeCompare(normId(b.categoryBlockId));
+}
+
+function buildCatalogueCategoryMeta(eventCategories: EventCategoryDTO[]): CatalogueCategoryMeta[] {
+  const catMap = new Map<
+    string,
+    {
+      displayCategoryId: string;
+      displayCategoryName: string;
+      blocks: Map<string, CatalogueBlockMeta>;
+    }
+  >();
+
+  for (const row of eventCategories) {
+    const key = normCategoryId(row.categoryId);
+    if (!key) continue;
+    const displayCategoryId = String(row.categoryId).trim();
+    const displayCategoryName = String(row.categoryName).trim();
+    const blockKey = normId(row.categoryBlockId);
+
+    let bucket = catMap.get(key);
+    if (!bucket) {
+      bucket = {
+        displayCategoryId,
+        displayCategoryName,
+        blocks: new Map(),
+      };
+      catMap.set(key, bucket);
+    } else {
+      // Preserve the first non-empty category name we see.
+      if (!bucket.displayCategoryName && displayCategoryName) {
+        bucket.displayCategoryName = displayCategoryName;
+        bucket.displayCategoryId = displayCategoryId;
+      }
+    }
+
+    if (!blockKey) continue;
+    if (!bucket.blocks.has(blockKey)) {
+      bucket.blocks.set(blockKey, {
+        categoryBlockId: row.categoryBlockId,
+        categoryBlockName: row.categoryBlockName,
+      });
+    }
+  }
+
+  return Array.from(catMap.entries())
+    .sort(([a], [b]) => compareCategoryKey(a, b))
+    .map(([categoryKey, bucket]) => ({
+      categoryKey,
+      displayCategoryId: bucket.displayCategoryId,
+      displayCategoryName: bucket.displayCategoryName,
+      blocks: Array.from(bucket.blocks.values()).sort(compareBlocksInCategoryMeta),
+    }));
+}
+
+function EmptyCatalogueCategorySection(props: { meta: CatalogueCategoryMeta }) {
+  const { meta } = props;
+  const blocks = meta.blocks;
+  const MAX_BLOCKS = 10;
+  const shown = blocks.slice(0, MAX_BLOCKS);
+  const remaining = Math.max(0, blocks.length - shown.length);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <CatalogueCategorySectionHeading
+        displayCategoryName={meta.displayCategoryName}
+        displayCategoryId={meta.displayCategoryId}
+      />
+      <div className="rounded-xl border border-white/[0.07] bg-[#0c1010]/80 px-5 py-4 ring-1 ring-white/[0.04]">
+        <p className="text-sm font-medium text-zinc-100">No seat listings yet</p>
+        <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+          This category exists in the catalogue, but there are no synced seat-listing rows for it.
+        </p>
+        {blocks.length > 0 ? (
+          <div className="mt-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+              Blocks in catalogue · <span className="tabular-nums text-zinc-400">{blocks.length}</span>
+            </p>
+            <ul className="mt-2 flex flex-col gap-1.5">
+              {shown.map((b) => (
+                <li
+                  key={normId(b.categoryBlockId)}
+                  className="flex items-baseline justify-between gap-3 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs shadow-sm shadow-black/35 ring-1 ring-white/[0.03]"
+                >
+                  <span className="min-w-0 truncate font-medium text-zinc-200">
+                    {categoryBlockDisplayName(b.categoryBlockName, b.categoryBlockId)}
+                  </span>
+                  <code className="shrink-0 font-mono text-[10px] text-zinc-500">{b.categoryBlockId}</code>
+                </li>
+              ))}
+            </ul>
+            {remaining > 0 ? (
+              <p className="mt-2 text-[11px] text-zinc-500">
+                … plus <span className="tabular-nums text-zinc-400">{remaining}</span> more block
+                {remaining === 1 ? "" : "s"}.
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <p className="mt-3 text-xs text-zinc-500">No blocks catalogued under this category.</p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function groupListingsByCatalogueCategoryAndBlock(
@@ -555,6 +683,7 @@ export function SeatListingsPanel(props: {
 
   const mdUp = useMediaQuery("(min-width: 768px)");
   const [mobileMoreFiltersOpen, setMobileMoreFiltersOpen] = useState(false);
+  const [includeEmptyCatalogueCategories, setIncludeEmptyCatalogueCategories] = useState(false);
 
   const basketToastClearRef = useRef<number | null>(null);
   const [basketToastMessage, setBasketToastMessage] = useState<string | null>(null);
@@ -587,8 +716,21 @@ export function SeatListingsPanel(props: {
     [eventCategories],
   );
 
+  const catalogueCategories = useMemo(
+    () => buildCatalogueCategoryMeta(eventCategories),
+    [eventCategories],
+  );
+
   const categoryOptions = useMemo(() => {
     const m = new Map<string, string>();
+    for (const c of catalogueCategories) {
+      const id = normCategoryId(c.displayCategoryId);
+      if (!id) continue;
+      if (!m.has(id)) {
+        const label = seatCategoryDisplayName(c.displayCategoryName, c.displayCategoryId);
+        m.set(id, label);
+      }
+    }
     for (const r of listings) {
       const id = normCategoryId(r.seatCategoryId);
       if (!id) continue;
@@ -600,7 +742,7 @@ export function SeatListingsPanel(props: {
     return Array.from(m.entries())
       .map(([key, label]) => ({ key, label }))
       .sort((a, b) => compareCatalogueId(a.key, b.key));
-  }, [listings, catalogueCategoryNames]);
+  }, [listings, catalogueCategoryNames, catalogueCategories]);
 
   const areaOptions = useMemo(() => {
     const m = new Map<string, string>();
@@ -657,10 +799,61 @@ export function SeatListingsPanel(props: {
     [filtered, eventCategories, sortKey, sortDir],
   );
 
-  const rowCount = sections.reduce(
-    (n, s) => n + s.blocks.reduce((nb, b) => nb + b.displayRows.length, 0),
-    0,
-  );
+  const allowEmptyCatalogueCategories =
+    includeEmptyCatalogueCategories && !search.trim() && !areaFilter && !contingentFilter;
+
+  const renderItems = useMemo((): RenderSectionItem[] => {
+    const items: RenderSectionItem[] = [];
+    const sectionByKey = new Map<string, SeatListingCatalogueCategorySection>();
+    for (const s of sections) sectionByKey.set(s.categoryKey, s);
+
+    const catalogueKeySet = new Set(catalogueCategories.map((c) => c.categoryKey));
+
+    if (!allowEmptyCatalogueCategories) {
+      return sections.map((section) => ({ type: "listing", section }));
+    }
+
+    if (sortKey === "price") {
+      // Price sort depends on listings only; append empty catalogue categories after listing categories.
+      for (const section of sections) {
+        items.push({ type: "listing", section });
+      }
+      for (const meta of catalogueCategories) {
+        if (categoryFilter && meta.categoryKey !== categoryFilter) continue;
+        if (sectionByKey.has(meta.categoryKey)) continue;
+        items.push({ type: "empty", meta });
+      }
+      return items;
+    }
+
+    for (const meta of catalogueCategories) {
+      if (categoryFilter && meta.categoryKey !== categoryFilter) continue;
+      const section = sectionByKey.get(meta.categoryKey);
+      if (section) items.push({ type: "listing", section });
+      else items.push({ type: "empty", meta });
+    }
+
+    // Any listing sections that don't map cleanly onto catalogue categories (e.g. uncategorized buckets).
+    for (const section of sections) {
+      if (categoryFilter && section.categoryKey !== categoryFilter) continue;
+      if (!catalogueKeySet.has(section.categoryKey)) {
+        items.push({ type: "listing", section });
+      }
+    }
+
+    return items;
+  }, [
+    sections,
+    catalogueCategories,
+    allowEmptyCatalogueCategories,
+    sortKey,
+    categoryFilter,
+  ]);
+
+  const rowCount = renderItems.reduce((n, item) => {
+    if (item.type !== "listing") return n;
+    return n + item.section.blocks.reduce((nb, b) => nb + b.displayRows.length, 0);
+  }, 0);
 
   const showAreaPills = areaOptions.length > 1;
   const showContingentPills = contingentOptions.length > 1;
@@ -681,7 +874,7 @@ export function SeatListingsPanel(props: {
       </h2>
 
       <div className="flex flex-col gap-3">
-        {listings.length === 0 ? (
+        {listings.length === 0 && (!allowEmptyCatalogueCategories || catalogueCategories.length === 0) ? (
           <div
             className="rounded-xl border border-dashed border-white/[0.12] bg-[#0c1010]/90 px-6 py-14 text-center shadow-inner shadow-black/40 ring-1 ring-white/[0.04]"
             role="status"
@@ -756,6 +949,24 @@ export function SeatListingsPanel(props: {
                 </div>
               </div>
 
+              {catalogueCategories.length > 0 ? (
+                <label className="mt-0.5 inline-flex items-start gap-2 text-xs text-zinc-300">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 rounded border-white/[0.18] bg-black/30 text-emerald-500"
+                    checked={includeEmptyCatalogueCategories}
+                    onChange={(e) => setIncludeEmptyCatalogueCategories(e.target.checked)}
+                    aria-describedby="include-empty-catalogue-hint"
+                  />
+                  <span className="leading-snug">
+                    Include empty catalogue categories
+                    <span id="include-empty-catalogue-hint" className="block text-[11px] text-zinc-500">
+                      Shows catalogue categories even when they have 0 listings. Hidden while searching or filtering by stage/contingent.
+                    </span>
+                  </span>
+                </label>
+              ) : null}
+
               {hasSecondaryFilters ? (
                 <div className="border-t border-white/[0.06] pt-2.5">
                   {!mdUp ? (
@@ -818,7 +1029,7 @@ export function SeatListingsPanel(props: {
               </p>
             </div>
 
-            {rowCount === 0 ? (
+            {renderItems.length === 0 ? (
               <div
                 className="rounded-xl border border-white/[0.07] bg-[#0c1010]/80 px-6 py-11 text-center ring-1 ring-white/[0.04]"
                 role="status"
@@ -830,81 +1041,143 @@ export function SeatListingsPanel(props: {
               </div>
             ) : (
               <div className="flex flex-col gap-6">
-                {sections.map((section) => (
-                  <div key={section.categoryKey} className="flex flex-col gap-4">
-                    <CatalogueCategorySectionHeading
-                      displayCategoryName={section.displayCategoryName}
-                      displayCategoryId={section.displayCategoryId}
-                    />
-                    <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#080c0b] shadow-[0_16px_48px_-20px_rgba(0,0,0,0.75)] ring-1 ring-white/[0.05]">
-                      <div className="overflow-x-auto scroll-pl-4 scroll-pr-4 [-webkit-overflow-scrolling:touch]">
-                        <table className="w-full min-w-[38rem] border-collapse text-sm">
-                          <thead>
-                            <tr className="sticky top-0 z-10 border-b border-white/[0.08] bg-[#0f1513]/95 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 backdrop-blur-md">
-                              <th scope="col" className="px-4 py-3 pl-5 font-medium text-zinc-400 sm:pl-6">
-                                Block
-                              </th>
-                              <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
-                                Row
-                              </th>
-                              <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
-                                Seat
-                              </th>
-                              <th
-                                scope="col"
-                                className="px-4 py-3 pr-4 text-right font-medium text-emerald-200/90"
-                              >
-                                Price
-                              </th>
-                              <th scope="col" className="px-4 py-3 pr-5 font-medium text-zinc-400 sm:pr-6">
-                                Basket
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-white/[0.05]">
-                            {section.blocks.map((block, blockIndex) => (
-                              <Fragment
-                                key={`${section.categoryKey}:${normId(block.categoryBlockId)}:${blockIndex}`}
-                              >
-                                {section.blocks.length > 1 ? (
-                                  <tr
-                                    className={
-                                      blockIndex > 0
-                                        ? "border-t border-white/[0.06] bg-white/[0.03]"
-                                        : "bg-white/[0.03]"
-                                    }
-                                  >
-                                    <td colSpan={5} className="px-4 py-2.5 pl-5 sm:pl-6">
-                                      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-                                        Block ·{" "}
-                                        <span className="font-sans normal-case tracking-normal text-zinc-300">
-                                          {categoryBlockDisplayName(block.categoryBlockName, block.categoryBlockId)}
-                                        </span>
-                                        {normId(block.categoryBlockId) &&
-                                        categoryBlockDisplayName(block.categoryBlockName, block.categoryBlockId) !==
-                                          normId(block.categoryBlockId) ? (
-                                          <span className="ml-2 font-mono text-[10px] font-medium normal-case tracking-normal text-zinc-600">
-                                            {block.categoryBlockId}
+                {renderItems.map((item) => {
+                  if (item.type === "empty") {
+                    return (
+                      <EmptyCatalogueCategorySection
+                        key={`empty:${item.meta.categoryKey}`}
+                        meta={item.meta}
+                      />
+                    );
+                  }
+
+                  const section = item.section;
+                  return (
+                    <div key={section.categoryKey} className="flex flex-col gap-4">
+                      <CatalogueCategorySectionHeading
+                        displayCategoryName={section.displayCategoryName}
+                        displayCategoryId={section.displayCategoryId}
+                      />
+                      <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#080c0b] shadow-[0_16px_48px_-20px_rgba(0,0,0,0.75)] ring-1 ring-white/[0.05]">
+                        <div className="overflow-x-auto scroll-pl-4 scroll-pr-4 [-webkit-overflow-scrolling:touch]">
+                          <table className="w-full min-w-[38rem] border-collapse text-sm">
+                            <thead>
+                              <tr className="sticky top-0 z-10 border-b border-white/[0.08] bg-[#0f1513]/95 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 backdrop-blur-md">
+                                <th scope="col" className="px-4 py-3 pl-5 font-medium text-zinc-400 sm:pl-6">
+                                  Block
+                                </th>
+                                <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
+                                  Row
+                                </th>
+                                <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
+                                  Seat
+                                </th>
+                                <th
+                                  scope="col"
+                                  className="px-4 py-3 pr-4 text-right font-medium text-emerald-200/90"
+                                >
+                                  Price
+                                </th>
+                                <th scope="col" className="px-4 py-3 pr-5 font-medium text-zinc-400 sm:pr-6">
+                                  Basket
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/[0.05]">
+                              {section.blocks.map((block, blockIndex) => (
+                                <Fragment
+                                  key={`${section.categoryKey}:${normId(block.categoryBlockId)}:${blockIndex}`}
+                                >
+                                  {section.blocks.length > 1 ? (
+                                    <tr
+                                      className={
+                                        blockIndex > 0
+                                          ? "border-t border-white/[0.06] bg-white/[0.03]"
+                                          : "bg-white/[0.03]"
+                                      }
+                                    >
+                                      <td colSpan={5} className="px-4 py-2.5 pl-5 sm:pl-6">
+                                        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                                          Block ·{" "}
+                                          <span className="font-sans normal-case tracking-normal text-zinc-300">
+                                            {categoryBlockDisplayName(block.categoryBlockName, block.categoryBlockId)}
                                           </span>
-                                        ) : null}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ) : null}
-                                {block.displayRows.map((listings) => {
-                                  if (listings.length === 1) {
-                                    const listing = listings[0];
+                                          {normId(block.categoryBlockId) &&
+                                          categoryBlockDisplayName(block.categoryBlockName, block.categoryBlockId) !==
+                                            normId(block.categoryBlockId) ? (
+                                            <span className="ml-2 font-mono text-[10px] font-medium normal-case tracking-normal text-zinc-600">
+                                              {block.categoryBlockId}
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  ) : null}
+                                  {block.displayRows.map((listings) => {
+                                    if (listings.length === 1) {
+                                      const listing = listings[0];
+                                      const blockPrimary = categoryBlockDisplayName(
+                                        listing.categoryBlockName,
+                                        listing.categoryBlockId,
+                                      );
+                                      const showBlockId =
+                                        Boolean(normId(listing.categoryBlockId)) &&
+                                        blockPrimary !== normId(listing.categoryBlockId);
+                                      const basketAria = `Add to basket: ${blockPrimary}, row ${listing.rowLabel}, seat ${listing.seatNumber}, ${formatUsd(listing.amount)}`;
+                                      return (
+                                        <tr
+                                          key={listing.id}
+                                          className="text-zinc-200 transition-colors hover:bg-emerald-500/[0.06]"
+                                        >
+                                          <td className="max-w-[12rem] px-4 py-3 pl-5 align-top sm:max-w-none sm:pl-6">
+                                            <div className="font-medium leading-snug text-zinc-50">
+                                              {blockPrimary}
+                                            </div>
+                                            {showBlockId ? (
+                                              <div className="mt-1 font-mono text-[11px] leading-snug text-zinc-500">
+                                                {listing.categoryBlockId}
+                                              </div>
+                                            ) : null}
+                                          </td>
+                                          <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
+                                            {listing.rowLabel}
+                                          </td>
+                                          <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
+                                            {listing.seatNumber}
+                                          </td>
+                                          <td className="whitespace-nowrap px-4 py-3 pr-4 text-right text-sm font-semibold tabular-nums text-emerald-300">
+                                            {formatUsd(listing.amount)}
+                                          </td>
+                                          <td className="px-4 py-3 pr-5 align-middle sm:pr-6">
+                                            <AddToBasketButton
+                                              ariaLabel={basketAria}
+                                              onPlaceholderClick={notifyBasketPlaceholder}
+                                            />
+                                          </td>
+                                        </tr>
+                                      );
+                                    }
+                                    const first = listings[0];
                                     const blockPrimary = categoryBlockDisplayName(
-                                      listing.categoryBlockName,
-                                      listing.categoryBlockId,
+                                      first.categoryBlockName,
+                                      first.categoryBlockId,
                                     );
                                     const showBlockId =
-                                      Boolean(normId(listing.categoryBlockId)) &&
-                                      blockPrimary !== normId(listing.categoryBlockId);
-                                    const basketAria = `Add to basket: ${blockPrimary}, row ${listing.rowLabel}, seat ${listing.seatNumber}, ${formatUsd(listing.amount)}`;
+                                      Boolean(normId(first.categoryBlockId)) &&
+                                      blockPrimary !== normId(first.categoryBlockId);
+                                    const lo = parseSeatIntStrict(first.seatNumber)!;
+                                    const hi =
+                                      parseSeatIntStrict(listings[listings.length - 1].seatNumber)!;
+                                    const seatSpan = lo === hi ? String(lo) : `${lo}-${hi}`;
+                                    const n = listings.length;
+                                    const rowKey = listings.map((l) => l.id).join("-");
+                                    const mergedPriceLabel = formatUsdRangeFromAmounts(
+                                      listings.map((l) => l.amount),
+                                    );
+                                    const basketAria = `Add to basket: ${blockPrimary}, row ${first.rowLabel}, seats ${seatSpan} (${n} together), ${mergedPriceLabel}`;
                                     return (
                                       <tr
-                                        key={listing.id}
+                                        key={rowKey}
                                         className="text-zinc-200 transition-colors hover:bg-emerald-500/[0.06]"
                                       >
                                         <td className="max-w-[12rem] px-4 py-3 pl-5 align-top sm:max-w-none sm:pl-6">
@@ -913,18 +1186,28 @@ export function SeatListingsPanel(props: {
                                           </div>
                                           {showBlockId ? (
                                             <div className="mt-1 font-mono text-[11px] leading-snug text-zinc-500">
-                                              {listing.categoryBlockId}
+                                              {first.categoryBlockId}
                                             </div>
                                           ) : null}
                                         </td>
                                         <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
-                                          {listing.rowLabel}
+                                          {first.rowLabel}
                                         </td>
-                                        <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
-                                          {listing.seatNumber}
+                                        <td className="px-4 py-3 align-middle font-mono text-xs tabular-nums text-zinc-400">
+                                          <div className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+                                            <span className="whitespace-nowrap">{seatSpan}</span>
+                                            <span className="inline-flex w-fit shrink-0 font-sans">
+                                              <span
+                                                className="rounded-full bg-rose-500/14 px-2 py-0.5 text-[11px] font-semibold tracking-tight text-rose-100 ring-1 ring-rose-400/35"
+                                                title={`${n} consecutive seats sold together`}
+                                              >
+                                                ({n} Together)
+                                              </span>
+                                            </span>
+                                          </div>
                                         </td>
                                         <td className="whitespace-nowrap px-4 py-3 pr-4 text-right text-sm font-semibold tabular-nums text-emerald-300">
-                                          {formatUsd(listing.amount)}
+                                          {formatUsdRangeFromAmounts(listings.map((l) => l.amount))}
                                         </td>
                                         <td className="px-4 py-3 pr-5 align-middle sm:pr-6">
                                           <AddToBasketButton
@@ -934,76 +1217,16 @@ export function SeatListingsPanel(props: {
                                         </td>
                                       </tr>
                                     );
-                                  }
-                                  const first = listings[0];
-                                  const blockPrimary = categoryBlockDisplayName(
-                                    first.categoryBlockName,
-                                    first.categoryBlockId,
-                                  );
-                                  const showBlockId =
-                                    Boolean(normId(first.categoryBlockId)) &&
-                                    blockPrimary !== normId(first.categoryBlockId);
-                                  const lo = parseSeatIntStrict(first.seatNumber)!;
-                                  const hi =
-                                    parseSeatIntStrict(listings[listings.length - 1].seatNumber)!;
-                                  const seatSpan = lo === hi ? String(lo) : `${lo}-${hi}`;
-                                  const n = listings.length;
-                                  const rowKey = listings.map((l) => l.id).join("-");
-                                  const mergedPriceLabel = formatUsdRangeFromAmounts(
-                                    listings.map((l) => l.amount),
-                                  );
-                                  const basketAria = `Add to basket: ${blockPrimary}, row ${first.rowLabel}, seats ${seatSpan} (${n} together), ${mergedPriceLabel}`;
-                                  return (
-                                    <tr
-                                      key={rowKey}
-                                      className="text-zinc-200 transition-colors hover:bg-emerald-500/[0.06]"
-                                    >
-                                      <td className="max-w-[12rem] px-4 py-3 pl-5 align-top sm:max-w-none sm:pl-6">
-                                        <div className="font-medium leading-snug text-zinc-50">
-                                          {blockPrimary}
-                                        </div>
-                                        {showBlockId ? (
-                                          <div className="mt-1 font-mono text-[11px] leading-snug text-zinc-500">
-                                            {first.categoryBlockId}
-                                          </div>
-                                        ) : null}
-                                      </td>
-                                      <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
-                                        {first.rowLabel}
-                                      </td>
-                                      <td className="px-4 py-3 align-middle font-mono text-xs tabular-nums text-zinc-400">
-                                        <div className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
-                                          <span className="whitespace-nowrap">{seatSpan}</span>
-                                          <span className="inline-flex w-fit shrink-0 font-sans">
-                                            <span
-                                              className="rounded-full bg-rose-500/14 px-2 py-0.5 text-[11px] font-semibold tracking-tight text-rose-100 ring-1 ring-rose-400/35"
-                                              title={`${n} consecutive seats sold together`}
-                                            >
-                                              ({n} Together)
-                                            </span>
-                                          </span>
-                                        </div>
-                                      </td>
-                                      <td className="whitespace-nowrap px-4 py-3 pr-4 text-right text-sm font-semibold tabular-nums text-emerald-300">
-                                        {formatUsdRangeFromAmounts(listings.map((l) => l.amount))}
-                                      </td>
-                                      <td className="px-4 py-3 pr-5 align-middle sm:pr-6">
-                                        <AddToBasketButton
-                                          ariaLabel={basketAria}
-                                          onPlaceholderClick={notifyBasketPlaceholder}
-                                        />
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </Fragment>
-                            ))}
-                          </tbody>
-                        </table>
+                                  })}
+                                </Fragment>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 <p className="mt-1 text-[11px] leading-snug text-zinc-500 sm:text-xs">
                   Same-row consecutive seats collapse to one listing;{' '}
                   <span className="text-zinc-400">&quot;N Together&quot;</span> labels multi-seat spans.

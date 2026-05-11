@@ -41,6 +41,7 @@ model Event {
   blockAvailability EventCategoryBlockAvailability[]
   seatListings  EventSeatListing[]
   blockSeatNow  EventBlockSeatNow[]
+  sockAvailable SockAvailable[]
 
   @@index([sortOrder])
   @@index([prefId])
@@ -159,4 +160,30 @@ model ResalePrefRotationState {
   nextIndex Int @default(0) @map("next_index")
 
   @@map("resale_pref_rotation_state")
+}
+
+model SockAvailable {
+  id               Int      @id @default(autoincrement())
+  eventId           Int      @map("event_id")
+  event             Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  areaId            String   @map("area_id")
+  areaName          String   @map("area_name")
+  blockId           String   @map("block_id")
+  blockName         String   @map("block_name")
+  contingentId      String   @map("contingent_id")
+  seatId            String   @map("seatid")
+  seatNumber        String   @map("seat_number")
+  amount            Decimal? @map("amount") @db.Decimal(18, 4)
+  resaleMovementId  String   @map("resalemovementid")
+  row               String   @map("row")
+  categoryName      String   @map("categoryname")
+  categoryId        String   @map("category_id")
+
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([eventId, resaleMovementId])
+  @@index([eventId])
+  @@map("sock_available")
 }

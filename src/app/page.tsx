@@ -7,6 +7,7 @@ import { AddEventDialog } from "@/app/add-event-dialog";
 import { EditEventDialog } from "@/app/edit-event-dialog";
 import { EventImportantToggle } from "@/app/event-important-toggle";
 import { EventPrefsEditCell } from "@/app/event-prefs-edit-cell";
+import { BoxofficeControlsClient } from "@/app/boxoffice-controls-client";
 import type { HomeImportantFilter, HomeSortKey } from "@/app/home-event-sort-controls";
 import { HomeEventSortControls } from "@/app/home-event-sort-controls";
 import {
@@ -226,6 +227,7 @@ export default async function Home({ searchParams }: Props) {
   const prefsErr = prefsRaw ?? undefined;
   const { sort: listSort, order: listOrder } = parseHomeListSort(q);
   const importantFilter = parseImportantFilter(q);
+  const boxofficePort = process.env.BOXOFFICE_WS_PORT ?? "3020";
 
   let dbErr: string | undefined;
   let eventsAll: HomeEventRow[];
@@ -352,12 +354,23 @@ export default async function Home({ searchParams }: Props) {
             aria-hidden
           />
           <header className="relative px-4 pb-5 pt-6 sm:px-8 sm:pb-6 sm:pt-8">
-            <Link
-              href="/settings"
-              className="absolute right-4 top-4 rounded-md bg-white/[0.08] px-3 py-1.5 text-xs font-medium text-zinc-200 ring-1 ring-white/10 hover:bg-white/[0.12] sm:right-8 sm:top-6"
-            >
-              Settings
-            </Link>
+            <div className="absolute right-4 top-4 flex flex-col items-end gap-2 sm:right-8 sm:top-6">
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/undetectable"
+                  className="rounded-md bg-sky-500/15 px-3 py-1.5 text-xs font-medium text-sky-100 ring-1 ring-white/10 hover:bg-sky-500/20"
+                >
+                  Undetectable
+                </Link>
+                <Link
+                  href="/settings"
+                  className="rounded-md bg-white/[0.08] px-3 py-1.5 text-xs font-medium text-zinc-200 ring-1 ring-white/10 hover:bg-white/[0.12]"
+                >
+                  Settings
+                </Link>
+              </div>
+              <BoxofficeControlsClient port={boxofficePort} />
+            </div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
               Schedule &amp; catalogue
             </p>

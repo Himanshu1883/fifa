@@ -148,8 +148,9 @@ export default async function EventDetailPage({ params }: Props) {
     contingentId: r.contingentId,
   }));
 
+  // Show catalogue category count (EventCategory rows) rather than only categories that currently have listings.
   const categoryIds = new Set(
-    listingsPayload.map((r) => String(r.seatCategoryId).trim()).filter(Boolean),
+    eventCategoriesPayload.map((c) => String(c.categoryId).trim()).filter(Boolean),
   );
 
   return (

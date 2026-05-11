@@ -1,24 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { UndetectableApiError, undetectableListProfiles } from "@/lib/undetectable-client";
+import { undetectableUnauthorized } from "@/lib/undetectable-route-auth";
 
 export const runtime = "nodejs";
 
-function unauthorized(req: Request): NextResponse | null {
-  const secret = process.env.UNDETECTABLE_API_SECRET?.trim();
-  if (!secret) return null;
-
-  const auth = req.headers.get("authorization");
-  const bearer =
-    auth?.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
-  const q = new URL(req.url).searchParams.get("secret")?.trim() ?? "";
-
-  if (bearer === secret || q === secret) return null;
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
-
 export async function GET(req: Request) {
-  const denied = unauthorized(req);
+  const denied = undetectableUnauthorized(req);
   if (denied) return denied;
 
   try {
