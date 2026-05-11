@@ -708,6 +708,7 @@ export function SeatListingsPanel(props: {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [areaFilter, setAreaFilter] = useState<string | null>(null);
   const [contingentFilter, setContingentFilter] = useState<string | null>(null);
+  const [togetherFilter, setTogetherFilter] = useState<"" | "1" | "2" | "3" | "4" | "5" | "6+">("");
   const [sortKey, setSortKey] = useState<SortKey>("match");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -799,8 +800,19 @@ export function SeatListingsPanel(props: {
     [filtered, eventCategories, sortKey, sortDir],
   );
 
+  const togetherOk = useMemo(() => {
+    if (!togetherFilter) return (_n: number) => true;
+    if (togetherFilter === "6+") return (n: number) => n >= 6;
+    const exact = Number.parseInt(togetherFilter, 10);
+    return (n: number) => n === exact;
+  }, [togetherFilter]);
+
   const allowEmptyCatalogueCategories =
-    includeEmptyCatalogueCategories && !search.trim() && !areaFilter && !contingentFilter;
+    includeEmptyCatalogueCategories &&
+    !search.trim() &&
+    !areaFilter &&
+    !contingentFilter &&
+    !togetherFilter;
 
   const renderItems = useMemo((): RenderSectionItem[] => {
     const items: RenderSectionItem[] = [];
@@ -852,7 +864,7 @@ export function SeatListingsPanel(props: {
 
   const rowCount = renderItems.reduce((n, item) => {
     if (item.type !== "listing") return n;
-    return n + item.section.blocks.reduce((nb, b) => nb + b.displayRows.length, 0);
+    return n + item.section.blocks.reduce((nb, b) => nb + b.displayRows.filter((r) => togetherOk(r.length)).length, 0);
   }, 0);
 
   const showAreaPills = areaOptions.length > 1;
@@ -947,6 +959,29 @@ export function SeatListingsPanel(props: {
                     Narrows the table to one catalogue price category when chosen.
                   </p>
                 </div>
+
+                <div className="flex min-w-0 flex-col gap-1 md:col-span-3">
+                  <label
+                    htmlFor="together-select"
+                    className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500"
+                  >
+                    Seats together
+                  </label>
+                  <select
+                    id="together-select"
+                    value={togetherFilter}
+                    onChange={(e) => setTogetherFilter((e.target.value as typeof togetherFilter) || "")}
+                    className={selectClass}
+                  >
+                    <option value="">All</option>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="6+">6+</option>
+                  </select>
+                </div>
               </div>
 
               {catalogueCategories.length > 0 ? (
@@ -961,7 +996,7 @@ export function SeatListingsPanel(props: {
                   <span className="leading-snug">
                     Include empty catalogue categories
                     <span id="include-empty-catalogue-hint" className="block text-[11px] text-zinc-500">
-                      Shows catalogue categories even when they have 0 listings. Hidden while searching or filtering by stage/contingent.
+                      Shows catalogue categories even when they have 0 listings. Hidden while searching or filtering.
                     </span>
                   </span>
                 </label>
@@ -1029,7 +1064,7 @@ export function SeatListingsPanel(props: {
               </p>
             </div>
 
-            {renderItems.length === 0 ? (
+            {renderItems.length === 0 || rowCount === 0 ? (
               <div
                 className="rounded-xl border border-white/[0.07] bg-[#0c1010]/80 px-6 py-11 text-center ring-1 ring-white/[0.04]"
                 role="status"
@@ -1084,36 +1119,39 @@ export function SeatListingsPanel(props: {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-white/[0.05]">
-                              {section.blocks.map((block, blockIndex) => (
-                                <Fragment
-                                  key={`${section.categoryKey}:${normId(block.categoryBlockId)}:${blockIndex}`}
-                                >
-                                  {section.blocks.length > 1 ? (
-                                    <tr
-                                      className={
-                                        blockIndex > 0
-                                          ? "border-t border-white/[0.06] bg-white/[0.03]"
-                                          : "bg-white/[0.03]"
-                                      }
-                                    >
-                                      <td colSpan={5} className="px-4 py-2.5 pl-5 sm:pl-6">
-                                        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-                                          Block ·{" "}
-                                          <span className="font-sans normal-case tracking-normal text-zinc-300">
-                                            {categoryBlockDisplayName(block.categoryBlockName, block.categoryBlockId)}
-                                          </span>
-                                          {normId(block.categoryBlockId) &&
-                                          categoryBlockDisplayName(block.categoryBlockName, block.categoryBlockId) !==
-                                            normId(block.categoryBlockId) ? (
-                                            <span className="ml-2 font-mono text-[10px] font-medium normal-case tracking-normal text-zinc-600">
-                                              {block.categoryBlockId}
+                              {section.blocks.map((block, blockIndex) => {
+                                const displayRows = block.displayRows.filter((r) => togetherOk(r.length));
+                                if (displayRows.length === 0) return null;
+                                return (
+                                  <Fragment
+                                    key={`${section.categoryKey}:${normId(block.categoryBlockId)}:${blockIndex}`}
+                                  >
+                                    {section.blocks.length > 1 ? (
+                                      <tr
+                                        className={
+                                          blockIndex > 0
+                                            ? "border-t border-white/[0.06] bg-white/[0.03]"
+                                            : "bg-white/[0.03]"
+                                        }
+                                      >
+                                        <td colSpan={5} className="px-4 py-2.5 pl-5 sm:pl-6">
+                                          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                                            Block ·{" "}
+                                            <span className="font-sans normal-case tracking-normal text-zinc-300">
+                                              {categoryBlockDisplayName(block.categoryBlockName, block.categoryBlockId)}
                                             </span>
-                                          ) : null}
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  ) : null}
-                                  {block.displayRows.map((listings) => {
+                                            {normId(block.categoryBlockId) &&
+                                            categoryBlockDisplayName(block.categoryBlockName, block.categoryBlockId) !==
+                                              normId(block.categoryBlockId) ? (
+                                              <span className="ml-2 font-mono text-[10px] font-medium normal-case tracking-normal text-zinc-600">
+                                                {block.categoryBlockId}
+                                              </span>
+                                            ) : null}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    ) : null}
+                                    {displayRows.map((listings) => {
                                     if (listings.length === 1) {
                                       const listing = listings[0];
                                       const blockPrimary = categoryBlockDisplayName(
@@ -1217,9 +1255,10 @@ export function SeatListingsPanel(props: {
                                         </td>
                                       </tr>
                                     );
-                                  })}
-                                </Fragment>
-                              ))}
+                                    })}
+                                  </Fragment>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
