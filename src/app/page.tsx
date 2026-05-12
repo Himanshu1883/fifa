@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { formatUsd, priceToNumber } from "@/lib/format-usd";
 import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
+import { Prisma } from "@/generated/prisma/client";
 import { AddEventDialog } from "@/app/add-event-dialog";
 import { BuyingCriteriaDialog } from "@/app/buying-criteria-dialog";
 import { EditEventDialog } from "@/app/edit-event-dialog";
@@ -13,97 +15,9 @@ import type { HomeImportantFilter, HomeSortKey } from "@/app/home-event-sort-con
 import { HomeEventSortControls } from "@/app/home-event-sort-controls";
 import {
   HomeEventCategoryBlockCells,
-  type HomeSeatCategoryHierarchyItem,
 } from "@/app/home-event-category-block-cells";
 
 export const runtime = "nodejs";
-
-/** One catalogue row per event category/block pair (Prisma `EventCategory`). */
-type EventCategoryCatalogueRow = {
-  eventId: number;
-  categoryId: string;
-  categoryName: string;
-  categoryBlockId: string;
-  categoryBlockName: string;
-};
-
-type EventCategoryBlockStats = {
-  categoryCount: number;
-  blockCount: number;
-  hierarchy: HomeSeatCategoryHierarchyItem[];
-};
-
-type EventBlockSeatNowResaleRow = {
-  eventId: number;
-  categoryId: string;
-  blockId: string;
-  availabilityResale: number;
-};
-
-function buildCategoryBlockStats(
-  rows: EventCategoryCatalogueRow[],
-  seatNowRows: EventBlockSeatNowResaleRow[],
-): Map<number, EventCategoryBlockStats> {
-  type Bucket = {
-    categoryIds: Set<string>;
-    blockIds: Set<string>;
-    catMap: Map<string, { name: string; blocks: Map<string, string> }>;
-  };
-
-  const resaleByKey = new Map<string, number>();
-  for (const r of seatNowRows) {
-    resaleByKey.set(`${r.eventId}::${r.categoryId}::${r.blockId}`, r.availabilityResale);
-  }
-
-  const perEvent = new Map<number, Bucket>();
-
-  for (const r of rows) {
-    let bucket = perEvent.get(r.eventId);
-    if (!bucket) {
-      bucket = {
-        categoryIds: new Set(),
-        blockIds: new Set(),
-        catMap: new Map(),
-      };
-      perEvent.set(r.eventId, bucket);
-    }
-    bucket.categoryIds.add(r.categoryId);
-    bucket.blockIds.add(r.categoryBlockId);
-
-    let catEntry = bucket.catMap.get(r.categoryId);
-    if (!catEntry) {
-      catEntry = { name: r.categoryName, blocks: new Map() };
-      bucket.catMap.set(r.categoryId, catEntry);
-    }
-    catEntry.blocks.set(r.categoryBlockId, r.categoryBlockName);
-  }
-
-  const out = new Map<number, EventCategoryBlockStats>();
-
-  for (const [eventId, b] of perEvent) {
-    const hierarchy: HomeSeatCategoryHierarchyItem[] = [...b.catMap.entries()]
-      .sort(([a], [c]) => a.localeCompare(c))
-      .map(([categoryId, { name, blocks }]) => ({
-        categoryId,
-        categoryName: name,
-        blocks: [...blocks.entries()]
-          .sort(([x], [z]) => x.localeCompare(z))
-          .map(([blockId, blockName]) => ({
-            blockId,
-            blockName,
-            availabilityResale: resaleByKey.get(`${eventId}::${categoryId}::${blockId}`) ?? null,
-          })),
-      }));
-
-    out.set(eventId, {
-      categoryCount: b.categoryIds.size,
-      blockCount: b.blockIds.size,
-      hierarchy,
-    });
-  }
-
-  return out;
-}
 
 type Props = {
   searchParams: Promise<{
@@ -135,7 +49,6 @@ type HomeEventRow = {
   cat4: string | null;
   categoryCount: number;
   blockCount: number;
-  categoryBlockHierarchy: HomeSeatCategoryHierarchyItem[];
 };
 
 const eventNameLinkClass =
@@ -251,6 +164,52 @@ function sortHomeEvents(
   });
 }
 
+const getHomeSockAggregates = unstable_cache(
+  async (eventIds: number[]) => {
+    if (eventIds.length === 0) {
+      return { sockAgg: [], sockAggByCategory: [] } as const;
+    }
+    const [sockAgg, sockAggByCategory] = await Promise.all([
+      prisma.sockAvailable.groupBy({
+        by: ["eventId"],
+        where: { eventId: { in: eventIds } },
+        _count: { _all: true },
+        _min: { amount: true },
+      }),
+      prisma.sockAvailable.groupBy({
+        by: ["eventId", "categoryName"],
+        where: { eventId: { in: eventIds } },
+        _min: { amount: true },
+      }),
+    ]);
+    return { sockAgg, sockAggByCategory } as const;
+  },
+  ["home-sock-aggregates-v1"],
+  { revalidate: 5 },
+);
+
+const getHomeEventCategoryCounts = unstable_cache(
+  async (eventIds: number[]) => {
+    if (eventIds.length === 0) return [] as { eventId: number; categoryCount: number; blockCount: number }[];
+
+    // `EventCategory` is a high-cardinality catalogue table; for the home grid we only need
+    // distinct counts, not the full per-event hierarchy (loaded lazily on demand).
+    return prisma.$queryRaw<{ eventId: number; categoryCount: number; blockCount: number }[]>(
+      Prisma.sql`
+        SELECT
+          "event_id" as "eventId",
+          COUNT(DISTINCT "category_id")::int as "categoryCount",
+          COUNT(DISTINCT "category_block_id")::int as "blockCount"
+        FROM "EventCategory"
+        WHERE "event_id" IN (${Prisma.join(eventIds)})
+        GROUP BY "event_id"
+      `,
+    );
+  },
+  ["home-event-category-counts-v1"],
+  { revalidate: 60 },
+);
+
 export default async function Home({ searchParams }: Props) {
   const q = await searchParams;
   const prefsRaw = firstQs(q.prefsErr);
@@ -266,53 +225,32 @@ export default async function Home({ searchParams }: Props) {
   let eventsAll: HomeEventRow[];
   let events: HomeEventRow[];
   try {
-    const [rows, catalogueCategoryRows] = await Promise.all([
-      prisma.event.findMany({
-        orderBy: { sortOrder: "asc" },
-        select: {
-          id: true,
-          sortOrder: true,
-          matchLabel: true,
-          name: true,
-          isImportant: true,
-          stage: true,
-          venue: true,
-          country: true,
-          prefId: true,
-          resalePrefId: true,
-        },
-      }),
-      prisma.eventCategory.findMany({
-        select: {
-          eventId: true,
-          categoryId: true,
-          categoryName: true,
-          categoryBlockId: true,
-          categoryBlockName: true,
-        },
-      }),
-    ]);
+    const rows = await prisma.event.findMany({
+      orderBy: { sortOrder: "asc" },
+      select: {
+        id: true,
+        sortOrder: true,
+        matchLabel: true,
+        name: true,
+        isImportant: true,
+        stage: true,
+        venue: true,
+        country: true,
+        prefId: true,
+        resalePrefId: true,
+      },
+    });
 
     const eventIds = rows.map((r) => r.id);
-    const [sockAgg, sockAggByCategory, seatNowRows] = await Promise.all([
-      prisma.sockAvailable.groupBy({
-        by: ["eventId"],
-        where: { eventId: { in: eventIds } },
-        _count: { _all: true },
-        _min: { amount: true },
-      }),
-      prisma.sockAvailable.groupBy({
-        by: ["eventId", "categoryName"],
-        where: { eventId: { in: eventIds } },
-        _min: { amount: true },
-      }),
-      prisma.eventBlockSeatNow.findMany({
-        where: { eventId: { in: eventIds } },
-        select: { eventId: true, categoryId: true, blockId: true, availabilityResale: true },
-      }),
+    const [{ sockAgg, sockAggByCategory }, categoryCounts] = await Promise.all([
+      getHomeSockAggregates(eventIds),
+      getHomeEventCategoryCounts(eventIds),
     ]);
 
-    const categoryBlockByEvent = buildCategoryBlockStats(catalogueCategoryRows, seatNowRows);
+    const countsByEventId = new Map<number, { categoryCount: number; blockCount: number }>();
+    for (const r of categoryCounts) {
+      countsByEventId.set(r.eventId, { categoryCount: r.categoryCount, blockCount: r.blockCount });
+    }
 
     const byEvent = new Map<
       number,
@@ -346,7 +284,7 @@ export default async function Home({ searchParams }: Props) {
 
     eventsAll = rows.map((e) => {
       const agg = byEvent.get(e.id);
-      const catBlk = categoryBlockByEvent.get(e.id);
+      const counts = countsByEventId.get(e.id);
       const cats = catMinByEvent.get(e.id);
       return {
         ...e,
@@ -357,9 +295,8 @@ export default async function Home({ searchParams }: Props) {
         cat2: cats?.cat2 ?? null,
         cat3: cats?.cat3 ?? null,
         cat4: cats?.cat4 ?? null,
-        categoryCount: catBlk?.categoryCount ?? 0,
-        blockCount: catBlk?.blockCount ?? 0,
-        categoryBlockHierarchy: catBlk?.hierarchy ?? [],
+        categoryCount: counts?.categoryCount ?? 0,
+        blockCount: counts?.blockCount ?? 0,
       };
     });
 
@@ -649,10 +586,10 @@ export default async function Home({ searchParams }: Props) {
                             </dl>
 
                             <HomeEventCategoryBlockCells
+                              eventId={event.id}
                               eventName={event.name}
                               categoryCount={event.categoryCount}
                               blockCount={event.blockCount}
-                              hierarchy={event.categoryBlockHierarchy}
                               layout="card"
                             />
 
@@ -786,10 +723,10 @@ export default async function Home({ searchParams }: Props) {
                                   {cellUsdFromCentsString(event.cat4)}
                                 </td>
                                 <HomeEventCategoryBlockCells
+                                  eventId={event.id}
                                   eventName={event.name}
                                   categoryCount={event.categoryCount}
                                   blockCount={event.blockCount}
-                                  hierarchy={event.categoryBlockHierarchy}
                                 />
                                 <td
                                   className="whitespace-nowrap px-3 py-3 text-right align-middle font-medium tabular-nums text-zinc-100 sm:px-4"

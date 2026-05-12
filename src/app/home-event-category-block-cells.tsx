@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 export type HomeSeatCategoryHierarchyItem = {
@@ -10,10 +10,11 @@ export type HomeSeatCategoryHierarchyItem = {
 };
 
 type Props = {
+  eventId: number;
   eventName: string;
   categoryCount: number;
   blockCount: number;
-  hierarchy: HomeSeatCategoryHierarchyItem[];
+  initialHierarchy?: HomeSeatCategoryHierarchyItem[];
   /** `"table"` renders `<td colSpan={2}>`; `"card"` renders a block for responsive card lists. */
   layout?: "table" | "card";
 };
@@ -39,22 +40,28 @@ const FOCUSABLE_SELECTORS =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function HomeEventCategoryBlockCells({
+  eventId,
   eventName,
   categoryCount,
   blockCount,
-  hierarchy,
+  initialHierarchy,
   layout = "table",
 }: Props) {
   const [open, setOpen] = useState(false);
   const [dialogMaximized, setDialogMaximized] = useState(false);
   /** Multiple categories may be expanded at once (not exclusive accordion). */
   const [expandedCategoryIds, setExpandedCategoryIds] = useState<Set<string>>(() => new Set());
+  const [hierarchy, setHierarchy] = useState<HomeSeatCategoryHierarchyItem[]>(() => initialHierarchy ?? []);
+  const [hierarchyLoading, setHierarchyLoading] = useState(false);
+  const [hierarchyError, setHierarchyError] = useState<string | null>(null);
   const titleId = useId();
   const subtitleId = useId();
   const dialogId = useId();
   const categoryAccordionIdPrefix = useId();
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const fetchSeqRef = useRef(0);
+  const fetchedHierarchyRef = useRef(false);
 
   const collectFocusables = useCallback(() => {
     const root = panelRef.current;
@@ -70,10 +77,48 @@ export function HomeEventCategoryBlockCells({
   }, []);
 
   const closeDialog = useCallback(() => {
+    fetchSeqRef.current += 1;
     setExpandedCategoryIds(new Set());
     setDialogMaximized(false);
     setOpen(false);
   }, []);
+
+  const canFetchHierarchy = useMemo(() => Number.isFinite(eventId) && eventId > 0, [eventId]);
+
+  const fetchHierarchy = useCallback(async () => {
+    if (!canFetchHierarchy) return;
+    if (hierarchyLoading) return;
+    if (fetchedHierarchyRef.current) return;
+
+    const seq = (fetchSeqRef.current += 1);
+    setHierarchyError(null);
+    setHierarchyLoading(true);
+    try {
+      const res = await fetch(`/api/events/${eventId}/category-hierarchy`, {
+        method: "GET",
+        headers: { accept: "application/json" },
+      });
+      if (fetchSeqRef.current !== seq) return;
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Request failed (${res.status})`);
+      }
+      const data = (await res.json()) as
+        | { ok: true; hierarchy: HomeSeatCategoryHierarchyItem[] }
+        | { ok: false; error?: string };
+      if ("ok" in data && data.ok && Array.isArray(data.hierarchy)) {
+        setHierarchy(data.hierarchy);
+        fetchedHierarchyRef.current = true;
+      } else {
+        throw new Error(("error" in data && data.error) || "Could not load hierarchy.");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setHierarchyError(msg.slice(0, 800));
+    } finally {
+      if (fetchSeqRef.current === seq) setHierarchyLoading(false);
+    }
+  }, [canFetchHierarchy, eventId, hierarchyLoading]);
 
   useEffect(() => {
     if (!open) return;
@@ -141,6 +186,7 @@ export function HomeEventCategoryBlockCells({
   const openDialog = () => {
     setDialogMaximized(false);
     setOpen(true);
+    void fetchHierarchy();
   };
   const minimizeDialog = closeDialog;
 
@@ -264,7 +310,27 @@ export function HomeEventCategoryBlockCells({
                   className="min-h-0 flex-1 overflow-y-auto scroll-smooth overscroll-contain px-5 py-4"
                   style={{ scrollbarGutter: "stable" }}
                 >
-                  {empty ? (
+                  {hierarchyLoading ? (
+                    <div
+                      role="status"
+                      aria-label="Loading category hierarchy"
+                      className={`rounded-xl px-4 py-6 shadow-md shadow-black/35 ${surfaceBorder} bg-black/20 ${surfaceRing}`}
+                    >
+                      <div className="space-y-3">
+                        <div className="h-4 w-48 animate-pulse rounded bg-white/[0.08]" />
+                        <div className="h-3 w-72 animate-pulse rounded bg-white/[0.06]" />
+                        <div className="h-3 w-64 animate-pulse rounded bg-white/[0.06]" />
+                        <div className="h-3 w-56 animate-pulse rounded bg-white/[0.06]" />
+                      </div>
+                    </div>
+                  ) : hierarchyError ? (
+                    <div
+                      role="status"
+                      className="rounded-xl border border-rose-500/30 bg-rose-950/25 px-4 py-4 text-sm text-rose-200 shadow-sm shadow-black/30 ring-1 ring-white/[0.04]"
+                    >
+                      {hierarchyError}
+                    </div>
+                  ) : empty ? (
                     <div
                       role="status"
                       className={`rounded-xl px-4 py-6 text-center shadow-md shadow-black/35 ${surfaceBorder} bg-black/20 ${surfaceRing}`}
