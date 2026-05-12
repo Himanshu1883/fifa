@@ -323,7 +323,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                       href={`/events/${event.id}?kind=RESALE`}
                       className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/[0.12] bg-white/[0.06] px-4 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/25 transition-colors hover:bg-white/[0.10] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
                     >
-                      Browse resale marketplace
+                      Browse Resale Marketplace
                     </Link>
                   </div>
 
