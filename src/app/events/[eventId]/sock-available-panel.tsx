@@ -222,14 +222,18 @@ type SortKey =
   | "row_asc"
   | "seat_asc";
 
-export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInParentCard?: boolean }) {
-  const { rows, embedInParentCard = false } = props;
+export function SockAvailablePanel(props: {
+  rows: SockAvailableDTO[];
+  embedInParentCard?: boolean;
+  initialKind?: "" | "RESALE" | "LAST_MINUTE";
+}) {
+  const { rows, embedInParentCard = false, initialKind = "" } = props;
   const smUp = useMediaQuery("(min-width: 640px)");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [openGroup, setOpenGroup] = useState<SockAvailableGroup | null>(null);
 
-  const [kind, setKind] = useState<"" | "RESALE" | "LAST_MINUTE">("");
+  const [kind, setKind] = useState<"" | "RESALE" | "LAST_MINUTE">(initialKind);
   const [area, setArea] = useState<string>("");
   const [category, setCategory] = useState<string>("");
   const [block, setBlock] = useState<string>("");
@@ -245,6 +249,10 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
   const [sortKey, setSortKey] = useState<SortKey>("created_desc");
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
+
+  useEffect(() => {
+    setKind(initialKind);
+  }, [initialKind]);
 
   useEffect(() => {
     if (!openGroup) return;
