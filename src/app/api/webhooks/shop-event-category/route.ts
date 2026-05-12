@@ -79,6 +79,22 @@ function parseEventId(value: unknown, label: string): number {
   throw new CataloguePayloadError(`${label} must be a positive integer`);
 }
 
+function parsePrefId(value: unknown, label: string): string {
+  const s = coerceNonEmptyString(value);
+  if (s) return s;
+  throw new CataloguePayloadError(`${label} must be a non-empty string`);
+}
+
+function readSearchParamCaseInsensitive(sp: URLSearchParams, key: string): string | null {
+  const target = key.toLowerCase();
+  for (const [k, v] of sp.entries()) {
+    if (k.toLowerCase() !== target) continue;
+    const t = v.trim();
+    return t ? t : null;
+  }
+  return null;
+}
+
 type NormalizedRow = {
   categoryId: string;
   categoryName: string;
@@ -192,12 +208,33 @@ function normalizeIncomingRows(rawRows: unknown): { rows: NormalizedRow[]; recei
 
 function parseWebhookBody(
   raw: unknown,
-  eventIdFromQuery: string | null,
-): { eventId: number; receivedCount: number; rows: NormalizedRow[]; skippedCount: number } {
+  qs: { eventId: string | null; prefId: string | null; resalePrefId: string | null },
+): {
+  eventId?: number;
+  prefId?: string;
+  receivedCount: number;
+  rows: NormalizedRow[];
+  skippedCount: number;
+} {
+  const qsEventId = qs.eventId?.trim() ? qs.eventId.trim() : null;
+  const qsPrefId = qs.prefId?.trim() ? qs.prefId.trim() : null;
+  const qsResalePrefId = qs.resalePrefId?.trim() ? qs.resalePrefId.trim() : null;
+  const qsPrefOrResale = qsPrefId ?? qsResalePrefId;
+
   if (Array.isArray(raw)) {
-    const eventId = parseEventId(eventIdFromQuery, "eventId (query param)");
-    const { rows, receivedCount, skippedCount } = normalizeIncomingRows(raw);
-    return { eventId, receivedCount, rows, skippedCount };
+    if (qsEventId) {
+      const eventId = parseEventId(qsEventId, "eventId (query param)");
+      const { rows, receivedCount, skippedCount } = normalizeIncomingRows(raw);
+      return { eventId, receivedCount, rows, skippedCount };
+    }
+    if (qsPrefOrResale) {
+      const prefId = parsePrefId(qsPrefOrResale, "prefId (query param)");
+      const { rows, receivedCount, skippedCount } = normalizeIncomingRows(raw);
+      return { prefId, receivedCount, rows, skippedCount };
+    }
+    throw new CataloguePayloadError(
+      "Missing event identifier: provide ?prefId= (recommended) or ?eventId= when POST body is a raw array",
+    );
   }
 
   if (!raw || typeof raw !== "object") {
@@ -206,19 +243,46 @@ function parseWebhookBody(
 
   const o = raw as Record<string, unknown>;
   const wrapperEventId = pickRowValue(o, "eventId", "event_id");
-  const eventId = parseEventId(wrapperEventId ?? eventIdFromQuery, "eventId");
-  const wrapperRows = pickRowValue(o, "rows");
+  if (wrapperEventId !== undefined && wrapperEventId !== null && String(wrapperEventId).trim()) {
+    const eventId = parseEventId(wrapperEventId, "eventId");
+    const wrapperRows = pickRowValue(o, "rows");
+    const { rows, receivedCount, skippedCount } = normalizeIncomingRows(wrapperRows);
+    return { eventId, receivedCount, rows, skippedCount };
+  }
 
-  const { rows, receivedCount, skippedCount } = normalizeIncomingRows(wrapperRows);
-  return { eventId, receivedCount, rows, skippedCount };
+  const wrapperPrefId = pickRowValue(o, "prefId", "pref_id");
+  if (wrapperPrefId !== undefined && wrapperPrefId !== null && String(wrapperPrefId).trim()) {
+    const prefId = parsePrefId(wrapperPrefId, "prefId");
+    const wrapperRows = pickRowValue(o, "rows");
+    const { rows, receivedCount, skippedCount } = normalizeIncomingRows(wrapperRows);
+    return { prefId, receivedCount, rows, skippedCount };
+  }
+
+  if (qsEventId) {
+    const eventId = parseEventId(qsEventId, "eventId (query param)");
+    const wrapperRows = pickRowValue(o, "rows");
+    const { rows, receivedCount, skippedCount } = normalizeIncomingRows(wrapperRows);
+    return { eventId, receivedCount, rows, skippedCount };
+  }
+  if (qsPrefOrResale) {
+    const prefId = parsePrefId(qsPrefOrResale, "prefId (query param)");
+    const wrapperRows = pickRowValue(o, "rows");
+    const { rows, receivedCount, skippedCount } = normalizeIncomingRows(wrapperRows);
+    return { prefId, receivedCount, rows, skippedCount };
+  }
+
+  const wrapperRows = pickRowValue(o, "rows");
+  // Validate the wrapper row shape, even though the request is missing an event identifier.
+  normalizeIncomingRows(wrapperRows);
+  throw new CataloguePayloadError('Missing "eventId" or "prefId" on wrapper object (or in query string)');
 }
 
 /**
  * Snapshot replace for `shop_event_category` rows.
  *
  * Input format (flexible):
- * - POST raw array `[...]` with `?eventId=123`
- * - POST wrapper object `{ eventId, rows: [...] }` (or `event_id`)
+ * - POST raw array `[...]` with `?prefId=CATALOGUE_PREF_ID` (recommended) or `?eventId=123`
+ * - POST wrapper object `{ prefId, rows: [...] }` or `{ eventId, rows: [...] }` (also accepts `event_id`)
  *
  * Row keys accept camelCase or snake_case:
  * - categoryId / category_id
@@ -241,23 +305,52 @@ export async function POST(req: NextRequest) {
   }
 
   const eventIdQs = req.nextUrl.searchParams.get("eventId");
+  const prefIdQs = readSearchParamCaseInsensitive(req.nextUrl.searchParams, "prefId");
+  const resalePrefIdQs = readSearchParamCaseInsensitive(req.nextUrl.searchParams, "resalePrefId");
 
   let parsedEventId: number | undefined;
+  let parsedPrefId: string | undefined;
   let receivedCount: number | undefined;
 
   try {
-    const parsed = parseWebhookBody(raw, eventIdQs);
-    parsedEventId = parsed.eventId;
+    const parsed = parseWebhookBody(raw, { eventId: eventIdQs, prefId: prefIdQs, resalePrefId: resalePrefIdQs });
     receivedCount = parsed.receivedCount;
 
-    const exists = await prisma.event.findUnique({
-      where: { id: parsed.eventId },
-      select: { id: true },
-    });
-    if (!exists) {
+    const resolvedEventId = await (async () => {
+      if (parsed.eventId !== undefined) {
+        parsedEventId = parsed.eventId;
+        const exists = await prisma.event.findUnique({
+          where: { id: parsed.eventId },
+          select: { id: true },
+        });
+        if (!exists) return null;
+        return parsed.eventId;
+      }
+      if (parsed.prefId) {
+        parsedPrefId = parsed.prefId;
+        const ev = await prisma.event.findFirst({
+          where: { OR: [{ prefId: parsed.prefId }, { resalePrefId: parsed.prefId }] },
+          select: { id: true },
+        });
+        if (!ev) return null;
+        parsedEventId = ev.id;
+        return ev.id;
+      }
+      return null;
+    })();
+
+    if (!resolvedEventId) {
+      if (parsed.eventId !== undefined) {
+        return NextResponse.json(
+          {
+            error: `No event with id ${parsed.eventId} — create/seed the Event first.`,
+          },
+          { status: 404 },
+        );
+      }
       return NextResponse.json(
         {
-          error: `No event with id ${parsed.eventId} — create/seed the Event first.`,
+          error: `No event for pref "${parsed.prefId ?? "(unset)"}" (match prefId or resalePrefId) — seed the event first.`,
         },
         { status: 404 },
       );
@@ -280,7 +373,7 @@ export async function POST(req: NextRequest) {
       }
       seen.add(key);
       uniqueRows.push({
-        eventId: parsed.eventId,
+        eventId: resolvedEventId,
         categoryId: r.categoryId,
         categoryName: r.categoryName,
         categoryBlockId: r.categoryBlockId,
@@ -293,7 +386,7 @@ export async function POST(req: NextRequest) {
     const txResult = await prisma.$transaction(
       async (tx) => {
         const deleted = await tx.shopEventCategoryBlock.deleteMany({
-          where: { eventId: parsed.eventId },
+          where: { eventId: resolvedEventId },
         });
         const inserted =
           uniqueRows.length === 0
@@ -312,7 +405,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      eventId: parsed.eventId,
+      ...(parsedPrefId ? { lookup: "pref-or-resale", prefId: parsedPrefId } : { lookup: "eventId" }),
+      eventId: resolvedEventId,
       receivedCount: parsed.receivedCount,
       acceptedCount,
       deletedCount: txResult.deletedCount,
@@ -337,6 +431,7 @@ export async function POST(req: NextRequest) {
         hint,
         code,
         eventId: parsedEventId ?? eventIdQs ?? "(unset)",
+        prefId: parsedPrefId ?? prefIdQs ?? resalePrefIdQs ?? "(unset)",
         path: req.nextUrl.pathname,
         contentLength: req.headers.get("content-length") ?? "(unknown)",
         receivedCount: receivedCount ?? "(unknown)",
@@ -365,12 +460,15 @@ export async function GET(req: NextRequest) {
     fullUrl,
     table: "shop_event_category",
     notes:
-      "Snapshot replace: each POST deletes all existing shop_event_category rows for the given eventId then inserts the new unique payload rows. No auth.",
+      "Snapshot replace: each POST deletes all existing shop_event_category rows for the resolved event then inserts the new unique payload rows. No auth.",
     query: {
-      eventId: "required only when POST body is a raw array",
+      prefId: "recommended; resolves Event by matching prefId OR resalePrefId (preferred identifier)",
+      resalePrefId: "alias for prefId (same id value)",
+      eventId: "optional; if both prefId and eventId are provided, eventId wins",
     },
     body: {
-      eventId: "required when using wrapper object; optional if using ?eventId=",
+      prefId: "optional (wrapper object only): resolves Event by matching prefId OR resalePrefId",
+      eventId: "optional (wrapper object only): if provided, used directly (preferred over prefId)",
       rows: [
         {
           categoryId: "string",
@@ -389,12 +487,15 @@ export async function GET(req: NextRequest) {
     },
     sampleCurl: [
       `curl -sS "${fullUrl}"`,
-      `curl -sS -X POST "${fullUrl}?eventId=123" \\`,
+      `curl -sS -X POST "${fullUrl}?prefId=CATALOGUE_PREF_ID" \\`,
       `  -H "Content-Type: application/json" \\`,
       `  --data-binary '[{"categoryId":"1","categoryName":"Cat 1","categoryBlockId":"A","categoryBlockName":"Block A","categoryPrice":25000,"blockPrice":"249.99"}]'`,
       `curl -sS -X POST "${fullUrl}" \\`,
       `  -H "Content-Type: application/json" \\`,
-      `  --data-binary '{"eventId":123,"rows":[{"category_id":"1","category_name":"Cat 1","category_block_id":"A","category_block_name":"Block A","category_price":"250.00","block_price":24999}]}'`,
+      `  --data-binary '{"prefId":"CATALOGUE_PREF_ID","rows":[{"category_id":"1","category_name":"Cat 1","category_block_id":"A","category_block_name":"Block A","category_price":"250.00","block_price":24999}]}'`,
+      `curl -sS -X POST "${fullUrl}?eventId=123" \\`,
+      `  -H "Content-Type: application/json" \\`,
+      `  --data-binary '[{"categoryId":"1","categoryName":"Cat 1","categoryBlockId":"A","categoryBlockName":"Block A","categoryPrice":25000,"blockPrice":"249.99"}]'`,
     ],
   });
 }

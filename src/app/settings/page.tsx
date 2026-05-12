@@ -165,16 +165,21 @@ export default async function SettingsPage() {
       methods: ["GET", "POST"],
       queryParams: [
         {
+          name: "prefId",
+          required: false,
+          notes: "Recommended. Resolves Event by matching prefId OR resalePrefId.",
+        },
+        {
           name: "eventId",
           required: false,
-          notes: "Required only when POST body is a raw array (no wrapper object)",
+          notes: "Alternative. If both prefId and eventId are provided, eventId wins.",
         },
       ],
       notes:
-        "Stores face-value category×block rows for an event (shop_event_category). Snapshot replace: each POST deletes all existing rows for the eventId then inserts the unique payload. Prices accept integer cents (stored as USD dollars ÷100) or decimal USD strings/numbers.",
+        "Stores face-value category×block rows for an event (shop_event_category). Snapshot replace: each POST deletes all existing rows for the resolved event then inserts the unique payload. Prices accept integer cents (stored as USD dollars ÷100) or decimal USD strings/numbers.",
       sampleCurl: [
         `curl -sS "${baseUrl}/api/webhooks/shop-event-category"`,
-        `curl -sS -X POST "${baseUrl}/api/webhooks/shop-event-category?eventId=EVENT_ID" \\`,
+        `curl -sS -X POST "${baseUrl}/api/webhooks/shop-event-category?prefId=CATALOGUE_PREF_ID" \\`,
         `  -H "Content-Type: application/json" \\`,
         `  --data-binary @shop-event-category.json`,
       ],
