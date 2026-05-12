@@ -23,6 +23,7 @@ type Props = {
     prefsErr?: string | string[];
     sort?: string | string[];
     order?: string | string[];
+    kind?: string | string[];
     important?: string | string[];
     venue?: string | string[];
     country?: string | string[];
@@ -133,6 +134,16 @@ function parseHomeCountryFilter(q: { country?: string | string[] }): string {
   return firstQs(q.country)?.trim() ?? "";
 }
 
+type HomeSockKind = "" | "RESALE" | "LAST_MINUTE";
+function parseHomeSockKindFilter(q: { kind?: string | string[] }): HomeSockKind {
+  const raw = (firstQs(q.kind) ?? "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw === "resale") return "RESALE";
+  if (raw === "last_minute" || raw === "last-minute" || raw === "lastminute" || raw === "lm" || raw === "shop")
+    return "LAST_MINUTE";
+  return "";
+}
+
 function compareNullablePrice(
   a: string | null,
   b: string | null,
@@ -189,26 +200,30 @@ function sortHomeEvents(
 }
 
 const getHomeSockAggregates = unstable_cache(
-  async (eventIds: number[]) => {
+  async (eventIds: number[], kind: HomeSockKind) => {
     if (eventIds.length === 0) {
       return { sockAgg: [], sockAggByCategory: [] } as const;
     }
+    const where = {
+      eventId: { in: eventIds },
+      ...(kind ? { kind } : {}),
+    } satisfies Prisma.SockAvailableWhereInput;
     const [sockAgg, sockAggByCategory] = await Promise.all([
       prisma.sockAvailable.groupBy({
         by: ["eventId"],
-        where: { eventId: { in: eventIds } },
+        where,
         _count: { _all: true },
         _min: { amount: true },
       }),
       prisma.sockAvailable.groupBy({
         by: ["eventId", "categoryName"],
-        where: { eventId: { in: eventIds } },
+        where,
         _min: { amount: true },
       }),
     ]);
     return { sockAgg, sockAggByCategory } as const;
   },
-  ["home-sock-aggregates-v1"],
+  ["home-sock-aggregates-v2"],
   { revalidate: 5 },
 );
 
@@ -239,6 +254,7 @@ export default async function Home({ searchParams }: Props) {
   const prefsRaw = firstQs(q.prefsErr);
   const prefsErr = prefsRaw ?? undefined;
   const { sort: listSort, order: listOrder } = parseHomeListSort(q);
+  const sockKind = parseHomeSockKindFilter(q);
   const importantFilter = parseImportantFilter(q);
   const venueFilter = parseHomeVenueFilter(q);
   const countryFilter = parseHomeCountryFilter(q);
@@ -269,7 +285,7 @@ export default async function Home({ searchParams }: Props) {
 
     const eventIds = rows.map((r) => r.id);
     const [{ sockAgg, sockAggByCategory }, categoryCounts] = await Promise.all([
-      getHomeSockAggregates(eventIds),
+      getHomeSockAggregates(eventIds, sockKind),
       getHomeEventCategoryCounts(eventIds),
     ]);
 
@@ -359,6 +375,24 @@ export default async function Home({ searchParams }: Props) {
   const countryOptions = distinctNonEmptyCaseInsensitive(eventsAll.map((e) => e.country));
 
   const totalTickets = events.reduce((acc, e) => acc + e.ticketsCount, 0);
+  const homeResaleActive = sockKind === "RESALE";
+  const homeShopActive = sockKind === "LAST_MINUTE";
+
+  const homeKindHref = (nextKind: HomeSockKind): string => {
+    const sp = new URLSearchParams();
+    if (prefsErr) sp.set("prefsErr", prefsErr);
+    if (nextKind) sp.set("kind", nextKind);
+    if (venueFilter.trim()) sp.set("venue", venueFilter.trim());
+    if (countryFilter.trim()) sp.set("country", countryFilter.trim());
+    if (importantFilter === "important") sp.set("important", "1");
+    else if (importantFilter === "notImportant") sp.set("important", "0");
+    if (!(listSort === "match" && listOrder === "asc")) {
+      sp.set("sort", listSort);
+      if (listOrder === "desc") sp.set("order", "desc");
+    }
+    const qs = sp.toString();
+    return `${qs ? `/?${qs}` : "/"}#home-events-heading`;
+  };
 
   const noTicketsTitle = "No sock_available rows synced for this event yet";
   const noPriceTitle = "No sock_available amounts available";
@@ -442,7 +476,9 @@ export default async function Home({ searchParams }: Props) {
                 aria-label="Schedule totals"
               >
                 <div className="px-4 text-center">
-                  <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Tickets</dt>
+                  <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Tickets{sockKind === "RESALE" ? " (Resale)" : sockKind === "LAST_MINUTE" ? " (Shop)" : ""}
+                  </dt>
                   <dd className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-[color:color-mix(in_oklab,var(--ticketing-accent)_88%,white_8%)] sm:text-4xl">
                     {totalTickets.toLocaleString("en-US")}
                   </dd>
@@ -455,17 +491,29 @@ export default async function Home({ searchParams }: Props) {
                 </div>
                 <div className="px-4 text-center">
                   <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Sources</dt>
-                  <dd className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-white sm:text-4xl">2</dd>
+                  <dd className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-white sm:text-4xl">
+                    {sockKind ? 1 : 2}
+                  </dd>
                 </div>
               </dl>
 
               <div className="mt-8 flex w-full flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
                 <Link
-                  href="#home-events-heading"
-                  className="group inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:var(--ticketing-accent)] px-6 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter,transform] hover:brightness-[1.06] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                  href={homeKindHref("LAST_MINUTE")}
+                  className={
+                    homeShopActive
+                      ? "group inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:var(--ticketing-accent)] px-6 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter,transform] hover:brightness-[1.06] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                      : "group inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                  }
                 >
                   Browse Last Minute Sales
-                  <span className="rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-950/90">
+                  <span
+                    className={
+                      homeShopActive
+                        ? "rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-950/90"
+                        : "rounded-full bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:color-mix(in_oklab,var(--ticketing-accent)_85%,white_10%)] ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)]"
+                    }
+                  >
                     New
                   </span>
                   <span className="text-zinc-950/80 transition-transform group-hover:translate-x-0.5" aria-hidden>
@@ -473,10 +521,14 @@ export default async function Home({ searchParams }: Props) {
                   </span>
                 </Link>
                 <Link
-                  href="#home-events-heading"
-                  className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                  href={homeKindHref("RESALE")}
+                  className={
+                    homeResaleActive
+                      ? "inline-flex min-h-11 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:var(--ticketing-accent)] px-6 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter,transform] hover:brightness-[1.06] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                      : "inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                  }
                 >
-                  Browse resale marketplace
+                  Browse Resale Marketplace
                 </Link>
               </div>
             </div>
