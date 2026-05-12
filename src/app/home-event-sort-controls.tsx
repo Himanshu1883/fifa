@@ -7,7 +7,19 @@ export type HomeSortKey = "match" | "price" | "tickets";
 export type HomeImportantFilter = "all" | "important" | "notImportant";
 
 const sel =
-  "min-h-9 rounded-lg border border-white/[0.09] bg-[#0c1010] px-2.5 py-1.5 text-xs text-zinc-100 shadow-inner shadow-black/35 transition-[border-color,box-shadow] focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
+  "min-h-9 rounded-full border border-white/[0.10] bg-black/35 px-3 py-1.5 text-xs font-medium text-zinc-100 shadow-inner shadow-black/35 transition-[border-color,box-shadow,background-color] hover:bg-black/45 focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
+
+const label =
+  "text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500";
+
+const groupShell =
+  "flex flex-wrap items-center gap-2 rounded-2xl border border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface)_70%,transparent)] px-3 py-2 shadow-inner shadow-black/25 ring-1 ring-white/[0.04] backdrop-blur-md";
+
+function clearButtonClass(disabled: boolean): string {
+  const base =
+    "inline-flex min-h-9 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 shadow-sm shadow-black/25 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
+  return disabled ? `${base} opacity-60 pointer-events-none` : base;
+}
 
 function normalizeOpt(v: string): string {
   return v.trim();
@@ -78,6 +90,8 @@ export function HomeEventSortControls({
   const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
 
+  const hasAnyFilters = Boolean(venue.trim() || country.trim() || important !== "all");
+
   const navigate = useCallback(
     (
       nextSort: HomeSortKey,
@@ -96,10 +110,10 @@ export function HomeEventSortControls({
 
   return (
     <div
-      className="flex flex-wrap items-center gap-2 rounded-lg border border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface)_65%,transparent)] px-3 py-2 shadow-inner shadow-black/25 ring-1 ring-white/[0.04]"
+      className={groupShell}
       aria-busy={pending}
     >
-      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">Sort</span>
+      <span className={label}>Sort</span>
       <label className="sr-only" htmlFor="home-sort-field">
         Sort by
       </label>
@@ -131,9 +145,8 @@ export function HomeEventSortControls({
 
       {venueOptions.length > 0 ? (
         <>
-          <span className="ml-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-            Venue
-          </span>
+          <span className="ml-1.5 hidden h-6 w-px bg-white/[0.10] sm:block" aria-hidden />
+          <span className={label}>Venue</span>
           <label className="sr-only" htmlFor="home-venue-filter">
             Filter by venue
           </label>
@@ -157,9 +170,8 @@ export function HomeEventSortControls({
 
       {countryOptions.length > 0 ? (
         <>
-          <span className="ml-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-            Country
-          </span>
+          <span className="ml-1.5 hidden h-6 w-px bg-white/[0.10] sm:block" aria-hidden />
+          <span className={label}>Country</span>
           <label className="sr-only" htmlFor="home-country-filter">
             Filter by country
           </label>
@@ -181,9 +193,8 @@ export function HomeEventSortControls({
         </>
       ) : null}
 
-      <span className="ml-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-        Important
-      </span>
+      <span className="ml-1.5 hidden h-6 w-px bg-white/[0.10] sm:block" aria-hidden />
+      <span className={label}>Important</span>
       <label className="sr-only" htmlFor="home-important-filter">
         Filter important events
       </label>
@@ -200,6 +211,15 @@ export function HomeEventSortControls({
         <option value="important">Important only</option>
         <option value="notImportant">Not important</option>
       </select>
+
+      <button
+        type="button"
+        className={`${clearButtonClass(!hasAnyFilters || pending)} ml-auto`}
+        onClick={() => navigate(sort, order, "all", "", "")}
+        disabled={!hasAnyFilters || pending}
+      >
+        Clear filters
+      </button>
     </div>
   );
 }
