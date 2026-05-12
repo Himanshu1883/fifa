@@ -363,7 +363,6 @@ export default async function Home({ searchParams }: Props) {
   const countryOptions = distinctNonEmptyCaseInsensitive(eventsAll.map((e) => e.country));
 
   const totalTickets = events.reduce((acc, e) => acc + e.ticketsCount, 0);
-  const eventsWithTickets = events.filter((e) => e.ticketsCount > 0).length;
 
   const noTicketsTitle = "No sock_available rows synced for this event yet";
   const noPriceTitle = "No sock_available amounts available";
@@ -457,17 +456,6 @@ export default async function Home({ searchParams }: Props) {
                   </dt>
                   <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-[color:color-mix(in_oklab,var(--ticketing-accent)_88%,white_8%)] sm:text-2xl sm:leading-none">
                     {totalTickets.toLocaleString("en-US")}
-                  </dd>
-                </div>
-                <div className="px-4 py-3.5 sm:flex-1 sm:py-4">
-                  <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                    With tickets
-                  </dt>
-                  <dd
-                    className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-zinc-200 sm:text-2xl sm:leading-none"
-                    title="Matches with at least one sock_available row"
-                  >
-                    {events.length > 0 ? eventsWithTickets.toLocaleString("en-US") : "—"}
                   </dd>
                 </div>
               </dl>
