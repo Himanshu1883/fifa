@@ -117,6 +117,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
   const [createdTo, setCreatedTo] = useState<string>("");
   const [sortKey, setSortKey] = useState<SortKey>("created_desc");
   const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
 
   useEffect(() => {
     if (!openRow) return;
@@ -266,7 +267,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
   ]);
 
   const sectionPad = embedInParentCard ? "px-4 sm:px-7" : "";
-  const filtersVisible = smUp || mobileFiltersOpen;
+  const filtersVisible = smUp ? filtersExpanded : mobileFiltersOpen;
   const hasAnyFilters = Boolean(
     search.trim() ||
       area ||
@@ -315,9 +316,9 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
         </div>
       ) : (
         <>
-          <div className="flex flex-col gap-3 rounded-xl border border-white/[0.07] bg-zinc-900/25 p-3.5 ring-1 ring-white/[0.04] backdrop-blur-sm sm:p-4">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="flex min-w-0 flex-col gap-1">
+          <div className="flex flex-col gap-2.5 rounded-2xl border border-white/[0.07] bg-zinc-900/25 p-3.5 ring-1 ring-white/[0.04] backdrop-blur-sm sm:p-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-2.5">
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <label
                   htmlFor="sock-available-search"
                   className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500"
@@ -336,58 +337,109 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                 />
               </div>
 
-              <div className="flex min-w-0 flex-col gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                  Sort
-                </label>
-                <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)} className={controlClass}>
-                  <option value="created_desc">Created (newest)</option>
-                  <option value="created_asc">Created (oldest)</option>
-                  <option value="updated_desc">Updated (newest)</option>
-                  <option value="updated_asc">Updated (oldest)</option>
-                  <option value="amount_asc">Amount (low to high)</option>
-                  <option value="amount_desc">Amount (high to low)</option>
-                  <option value="area_asc">Area (A→Z)</option>
-                  <option value="category_asc">Category (A→Z)</option>
-                  <option value="block_asc">Block (A→Z)</option>
-                  <option value="row_asc">Row (A→Z)</option>
-                  <option value="seat_asc">Seat (low to high)</option>
-                </select>
-              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-2.5">
+                <div className="flex min-w-0 flex-col gap-1 sm:w-[15rem]">
+                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    Sort
+                  </label>
+                  <select
+                    value={sortKey}
+                    onChange={(e) => setSortKey(e.target.value as SortKey)}
+                    className={controlClass}
+                  >
+                    <option value="created_desc">Created (newest)</option>
+                    <option value="created_asc">Created (oldest)</option>
+                    <option value="updated_desc">Updated (newest)</option>
+                    <option value="updated_asc">Updated (oldest)</option>
+                    <option value="amount_asc">Amount (low to high)</option>
+                    <option value="amount_desc">Amount (high to low)</option>
+                    <option value="area_asc">Area (A→Z)</option>
+                    <option value="category_asc">Category (A→Z)</option>
+                    <option value="block_asc">Block (A→Z)</option>
+                    <option value="row_asc">Row (A→Z)</option>
+                    <option value="seat_asc">Seat (low to high)</option>
+                  </select>
+                </div>
 
-              {!smUp ? (
-                <button
-                  type="button"
-                  onClick={() => setMobileFiltersOpen((v) => !v)}
-                  aria-expanded={mobileFiltersOpen}
-                  className={
-                    hasAnyFilters
-                      ? "flex min-h-10 items-center justify-between gap-2 rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3 py-2 text-left text-sm font-semibold text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)] outline-none transition-colors hover:border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] sm:col-span-2 lg:col-span-4"
-                      : "flex min-h-10 items-center justify-between gap-2 rounded-lg border border-white/[0.10] bg-black/30 px-3 py-2 text-left text-sm font-semibold text-zinc-100 ring-1 ring-white/[0.04] outline-none transition-colors hover:border-white/16 hover:bg-black/40 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] sm:col-span-2 lg:col-span-4"
-                  }
-                >
-                  <span>Filters</span>
-                  <span className="tabular-nums text-zinc-400" aria-hidden>
-                    {mobileFiltersOpen ? "▴" : "▾"}
-                  </span>
-                </button>
-              ) : null}
-            </div>
-
-            {filtersVisible ? (
-              <>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="flex min-w-0 flex-col gap-1">
+                {smUp ? (
+                  <div className="flex min-w-0 flex-col gap-1 sm:w-[11rem]">
                     <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                       Kind
                     </label>
-                    <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)} className={controlClass}>
+                    <select
+                      value={kind}
+                      onChange={(e) => setKind(e.target.value as typeof kind)}
+                      className={controlClass}
+                    >
                       <option value="">All</option>
                       <option value="RESALE">Resale</option>
                       <option value="LAST_MINUTE">Last‑minute</option>
                     </select>
                   </div>
+                ) : null}
 
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (smUp) setFiltersExpanded((v) => !v);
+                    else setMobileFiltersOpen(true);
+                  }}
+                  aria-expanded={filtersVisible}
+                  className={
+                    hasAnyFilters || filtersVisible
+                      ? "flex min-h-10 items-center justify-between gap-2 rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3 py-2 text-left text-sm font-semibold text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)] outline-none transition-colors hover:border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                      : "flex min-h-10 items-center justify-between gap-2 rounded-lg border border-white/[0.10] bg-black/30 px-3 py-2 text-left text-sm font-semibold text-zinc-100 ring-1 ring-white/[0.04] outline-none transition-colors hover:border-white/16 hover:bg-black/40 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                  }
+                >
+                  <span>{smUp ? (filtersVisible ? "Hide filters" : "More filters") : "Filters"}</span>
+                  <span className="tabular-nums text-zinc-400" aria-hidden>
+                    {filtersVisible ? "▴" : "▾"}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2">
+              <p className="text-[11px] leading-snug text-zinc-500 sm:text-xs">
+                <span className="tabular-nums text-zinc-300">{filtered.length.toLocaleString("en-US")}</span>
+                <span> shown</span>
+                <span className="text-zinc-700"> · </span>
+                <span className="tabular-nums text-zinc-500">{rows.length.toLocaleString("en-US")}</span>
+                <span> loaded</span>
+                <span>.</span>
+              </p>
+
+              {smUp && hasAnyFilters ? (
+                <button
+                  type="button"
+                  className="min-h-9 rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-xs font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                  onClick={() => {
+                    setSearch("");
+                    setKind("");
+                    setArea("");
+                    setCategory("");
+                    setBlock("");
+                    setRow("");
+                    setSeat("");
+                    setContingent("");
+                    setMovement("");
+                    setMinUsd("");
+                    setMaxUsd("");
+                    setCreatedFrom("");
+                    setCreatedTo("");
+                    setSortKey("created_desc");
+                    setShowMoreFilters(false);
+                    setFiltersExpanded(false);
+                  }}
+                >
+                  Clear
+                </button>
+              ) : null}
+            </div>
+
+            {smUp && filtersVisible ? (
+              <div className="space-y-3 border-t border-white/[0.06] pt-2">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div className="flex min-w-0 flex-col gap-1">
                     <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                       Area
@@ -481,11 +533,40 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                   </div>
                   <div className="flex min-w-0 flex-col gap-1">
                     <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      Created from
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={createdFrom}
+                      onChange={(e) => setCreatedFrom(e.target.value)}
+                      className={controlClass}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="flex min-w-0 flex-col gap-1 lg:col-span-1">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      Created to
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={createdTo}
+                      onChange={(e) => setCreatedTo(e.target.value)}
+                      className={controlClass}
+                    />
+                  </div>
+                  <div className="flex min-w-0 flex-col gap-1 lg:col-span-3">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                       Advanced
                     </label>
                     <button
                       type="button"
-                      className="min-h-10 rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-left text-sm font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                      className={
+                        showMoreFilters
+                          ? "min-h-10 rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3 py-2 text-left text-sm font-semibold text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)] outline-none transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                          : "min-h-10 rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-left text-sm font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                      }
                       onClick={() => setShowMoreFilters((v) => !v)}
                       aria-expanded={showMoreFilters}
                     >
@@ -518,62 +599,256 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                         placeholder="e.g. 10229…"
                       />
                     </div>
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                        Created from
-                      </label>
-                      <input
-                        type="datetime-local"
-                        value={createdFrom}
-                        onChange={(e) => setCreatedFrom(e.target.value)}
-                        className={controlClass}
-                      />
-                    </div>
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                        Created to
-                      </label>
-                      <input
-                        type="datetime-local"
-                        value={createdTo}
-                        onChange={(e) => setCreatedTo(e.target.value)}
-                        className={controlClass}
-                      />
-                    </div>
                   </div>
                 ) : null}
-              </>
+              </div>
             ) : null}
+          </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  className="rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-xs font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
-                  onClick={() => {
-                    setSearch("");
-                    setKind("");
-                    setArea("");
-                    setCategory("");
-                    setBlock("");
-                    setRow("");
-                    setSeat("");
-                    setContingent("");
-                    setMovement("");
-                    setMinUsd("");
-                    setMaxUsd("");
-                    setCreatedFrom("");
-                    setCreatedTo("");
-                    setSortKey("created_desc");
-                    setShowMoreFilters(false);
-                    if (!smUp) setMobileFiltersOpen(false);
-                  }}
-                >
-                  Clear
-                </button>
+          {!smUp && mobileFiltersOpen ? (
+            <div
+              className="fixed inset-0 z-[70] flex items-end justify-center bg-black/70 p-3 sm:hidden"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Sock available filters"
+              onMouseDown={(e) => {
+                if (e.target === e.currentTarget) setMobileFiltersOpen(false);
+              }}
+            >
+              <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-white/[0.10] bg-[color:var(--ticketing-surface-elevated)] shadow-[0_28px_80px_-26px_rgba(0,0,0,0.85)] ring-1 ring-white/[0.06]">
+                <div className="flex items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-4">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      Filters
+                    </p>
+                    <p className="mt-1 text-sm font-semibold tracking-tight text-white">Sock available</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-lg border border-white/[0.10] bg-black/30 px-2.5 py-1.5 text-xs font-medium text-zinc-200 hover:bg-white/[0.05] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                    onClick={() => setMobileFiltersOpen(false)}
+                  >
+                    Done
+                  </button>
+                </div>
+
+                <div className="max-h-[75vh] overflow-auto px-4 py-4 [-webkit-overflow-scrolling:touch]">
+                  <div className="grid gap-3">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                        Kind
+                      </label>
+                      <select
+                        value={kind}
+                        onChange={(e) => setKind(e.target.value as typeof kind)}
+                        className={controlClass}
+                      >
+                        <option value="">All</option>
+                        <option value="RESALE">Resale</option>
+                        <option value="LAST_MINUTE">Last‑minute</option>
+                      </select>
+                    </div>
+
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                        Area
+                      </label>
+                      <select value={area} onChange={(e) => setArea(e.target.value)} className={controlClass}>
+                        <option value="">All</option>
+                        {areaOptions.map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                        Category
+                      </label>
+                      <select
+                        value={category}
+                        onChange={(e) => setCategory(e.target.value)}
+                        className={controlClass}
+                      >
+                        <option value="">All</option>
+                        {categoryOptions.map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                        Block
+                      </label>
+                      <select value={block} onChange={(e) => setBlock(e.target.value)} className={controlClass}>
+                        <option value="">All</option>
+                        {blockOptions.map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                          Row contains
+                        </label>
+                        <input
+                          value={row}
+                          onChange={(e) => setRow(e.target.value)}
+                          className={controlClass}
+                          placeholder="e.g. Q"
+                        />
+                      </div>
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                          Seat contains
+                        </label>
+                        <input
+                          value={seat}
+                          onChange={(e) => setSeat(e.target.value)}
+                          className={controlClass}
+                          placeholder="e.g. 24"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                          Amount USD min
+                        </label>
+                        <input
+                          inputMode="decimal"
+                          value={minUsd}
+                          onChange={(e) => setMinUsd(e.target.value)}
+                          className={controlClass}
+                          placeholder="e.g. 100"
+                        />
+                      </div>
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                          Amount USD max
+                        </label>
+                        <input
+                          inputMode="decimal"
+                          value={maxUsd}
+                          onChange={(e) => setMaxUsd(e.target.value)}
+                          className={controlClass}
+                          placeholder="e.g. 500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                          Created from
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={createdFrom}
+                          onChange={(e) => setCreatedFrom(e.target.value)}
+                          className={controlClass}
+                        />
+                      </div>
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                          Created to
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={createdTo}
+                          onChange={(e) => setCreatedTo(e.target.value)}
+                          className={controlClass}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                        Advanced
+                      </label>
+                      <button
+                        type="button"
+                        className={
+                          showMoreFilters
+                            ? "min-h-10 rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3 py-2 text-left text-sm font-semibold text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)] outline-none transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                            : "min-h-10 rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-left text-sm font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                        }
+                        onClick={() => setShowMoreFilters((v) => !v)}
+                        aria-expanded={showMoreFilters}
+                      >
+                        {showMoreFilters ? "Hide advanced" : "Show advanced"}
+                      </button>
+                    </div>
+
+                    {showMoreFilters ? (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="flex min-w-0 flex-col gap-1">
+                          <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                            Contingent contains
+                          </label>
+                          <input
+                            value={contingent}
+                            onChange={(e) => setContingent(e.target.value)}
+                            className={controlClass}
+                            placeholder="e.g. 1140…"
+                          />
+                        </div>
+                        <div className="flex min-w-0 flex-col gap-1">
+                          <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                            Movement contains
+                          </label>
+                          <input
+                            value={movement}
+                            onChange={(e) => setMovement(e.target.value)}
+                            className={controlClass}
+                            placeholder="e.g. 10229…"
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {hasAnyFilters ? (
+                      <button
+                        type="button"
+                        className="mt-1 min-h-10 w-full rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-sm font-semibold text-zinc-100 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                        onClick={() => {
+                          setSearch("");
+                          setKind("");
+                          setArea("");
+                          setCategory("");
+                          setBlock("");
+                          setRow("");
+                          setSeat("");
+                          setContingent("");
+                          setMovement("");
+                          setMinUsd("");
+                          setMaxUsd("");
+                          setCreatedFrom("");
+                          setCreatedTo("");
+                          setSortKey("created_desc");
+                          setShowMoreFilters(false);
+                          setFiltersExpanded(false);
+                          setMobileFiltersOpen(false);
+                        }}
+                      >
+                        Clear filters
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          ) : null}
 
           {filtered.length === 0 ? (
             <div
