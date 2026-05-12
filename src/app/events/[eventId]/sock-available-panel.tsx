@@ -94,6 +94,30 @@ type SockAvailableGroup = {
   updatedAtMaxMs: number;
 };
 
+function groupFromSingleRow(r: SockAvailableDTO): SockAvailableGroup {
+  const c = Date.parse(r.createdAt);
+  const u = Date.parse(r.updatedAt);
+  const createdMs = Number.isFinite(c) ? c : Number.NaN;
+  const updatedMs = Number.isFinite(u) ? u : Number.NaN;
+  return {
+    id: `raw|${r.id}`,
+    kind: r.kind,
+    amount: r.amount,
+    areaName: r.areaName,
+    categoryName: r.categoryName,
+    blockName: r.blockName,
+    row: r.row,
+    seatSpan: r.seatNumber,
+    togetherCount: 1,
+    seats: [r],
+    seatSortStart: parseStrictInt(r.seatNumber),
+    createdAtMinMs: createdMs,
+    createdAtMaxMs: createdMs,
+    updatedAtMinMs: updatedMs,
+    updatedAtMaxMs: updatedMs,
+  };
+}
+
 function groupSockAvailableRows(rows: SockAvailableDTO[]): SockAvailableGroup[] {
   const byKey = new Map<string, SockAvailableDTO[]>();
   for (const r of rows) {
@@ -234,6 +258,7 @@ export function SockAvailablePanel(props: {
   const [openGroup, setOpenGroup] = useState<SockAvailableGroup | null>(null);
 
   const [kind, setKind] = useState<"" | "RESALE" | "LAST_MINUTE">(initialKind);
+  const [viewMode, setViewMode] = useState<"grouped" | "raw">("grouped");
   const [area, setArea] = useState<string>("");
   const [category, setCategory] = useState<string>("");
   const [block, setBlock] = useState<string>("");
@@ -290,7 +315,7 @@ export function SockAvailablePanel(props: {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [rows]);
 
-  const filtered = useMemo(() => {
+  const eligibleRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     const kindQ = norm(kind).toLowerCase();
     const areaQ = norm(area).toLowerCase();
@@ -311,7 +336,7 @@ export function SockAvailablePanel(props: {
     const hasFrom = Number.isFinite(fromMs);
     const hasTo = Number.isFinite(toMs);
 
-    const eligibleRows = rows.filter((r) => {
+    return rows.filter((r) => {
       if (kindQ && norm(r.kind).toLowerCase() !== kindQ) return false;
       if (areaQ && norm(r.areaName).toLowerCase() !== areaQ) return false;
       if (categoryQ && norm(r.categoryName).toLowerCase() !== categoryQ) return false;
@@ -352,10 +377,29 @@ export function SockAvailablePanel(props: {
         .toLowerCase();
       return hay.includes(q);
     });
+  }, [
+    area,
+    block,
+    category,
+    contingent,
+    createdFrom,
+    createdTo,
+    kind,
+    maxUsd,
+    minUsd,
+    movement,
+    row,
+    rows,
+    search,
+    seat,
+  ]);
 
-    const grouped = groupSockAvailableRows(eligibleRows).filter((g) => g.togetherCount >= seatsTogetherMin);
+  const groupedFiltered = useMemo(() => {
+    return groupSockAvailableRows(eligibleRows).filter((g) => g.togetherCount >= seatsTogetherMin);
+  }, [eligibleRows, seatsTogetherMin]);
 
-    const sorted = [...grouped].sort((a, b) => {
+  const groupedSorted = useMemo(() => {
+    const sorted = [...groupedFiltered].sort((a, b) => {
       let cmp = 0;
       switch (sortKey) {
         case "created_desc": {
@@ -414,26 +458,64 @@ export function SockAvailablePanel(props: {
     });
 
     return sorted;
-  }, [
-    kind,
-    area,
-    block,
-    category,
-    contingent,
-    createdFrom,
-    createdTo,
-    maxUsd,
-    minUsd,
-    movement,
-    row,
-    rows,
-    search,
-    seatsTogetherMin,
-    seat,
-    sortKey,
-  ]);
+  }, [groupedFiltered, sortKey]);
+
+  const rawSorted = useMemo(() => {
+    const sorted = [...eligibleRows].sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case "created_desc":
+          cmp = Date.parse(b.createdAt) - Date.parse(a.createdAt);
+          break;
+        case "created_asc":
+          cmp = Date.parse(a.createdAt) - Date.parse(b.createdAt);
+          break;
+        case "updated_desc":
+          cmp = Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
+          break;
+        case "updated_asc":
+          cmp = Date.parse(a.updatedAt) - Date.parse(b.updatedAt);
+          break;
+        case "amount_desc":
+          cmp = amountRawToUsdNumber(b.amount) - amountRawToUsdNumber(a.amount);
+          break;
+        case "amount_asc":
+          cmp = amountRawToUsdNumber(a.amount) - amountRawToUsdNumber(b.amount);
+          break;
+        case "area_asc":
+          cmp = norm(a.areaName).localeCompare(norm(b.areaName));
+          break;
+        case "category_asc":
+          cmp = norm(a.categoryName).localeCompare(norm(b.categoryName));
+          break;
+        case "block_asc":
+          cmp = norm(a.blockName).localeCompare(norm(b.blockName));
+          break;
+        case "row_asc":
+          cmp = norm(a.row).localeCompare(norm(b.row), undefined, { numeric: true, sensitivity: "base" });
+          break;
+        case "seat_asc": {
+          const as = parseStrictInt(a.seatNumber);
+          const bs = parseStrictInt(b.seatNumber);
+          if (as != null && bs != null) cmp = as - bs;
+          else if (as != null) cmp = -1;
+          else if (bs != null) cmp = 1;
+          else cmp = norm(a.seatNumber).localeCompare(norm(b.seatNumber), undefined, { numeric: true, sensitivity: "base" });
+          break;
+        }
+        default:
+          cmp = 0;
+      }
+      if (Number.isFinite(cmp) && cmp !== 0) return cmp;
+      return a.id - b.id;
+    });
+    return sorted;
+  }, [eligibleRows, sortKey]);
 
   const groupedLoadedCount = useMemo(() => groupSockAvailableRows(rows).length, [rows]);
+  const shownItems = viewMode === "raw" ? rawSorted : groupedSorted;
+  const shownCount = shownItems.length;
+  const loadedCount = viewMode === "raw" ? rows.length : groupedLoadedCount;
 
   const sectionPad = embedInParentCard ? "px-4 sm:px-7" : "";
   const filtersVisible = smUp ? filtersExpanded : mobileFiltersOpen;
@@ -444,7 +526,7 @@ export function SockAvailablePanel(props: {
       block ||
       row ||
       seat ||
-      seatsTogetherMin !== 1 ||
+      (viewMode === "grouped" && seatsTogetherMin !== 1) ||
       contingent ||
       movement ||
       minUsd ||
@@ -467,41 +549,77 @@ export function SockAvailablePanel(props: {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-              Seats together
-            </span>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">View</span>
             <div
               className="flex items-center rounded-xl bg-black/35 p-1 ring-1 ring-white/[0.10] shadow-inner shadow-black/35"
               role="group"
-              aria-label="Seats together filter"
+              aria-label="Sock available view mode"
             >
-              {([1, 2, 3, 4, 5, 6] as const).map((v) => {
-                const active = seatsTogetherMin === v;
-                return (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => setSeatsTogetherMin(v)}
-                    className={
-                      active
-                        ? "min-h-8 rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] px-2.5 text-xs font-semibold tabular-nums text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_32%,transparent)] outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
-                        : "min-h-8 rounded-lg px-2.5 text-xs font-semibold tabular-nums text-zinc-300 outline-none transition-colors hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
-                    }
-                    aria-pressed={active}
-                    aria-label={`Seats together ${v === 6 ? "6+" : v}`}
-                  >
-                    {v === 6 ? "6+" : v}
-                  </button>
-                );
-              })}
+              <button
+                type="button"
+                onClick={() => setViewMode("grouped")}
+                className={
+                  viewMode === "grouped"
+                    ? "min-h-8 rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] px-2.5 text-xs font-semibold text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_32%,transparent)] outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
+                    : "min-h-8 rounded-lg px-2.5 text-xs font-semibold text-zinc-300 outline-none transition-colors hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
+                }
+                aria-pressed={viewMode === "grouped"}
+              >
+                Grouped
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("raw")}
+                className={
+                  viewMode === "raw"
+                    ? "min-h-8 rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] px-2.5 text-xs font-semibold text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_32%,transparent)] outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
+                    : "min-h-8 rounded-lg px-2.5 text-xs font-semibold text-zinc-300 outline-none transition-colors hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
+                }
+                aria-pressed={viewMode === "raw"}
+              >
+                All fields
+              </button>
             </div>
+
+            {viewMode === "grouped" ? (
+              <>
+                <span className="ml-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  Seats together
+                </span>
+                <div
+                  className="flex items-center rounded-xl bg-black/35 p-1 ring-1 ring-white/[0.10] shadow-inner shadow-black/35"
+                  role="group"
+                  aria-label="Seats together filter"
+                >
+                  {([1, 2, 3, 4, 5, 6] as const).map((v) => {
+                    const active = seatsTogetherMin === v;
+                    return (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => setSeatsTogetherMin(v)}
+                        className={
+                          active
+                            ? "min-h-8 rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] px-2.5 text-xs font-semibold tabular-nums text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_32%,transparent)] outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
+                            : "min-h-8 rounded-lg px-2.5 text-xs font-semibold tabular-nums text-zinc-300 outline-none transition-colors hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
+                        }
+                        aria-pressed={active}
+                        aria-label={`Seats together ${v === 6 ? "6+" : v}`}
+                      >
+                        {v === 6 ? "6+" : v}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            ) : null}
           </div>
 
           <p className="text-[11px] font-medium tabular-nums text-zinc-500">
-            <span className="text-zinc-300">{filtered.length.toLocaleString("en-US")}</span>
+            <span className="text-zinc-300">{shownCount.toLocaleString("en-US")}</span>
             <span> shown</span>
             <span className="text-zinc-600"> / </span>
-            <span className="text-zinc-400">{groupedLoadedCount.toLocaleString("en-US")}</span>
+            <span className="text-zinc-400">{loadedCount.toLocaleString("en-US")}</span>
             <span> loaded</span>
           </p>
         </div>
@@ -604,10 +722,10 @@ export function SockAvailablePanel(props: {
 
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2">
               <p className="text-[11px] leading-snug text-zinc-500 sm:text-xs">
-                <span className="tabular-nums text-zinc-300">{filtered.length.toLocaleString("en-US")}</span>
+                <span className="tabular-nums text-zinc-300">{shownCount.toLocaleString("en-US")}</span>
                 <span> shown</span>
                 <span className="text-zinc-700"> · </span>
-                <span className="tabular-nums text-zinc-500">{groupedLoadedCount.toLocaleString("en-US")}</span>
+                <span className="tabular-nums text-zinc-500">{loadedCount.toLocaleString("en-US")}</span>
                 <span> loaded</span>
                 <span>.</span>
               </p>
@@ -1055,7 +1173,7 @@ export function SockAvailablePanel(props: {
             </div>
           ) : null}
 
-          {filtered.length === 0 ? (
+          {shownItems.length === 0 ? (
             <div
               className="rounded-xl border border-white/[0.07] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_88%,transparent)] px-6 py-10 text-center ring-1 ring-white/[0.04]"
               role="status"
@@ -1068,7 +1186,78 @@ export function SockAvailablePanel(props: {
           ) : (
             <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-[color:var(--ticketing-surface-elevated)] shadow-[0_16px_48px_-20px_rgba(0,0,0,0.75)] ring-1 ring-white/[0.05]">
               <div className="max-h-[70vh] overflow-auto [-webkit-overflow-scrolling:touch]">
-                <table className="w-full min-w-[72rem] border-collapse text-sm">
+                {viewMode === "raw" ? (
+                  <table className="w-full min-w-[110rem] border-collapse text-sm">
+                    <thead>
+                      <tr className="sticky top-0 z-10 border-b border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_95%,transparent)] text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 backdrop-blur-md">
+                        <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Area</th>
+                        <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Category</th>
+                        <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Block</th>
+                        <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Row</th>
+                        <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Seat</th>
+                        <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Source</th>
+                        <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Amount</th>
+                        <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Contingent</th>
+                        <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Seat ID</th>
+                        <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Movement ID</th>
+                        <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Category ID</th>
+                        <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Area ID</th>
+                        <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Block ID</th>
+                        <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Created</th>
+                        <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Updated</th>
+                        <th scope="col" className="px-4 py-3 pr-5 text-right font-medium text-zinc-400 sm:pr-6">Info</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/[0.05]">
+                      {rawSorted.map((r) => (
+                        <tr key={r.id} className="text-zinc-200 transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)]">
+                          <td className="px-4 py-3 text-sm font-medium text-zinc-50">{r.areaName}</td>
+                          <td className="px-4 py-3 text-sm text-zinc-200">{r.categoryName}</td>
+                          <td className="px-4 py-3 text-sm font-medium text-zinc-50">{r.blockName}</td>
+                          <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.row}</td>
+                          <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.seatNumber}</td>
+                          <td className="whitespace-nowrap px-4 py-3 text-xs font-semibold text-zinc-200">
+                            <span
+                              className={
+                                r.kind === "LAST_MINUTE"
+                                  ? "inline-flex items-center rounded-full border border-white/[0.10] bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-200"
+                                  : "inline-flex items-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_12%,transparent)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-100"
+                              }
+                            >
+                              {r.kind === "LAST_MINUTE" ? "Shop" : "Resale"}
+                            </span>
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-bold tabular-nums text-[color:var(--ticketing-accent)]">
+                            {formatSockUsd(r.amount)}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.contingentId}</td>
+                          <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.seatId}</td>
+                          <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.resaleMovementId}</td>
+                          <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.categoryId}</td>
+                          <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.areaId}</td>
+                          <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.blockId}</td>
+                          <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500" title={r.createdAt}>
+                            {formatTsCompact(r.createdAt)}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500" title={r.updatedAt}>
+                            {formatTsCompact(r.updatedAt)}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 pr-5 text-right sm:pr-6">
+                            <button
+                              type="button"
+                              className="inline-flex items-center justify-center rounded-md border border-white/[0.10] bg-black/25 p-2 text-zinc-200 shadow-inner shadow-black/35 transition-[border-color,background-color,transform] hover:border-white/[0.16] hover:bg-white/[0.04] active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                              aria-label={`Row info: ${r.areaName}, ${r.categoryName}, ${r.blockName}, row ${r.row}, seat ${r.seatNumber}`}
+                              onClick={() => setOpenGroup(groupFromSingleRow(r))}
+                            >
+                              <InfoIcon />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <table className="w-full min-w-[72rem] border-collapse text-sm">
                   <thead>
                     <tr className="sticky top-0 z-10 border-b border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_95%,transparent)] text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 backdrop-blur-md">
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
@@ -1104,7 +1293,7 @@ export function SockAvailablePanel(props: {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/[0.05]">
-                    {filtered.map((g) => (
+                    {groupedSorted.map((g) => (
                       <tr
                         key={g.id}
                         className="text-zinc-200 transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)]"
@@ -1163,6 +1352,7 @@ export function SockAvailablePanel(props: {
                     ))}
                   </tbody>
                 </table>
+                )}
               </div>
             </div>
           )}
