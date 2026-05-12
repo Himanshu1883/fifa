@@ -104,12 +104,17 @@ type NormalizedRow = {
   blockPrice: string | null;
 };
 
-function centsDigitsToUsdDecimalString(centsDigits: string): string {
-  const digits = centsDigits.replace(/^0+(?=\d)/, "");
-  if (digits.length === 0) return "0.00";
-  if (digits.length === 1) return `0.0${digits}`;
-  if (digits.length === 2) return `0.${digits}`;
-  return `${digits.slice(0, -2)}.${digits.slice(-2)}`;
+function milliDigitsToUsdDecimalString(milliDigits: string): string {
+  const digits = milliDigits.replace(/^0+(?=\d)/, "");
+  if (!digits) return "0.00";
+
+  // Upstream integer amounts are in thousandths of a USD (÷ 1000).
+  // USD stores to cents; round half-up at the cent (10 mills = 1 cent).
+  const mills = BigInt(digits);
+  const centsTotal = (mills + 5n) / 10n;
+  const dollars = centsTotal / 100n;
+  const cents = centsTotal % 100n;
+  return `${dollars.toString()}.${cents.toString().padStart(2, "0")}`;
 }
 
 function normalizeMoneyToUsdDecimalString(value: unknown): { value: string | null; skipped: boolean } {
@@ -122,8 +127,8 @@ function normalizeMoneyToUsdDecimalString(value: unknown): { value: string | nul
     if (Number.isInteger(value)) {
       if (value < 0) return { value: null, skipped: true };
       if (!Number.isSafeInteger(value)) return { value: null, skipped: true };
-      // Integer numbers are treated as cents (minor units).
-      return { value: centsDigitsToUsdDecimalString(String(value)), skipped: false };
+      // Integer numbers are treated as upstream "milli-dollars" (÷ 1000).
+      return { value: milliDigitsToUsdDecimalString(String(value)), skipped: false };
     }
     // Non-integers are treated as USD dollars.
     const s = value.toString();
@@ -135,8 +140,8 @@ function normalizeMoneyToUsdDecimalString(value: unknown): { value: string | nul
     const t = value.trim();
     if (!t) return { value: null, skipped: false };
     if (/^\d+$/.test(t)) {
-      // String digits-only are treated as cents.
-      return { value: centsDigitsToUsdDecimalString(t), skipped: false };
+      // String digits-only are treated as upstream "milli-dollars" (÷ 1000).
+      return { value: milliDigitsToUsdDecimalString(t), skipped: false };
     }
     // Decimal strings are treated as USD dollars.
     const cleaned = t.replace(/,/g, "");
@@ -206,6 +211,103 @@ function normalizeIncomingRows(rawRows: unknown): { rows: NormalizedRow[]; recei
   return { rows: out, receivedCount: rawRows.length, skippedCount };
 }
 
+function pickLocalizedName(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  const o = value as Record<string, unknown>;
+  const en = typeof o.en === "string" ? o.en.trim() : "";
+  if (en) return en;
+  for (const v of Object.values(o)) {
+    if (typeof v === "string") {
+      const t = v.trim();
+      if (t) return t;
+    }
+  }
+  return "";
+}
+
+function normalizePriceRangePayload(raw: Record<string, unknown>): {
+  rows: NormalizedRow[];
+  receivedCount: number;
+  skippedCount: number;
+} {
+  const cats = raw.priceRangeCategories;
+  if (!Array.isArray(cats)) {
+    throw new CataloguePayloadError('Body must include "priceRangeCategories" as an array');
+  }
+
+  const seatMapPriceRanges = raw.seatMapPriceRanges;
+  const seatPriceRangesByAreaBlock =
+    seatMapPriceRanges && typeof seatMapPriceRanges === "object" && !Array.isArray(seatMapPriceRanges)
+      ? (seatMapPriceRanges as Record<string, unknown>).seatPriceRangesByAreaBlock
+      : undefined;
+  const seatBlockLookup =
+    seatPriceRangesByAreaBlock && typeof seatPriceRangesByAreaBlock === "object" && !Array.isArray(seatPriceRangesByAreaBlock)
+      ? (seatPriceRangesByAreaBlock as Record<string, unknown>)
+      : undefined;
+
+  const out: NormalizedRow[] = [];
+  let receivedCount = 0;
+  let skippedCount = 0;
+
+  for (const cat of cats) {
+    if (!cat || typeof cat !== "object" || Array.isArray(cat)) {
+      skippedCount += 1;
+      continue;
+    }
+    const c = cat as Record<string, unknown>;
+    const blocks = c.blocks;
+    if (!Array.isArray(blocks)) {
+      skippedCount += 1;
+      continue;
+    }
+
+    const categoryId = coerceNonEmptyString(c.id);
+    const categoryName = pickLocalizedName(c.name);
+    const catPriceRaw = c.minPrice ?? c.maxPrice;
+    const catMoney = normalizeMoneyToUsdDecimalString(catPriceRaw);
+
+    for (const block of blocks) {
+      receivedCount += 1;
+      if (!block || typeof block !== "object" || Array.isArray(block)) {
+        skippedCount += 1;
+        continue;
+      }
+      const b = block as Record<string, unknown>;
+
+      const categoryBlockId = coerceNonEmptyString(b.id);
+      const categoryBlockName = pickLocalizedName(b.name);
+
+      if (!categoryId || !categoryName || !categoryBlockId || !categoryBlockName) {
+        skippedCount += 1;
+        continue;
+      }
+      if (catMoney.skipped) {
+        skippedCount += 1;
+        continue;
+      }
+
+      const blockPriceRaw = seatBlockLookup?.[categoryBlockId];
+      const blockMin =
+        blockPriceRaw && typeof blockPriceRaw === "object" && !Array.isArray(blockPriceRaw)
+          ? (blockPriceRaw as Record<string, unknown>).min
+          : undefined;
+      const blockMoney = normalizeMoneyToUsdDecimalString(blockMin);
+      const blockPrice = blockMoney.skipped ? null : blockMoney.value;
+
+      out.push({
+        categoryId,
+        categoryName,
+        categoryBlockId,
+        categoryBlockName,
+        categoryPrice: catMoney.value,
+        blockPrice,
+      });
+    }
+  }
+
+  return { rows: out, receivedCount, skippedCount };
+}
+
 function parseWebhookBody(
   raw: unknown,
   qs: { eventId: string | null; prefId: string | null; resalePrefId: string | null },
@@ -215,6 +317,7 @@ function parseWebhookBody(
   receivedCount: number;
   rows: NormalizedRow[];
   skippedCount: number;
+  format: "rawRows" | "wrapperRows" | "priceRangeCategories";
 } {
   const qsEventId = qs.eventId?.trim() ? qs.eventId.trim() : null;
   const qsPrefId = qs.prefId?.trim() ? qs.prefId.trim() : null;
@@ -225,12 +328,12 @@ function parseWebhookBody(
     if (qsEventId) {
       const eventId = parseEventId(qsEventId, "eventId (query param)");
       const { rows, receivedCount, skippedCount } = normalizeIncomingRows(raw);
-      return { eventId, receivedCount, rows, skippedCount };
+      return { eventId, receivedCount, rows, skippedCount, format: "rawRows" };
     }
     if (qsPrefOrResale) {
       const prefId = parsePrefId(qsPrefOrResale, "prefId (query param)");
       const { rows, receivedCount, skippedCount } = normalizeIncomingRows(raw);
-      return { prefId, receivedCount, rows, skippedCount };
+      return { prefId, receivedCount, rows, skippedCount, format: "rawRows" };
     }
     throw new CataloguePayloadError(
       "Missing event identifier: provide ?prefId= (recommended) or ?eventId= when POST body is a raw array",
@@ -242,12 +345,42 @@ function parseWebhookBody(
   }
 
   const o = raw as Record<string, unknown>;
+
+  // New payload shape: { priceRangeCategories: [...], seatMapPriceRanges: {...} }
+  if (Object.prototype.hasOwnProperty.call(o, "priceRangeCategories")) {
+    const wrapperEventId = pickRowValue(o, "eventId", "event_id");
+    if (wrapperEventId !== undefined && wrapperEventId !== null && String(wrapperEventId).trim()) {
+      const eventId = parseEventId(wrapperEventId, "eventId");
+      const { rows, receivedCount, skippedCount } = normalizePriceRangePayload(o);
+      return { eventId, receivedCount, rows, skippedCount, format: "priceRangeCategories" };
+    }
+    const wrapperPrefId = pickRowValue(o, "prefId", "pref_id");
+    if (wrapperPrefId !== undefined && wrapperPrefId !== null && String(wrapperPrefId).trim()) {
+      const prefId = parsePrefId(wrapperPrefId, "prefId");
+      const { rows, receivedCount, skippedCount } = normalizePriceRangePayload(o);
+      return { prefId, receivedCount, rows, skippedCount, format: "priceRangeCategories" };
+    }
+    if (qsEventId) {
+      const eventId = parseEventId(qsEventId, "eventId (query param)");
+      const { rows, receivedCount, skippedCount } = normalizePriceRangePayload(o);
+      return { eventId, receivedCount, rows, skippedCount, format: "priceRangeCategories" };
+    }
+    if (qsPrefOrResale) {
+      const prefId = parsePrefId(qsPrefOrResale, "prefId (query param)");
+      const { rows, receivedCount, skippedCount } = normalizePriceRangePayload(o);
+      return { prefId, receivedCount, rows, skippedCount, format: "priceRangeCategories" };
+    }
+    // Validate shape so error is more specific.
+    normalizePriceRangePayload(o);
+    throw new CataloguePayloadError('Missing event identifier: provide ?prefId= (recommended) or ?eventId=');
+  }
+
   const wrapperEventId = pickRowValue(o, "eventId", "event_id");
   if (wrapperEventId !== undefined && wrapperEventId !== null && String(wrapperEventId).trim()) {
     const eventId = parseEventId(wrapperEventId, "eventId");
     const wrapperRows = pickRowValue(o, "rows");
     const { rows, receivedCount, skippedCount } = normalizeIncomingRows(wrapperRows);
-    return { eventId, receivedCount, rows, skippedCount };
+    return { eventId, receivedCount, rows, skippedCount, format: "wrapperRows" };
   }
 
   const wrapperPrefId = pickRowValue(o, "prefId", "pref_id");
@@ -255,20 +388,20 @@ function parseWebhookBody(
     const prefId = parsePrefId(wrapperPrefId, "prefId");
     const wrapperRows = pickRowValue(o, "rows");
     const { rows, receivedCount, skippedCount } = normalizeIncomingRows(wrapperRows);
-    return { prefId, receivedCount, rows, skippedCount };
+    return { prefId, receivedCount, rows, skippedCount, format: "wrapperRows" };
   }
 
   if (qsEventId) {
     const eventId = parseEventId(qsEventId, "eventId (query param)");
     const wrapperRows = pickRowValue(o, "rows");
     const { rows, receivedCount, skippedCount } = normalizeIncomingRows(wrapperRows);
-    return { eventId, receivedCount, rows, skippedCount };
+    return { eventId, receivedCount, rows, skippedCount, format: "wrapperRows" };
   }
   if (qsPrefOrResale) {
     const prefId = parsePrefId(qsPrefOrResale, "prefId (query param)");
     const wrapperRows = pickRowValue(o, "rows");
     const { rows, receivedCount, skippedCount } = normalizeIncomingRows(wrapperRows);
-    return { prefId, receivedCount, rows, skippedCount };
+    return { prefId, receivedCount, rows, skippedCount, format: "wrapperRows" };
   }
 
   const wrapperRows = pickRowValue(o, "rows");
@@ -293,7 +426,7 @@ function parseWebhookBody(
  * - blockPrice / block_price
  *
  * Prices:
- * - Integers (or digit-only strings) are treated as cents and stored as USD dollars (÷ 100).
+ * - Integers (or digit-only strings) are treated as upstream milli-dollars and stored as USD dollars (÷ 1000).
  * - Decimal strings/numbers are treated as USD dollars as-is.
  */
 export async function POST(req: NextRequest) {
@@ -383,36 +516,43 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const txResult = await prisma.$transaction(
-      async (tx) => {
-        const deleted = await tx.shopEventCategoryBlock.deleteMany({
-          where: { eventId: resolvedEventId },
-        });
-        const inserted =
-          uniqueRows.length === 0
-            ? { count: 0 }
-            : await tx.shopEventCategoryBlock.createMany({
+    const acceptedCount = uniqueRows.length;
+    const skippedCount = parsed.skippedCount + skippedDuplicateInPayloadCount;
+
+    const txResult =
+      acceptedCount === 0
+        ? { deletedCount: 0, insertedCount: 0 }
+        : await prisma.$transaction(
+            async (tx) => {
+              const deleted = await tx.shopEventCategoryBlock.deleteMany({
+                where: { eventId: resolvedEventId },
+              });
+              const inserted = await tx.shopEventCategoryBlock.createMany({
                 data: uniqueRows,
                 skipDuplicates: true,
               });
-        return { deletedCount: deleted.count, insertedCount: inserted.count };
-      },
-      { maxWait: 20_000, timeout: 120_000 },
-    );
-
-    const acceptedCount = uniqueRows.length;
-    const skippedCount = parsed.skippedCount + skippedDuplicateInPayloadCount;
+              return { deletedCount: deleted.count, insertedCount: inserted.count };
+            },
+            { maxWait: 20_000, timeout: 120_000 },
+          );
 
     return NextResponse.json({
       ok: true,
       ...(parsedPrefId ? { lookup: "pref-or-resale", prefId: parsedPrefId } : { lookup: "eventId" }),
       eventId: resolvedEventId,
+      format: parsed.format,
+      received: parsed.receivedCount,
+      accepted: acceptedCount,
+      deleted: txResult.deletedCount,
+      inserted: txResult.insertedCount,
+      skipped: skippedCount,
+      partial: skippedCount > 0,
+      // legacy keys (kept for backwards compatibility)
       receivedCount: parsed.receivedCount,
       acceptedCount,
       deletedCount: txResult.deletedCount,
       insertedCount: txResult.insertedCount,
       skippedCount,
-      partial: skippedCount > 0,
     });
   } catch (err) {
     if (err instanceof CataloguePayloadError) {
@@ -460,42 +600,67 @@ export async function GET(req: NextRequest) {
     fullUrl,
     table: "shop_event_category",
     notes:
-      "Snapshot replace: each POST deletes all existing shop_event_category rows for the resolved event then inserts the new unique payload rows. No auth.",
+      "Snapshot replace: each POST (when at least 1 row is accepted) deletes all existing shop_event_category rows for the resolved event then inserts the new unique payload rows. No auth.",
     query: {
       prefId: "recommended; resolves Event by matching prefId OR resalePrefId (preferred identifier)",
       resalePrefId: "alias for prefId (same id value)",
       eventId: "optional; if both prefId and eventId are provided, eventId wins",
     },
     body: {
-      prefId: "optional (wrapper object only): resolves Event by matching prefId OR resalePrefId",
-      eventId: "optional (wrapper object only): if provided, used directly (preferred over prefId)",
-      rows: [
-        {
-          categoryId: "string",
-          categoryName: "string",
-          categoryBlockId: "string",
-          categoryBlockName: "string",
-          categoryPrice: "optional: integer cents OR decimal USD string/number",
-          blockPrice: "optional: integer cents OR decimal USD string/number",
+      preferred: {
+        priceRangeCategories: [
+          {
+            id: "string",
+            name: { en: "string", "other-locale": "string" },
+            minPrice: "integer mills OR decimal USD",
+            maxPrice: "integer mills OR decimal USD",
+            blocks: [{ id: "string", name: { en: "string", "other-locale": "string" } }],
+          },
+        ],
+        seatMapPriceRanges: {
+          seatPriceRangesByAreaBlock: {
+            "BLOCK_ID": { min: "integer mills OR decimal USD" },
+          },
         },
-      ],
-      rawArray: "[{ categoryId, categoryName, categoryBlockId, categoryBlockName, ... }]",
+      },
+      legacyRowsWrapper: {
+        prefId: "optional: resolves Event by matching prefId OR resalePrefId",
+        eventId: "optional: if provided, used directly (preferred over prefId)",
+        rows: [
+          {
+            categoryId: "string",
+            categoryName: "string",
+            categoryBlockId: "string",
+            categoryBlockName: "string",
+            categoryPrice: "optional: integer mills OR decimal USD string/number",
+            blockPrice: "optional: integer mills OR decimal USD string/number",
+          },
+        ],
+      },
+      legacyRawArray: "[{ categoryId, categoryName, categoryBlockId, categoryBlockName, ... }]",
     },
     pricingRules: {
-      integers: "treated as cents and stored as USD dollars (÷ 100) in Decimal columns",
+      integers: "treated as upstream milli-dollars and stored as USD dollars (÷ 1000) in Decimal columns",
       decimals: "treated as USD dollars as-is (string or number)",
     },
     sampleCurl: [
       `curl -sS "${fullUrl}"`,
+      `# Deployed Vercel hostname ends with ".vercel.app" (single 'p'); a typo like "vercel.appp" will never hit this route.`,
+      `# Preferred payload shape (priceRangeCategories)`,
       `curl -sS -X POST "${fullUrl}?prefId=CATALOGUE_PREF_ID" \\`,
       `  -H "Content-Type: application/json" \\`,
-      `  --data-binary '[{"categoryId":"1","categoryName":"Cat 1","categoryBlockId":"A","categoryBlockName":"Block A","categoryPrice":25000,"blockPrice":"249.99"}]'`,
+      `  --data-binary '{"priceRangeCategories":[{"id":"1","name":{"en":"Category 1"},"minPrice":380000,"blocks":[{"id":"A","name":{"en":"Block A"}}]}],"seatMapPriceRanges":{"seatPriceRangesByAreaBlock":{"A":{"min":380000}}}}'`,
+      `# Response shape: { ok, eventId, received, accepted, deleted, inserted, skipped, partial, ... }`,
+      `# Legacy row array shapes`,
+      `curl -sS -X POST "${fullUrl}?prefId=CATALOGUE_PREF_ID" \\`,
+      `  -H "Content-Type: application/json" \\`,
+      `  --data-binary '[{"categoryId":"1","categoryName":"Cat 1","categoryBlockId":"A","categoryBlockName":"Block A","categoryPrice":250000,"blockPrice":"249.99"}]'`,
       `curl -sS -X POST "${fullUrl}" \\`,
       `  -H "Content-Type: application/json" \\`,
-      `  --data-binary '{"prefId":"CATALOGUE_PREF_ID","rows":[{"category_id":"1","category_name":"Cat 1","category_block_id":"A","category_block_name":"Block A","category_price":"250.00","block_price":24999}]}'`,
+      `  --data-binary '{"prefId":"CATALOGUE_PREF_ID","rows":[{"category_id":"1","category_name":"Cat 1","category_block_id":"A","category_block_name":"Block A","category_price":"250.00","block_price":249990}]}'`,
       `curl -sS -X POST "${fullUrl}?eventId=123" \\`,
       `  -H "Content-Type: application/json" \\`,
-      `  --data-binary '[{"categoryId":"1","categoryName":"Cat 1","categoryBlockId":"A","categoryBlockName":"Block A","categoryPrice":25000,"blockPrice":"249.99"}]'`,
+      `  --data-binary '[{"categoryId":"1","categoryName":"Cat 1","categoryBlockId":"A","categoryBlockName":"Block A","categoryPrice":250000,"blockPrice":"249.99"}]'`,
     ],
   });
 }

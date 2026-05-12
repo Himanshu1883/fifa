@@ -176,12 +176,12 @@ export default async function SettingsPage() {
         },
       ],
       notes:
-        "Stores face-value category×block rows for an event (shop_event_category). Snapshot replace: each POST deletes all existing rows for the resolved event then inserts the unique payload. Prices accept integer cents (stored as USD dollars ÷100) or decimal USD strings/numbers.",
+        "Stores face-value category×block rows for an event (shop_event_category). Snapshot replace (only when at least 1 row is accepted): each POST deletes all existing rows for the resolved event then inserts the unique payload. Preferred POST body: { priceRangeCategories, seatMapPriceRanges }. Integer amounts are upstream mills (USD ÷1000); decimals are USD as-is. Response includes received/accepted/deleted/inserted/skipped/partial.",
       sampleCurl: [
         `curl -sS "${baseUrl}/api/webhooks/shop-event-category"`,
         `curl -sS -X POST "${baseUrl}/api/webhooks/shop-event-category?prefId=CATALOGUE_PREF_ID" \\`,
         `  -H "Content-Type: application/json" \\`,
-        `  --data-binary @shop-event-category.json`,
+        `  --data-binary '{"priceRangeCategories":[{"id":"1","name":{"en":"Category 1"},"minPrice":380000,"blocks":[{"id":"A","name":{"en":"Block A"}}]}],"seatMapPriceRanges":{"seatPriceRangesByAreaBlock":{"A":{"min":380000}}}}'`,
       ],
     },
     {
