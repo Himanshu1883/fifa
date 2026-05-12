@@ -143,6 +143,23 @@ export default async function SettingsPage() {
       ],
     },
     {
+      title: "Sock available (Shop / Last Minute)",
+      path: "/api/webhooks/sock-available-shop",
+      methods: ["GET", "POST"],
+      queryParams: [
+        { name: "prefId", required: false, notes: "Can match Event.prefId or Event.resalePrefId" },
+        { name: "resalePrefId", required: false, notes: "Alias for prefId (same id value)" },
+      ],
+      notes:
+        "Same payload as sock-available, but always stores kind=LAST_MINUTE (Shop). Replace semantics are scoped to Shop rows only.",
+      sampleCurl: [
+        `curl -sS "${baseUrl}/api/webhooks/sock-available-shop"`,
+        `curl -sS -X POST "${baseUrl}/api/webhooks/sock-available-shop?prefId=CATALOGUE_PREF_ID" \\`,
+        `  -H "Content-Type: application/json" \\`,
+        `  --data-binary @sock-available.geojson`,
+      ],
+    },
+    {
       title: "Event block seat now (category×block availability)",
       path: "/api/webhooks/event-block-seat-now",
       methods: ["GET", "POST"],
