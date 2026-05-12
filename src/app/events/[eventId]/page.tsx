@@ -119,6 +119,12 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
     prisma.eventCategory.count({ where: { eventId: event.id } }),
   ]);
 
+  const hasSeatListings = seatListingsCount > 0;
+  const effectivePanel: PanelKey = hasSeatListings ? panel : "sock";
+  if (!hasSeatListings && panel === "listings") {
+    redirect(`/events/${event.id}`);
+  }
+
   const [sockResaleCount, sockLastMinuteCount] = await Promise.all([
     prisma.sockAvailable.count({ where: { eventId: event.id, kind: "RESALE" } }),
     prisma.sockAvailable.count({ where: { eventId: event.id, kind: "LAST_MINUTE" } }),
@@ -127,7 +133,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
   const seatListingsTruncated = false;
 
   const listingsPayload =
-    panel === "listings"
+    effectivePanel === "listings"
       ? (
           await prisma.eventSeatListing.findMany({
             where: { eventId: event.id },
@@ -169,7 +175,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
       : [];
 
   const eventCategoriesPayload =
-    panel === "listings"
+    effectivePanel === "listings"
       ? (
           await prisma.eventCategory.findMany({
             where: { eventId: event.id },
@@ -190,7 +196,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
       : [];
 
   const sockAvailablePayload =
-    panel === "sock"
+    effectivePanel === "sock"
       ? (
           await prisma.sockAvailable.findMany({
             where: { eventId: event.id },
@@ -319,16 +325,22 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                   </div>
                 </div>
 
-                <div className="grid w-full shrink-0 grid-cols-3 gap-2.5 lg:max-w-[28rem]">
-                  <div className="rounded-xl border border-white/[0.07] bg-black/25 px-3.5 py-3 ring-1 ring-white/[0.04]">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                      Seat listings
-                    </p>
-                    <p className="mt-1 text-lg font-semibold tabular-nums text-white sm:text-xl">
-                      {seatListingsCount.toLocaleString("en-US")}
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-zinc-500">rows loaded</p>
-                  </div>
+                <div
+                  className={`grid w-full shrink-0 gap-2.5 lg:max-w-[28rem] ${
+                    hasSeatListings ? "grid-cols-3" : "grid-cols-2"
+                  }`}
+                >
+                  {hasSeatListings ? (
+                    <div className="rounded-xl border border-white/[0.07] bg-black/25 px-3.5 py-3 ring-1 ring-white/[0.04]">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                        Seat listings
+                      </p>
+                      <p className="mt-1 text-lg font-semibold tabular-nums text-white sm:text-xl">
+                        {seatListingsCount.toLocaleString("en-US")}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-zinc-500">rows loaded</p>
+                    </div>
+                  ) : null}
                   <div className="rounded-xl border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3.5 py-3 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)]">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,white_25%)]">
                       Categories
@@ -369,34 +381,36 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                   role="tablist"
                   aria-label="Event sections"
                 >
-                  <Link
-                    role="tab"
-                    aria-selected={panel === "listings"}
-                    href={`/events/${event.id}?panel=listings`}
-                    className={
-                      panel === "listings"
-                        ? "flex flex-1 items-center justify-center gap-2 rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)] px-3 py-2 text-sm font-semibold text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,transparent)] sm:flex-none"
-                        : "flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-400 outline-none transition-colors hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,transparent)] sm:flex-none"
-                    }
-                  >
-                    Listings
-                    <span
+                  {hasSeatListings ? (
+                    <Link
+                      role="tab"
+                      aria-selected={effectivePanel === "listings"}
+                      href={`/events/${event.id}?panel=listings`}
                       className={
-                        panel === "listings"
-                          ? "rounded-full bg-[color:color-mix(in_oklab,var(--ticketing-accent)_20%,transparent)] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-zinc-100"
-                          : "rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-zinc-400"
+                        effectivePanel === "listings"
+                          ? "flex flex-1 items-center justify-center gap-2 rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)] px-3 py-2 text-sm font-semibold text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,transparent)] sm:flex-none"
+                          : "flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-400 outline-none transition-colors hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,transparent)] sm:flex-none"
                       }
-                      aria-hidden
                     >
-                      {seatListingsCount.toLocaleString("en-US")}
-                    </span>
-                  </Link>
+                      Listings
+                      <span
+                        className={
+                          effectivePanel === "listings"
+                            ? "rounded-full bg-[color:color-mix(in_oklab,var(--ticketing-accent)_20%,transparent)] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-zinc-100"
+                            : "rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-zinc-400"
+                        }
+                        aria-hidden
+                      >
+                        {seatListingsCount.toLocaleString("en-US")}
+                      </span>
+                    </Link>
+                  ) : null}
                   <Link
                     role="tab"
-                    aria-selected={panel === "sock"}
+                    aria-selected={effectivePanel === "sock"}
                     href={`/events/${event.id}`}
                     className={
-                      panel === "sock"
+                      effectivePanel === "sock"
                         ? "flex flex-1 items-center justify-center gap-2 rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)] px-3 py-2 text-sm font-semibold text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,transparent)] sm:flex-none"
                         : "flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-400 outline-none transition-colors hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,transparent)] sm:flex-none"
                     }
@@ -404,7 +418,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                     Sock available
                     <span
                       className={
-                        panel === "sock"
+                        effectivePanel === "sock"
                           ? "rounded-full bg-[color:color-mix(in_oklab,var(--ticketing-accent)_20%,transparent)] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-zinc-100"
                           : "rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-zinc-400"
                       }
@@ -422,7 +436,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
             </div>
 
             <div className="border-t border-white/[0.06] px-0 pb-6 pt-4 sm:pb-7">
-              {panel === "sock" ? (
+              {effectivePanel === "sock" ? (
                 <SockAvailablePanel rows={sockAvailablePayload} embedInParentCard />
               ) : (
                 <SeatListingsPanel
