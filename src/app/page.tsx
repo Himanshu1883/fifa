@@ -64,6 +64,21 @@ function cellUsdFromCentsString(value: string | null | undefined): string {
   return t ? formatUsd(t) : "—";
 }
 
+function distinctNonEmptyCaseInsensitive(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of values) {
+    const t = String(v ?? "").trim();
+    if (!t) continue;
+    const key = t.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  return out;
+}
+
 function sockAmountRawToCentsString(value: string | null): string | null {
   if (!value) return null;
   const n = priceToNumber(value);
@@ -323,6 +338,8 @@ export default async function Home({ searchParams }: Props) {
   const criteriaEvents = [...eventsAll];
   sortHomeEvents(criteriaEvents, listSort, listOrder);
 
+  const venueOptions = distinctNonEmptyCaseInsensitive(eventsAll.map((e) => e.venue));
+
   const totalTickets = events.reduce((acc, e) => acc + e.ticketsCount, 0);
   const eventsWithTickets = events.filter((e) => e.ticketsCount > 0).length;
 
@@ -521,7 +538,7 @@ export default async function Home({ searchParams }: Props) {
                                 ) : null}
                               </div>
                               <div className="flex shrink-0 items-center gap-2 pt-0.5">
-                                <EditEventDialog event={event} />
+                                <EditEventDialog event={event} venueOptions={venueOptions} />
                                 <EventImportantToggle
                                   eventId={event.id}
                                   eventName={event.name}
@@ -691,7 +708,7 @@ export default async function Home({ searchParams }: Props) {
                                     >
                                       {event.name}
                                     </Link>
-                                    <EditEventDialog event={event} />
+                                    <EditEventDialog event={event} venueOptions={venueOptions} />
                                   </div>
                                 </td>
                                 <td className="whitespace-nowrap px-3 py-3 align-middle sm:px-4">

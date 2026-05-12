@@ -41,11 +41,12 @@ export type EditableEvent = {
 
 type Props = {
   event: EditableEvent;
+  venueOptions?: string[];
   /** Optional extra classes for the icon button. */
   className?: string;
 };
 
-export function EditEventDialog({ event, className }: Props) {
+export function EditEventDialog({ event, venueOptions = [], className }: Props) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -288,6 +289,7 @@ export function EditEventDialog({ event, className }: Props) {
                 <input
                   id={`edit-event-venue-${event.id}`}
                   name="venue"
+                  list={`edit-event-venues-${event.id}`}
                   defaultValue={event.venue ?? ""}
                   placeholder="Optional"
                   autoComplete="off"
@@ -295,6 +297,13 @@ export function EditEventDialog({ event, className }: Props) {
                   aria-invalid={fieldErrors.venue ? true : undefined}
                   aria-describedby={fieldErrors.venue ? `edit-event-err-venue-${event.id}` : undefined}
                 />
+                {venueOptions.length > 0 ? (
+                  <datalist id={`edit-event-venues-${event.id}`}>
+                    {venueOptions.map((v) => (
+                      <option key={v} value={v} />
+                    ))}
+                  </datalist>
+                ) : null}
                 {fieldErrors.venue ? (
                   <p id={`edit-event-err-venue-${event.id}`} className="text-xs text-red-400">
                     {fieldErrors.venue}
