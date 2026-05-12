@@ -105,7 +105,7 @@ export function EventPrefsEditCell({ eventId, prefId, resalePrefId }: Props) {
 
               <div className="flex flex-col gap-1">
                 <label htmlFor={`pref-${eventId}`} className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-                  Pref ID <span className="text-emerald-400">*</span>
+                  Pref ID <span className="text-[color:var(--ticketing-accent)]">*</span>
                 </label>
                 <input
                   id={`pref-${eventId}`}
@@ -141,7 +141,7 @@ export function EventPrefsEditCell({ eventId, prefId, resalePrefId }: Props) {
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_52%,transparent)] bg-[color:var(--ticketing-accent)] px-4 py-2 text-sm font-semibold text-emerald-950 shadow-sm shadow-emerald-950/35 transition-[filter] hover:brightness-[1.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                  className="rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_52%,transparent)] bg-[color:var(--ticketing-accent)] px-4 py-2 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter] hover:brightness-[1.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
                 >
                   Save
                 </button>

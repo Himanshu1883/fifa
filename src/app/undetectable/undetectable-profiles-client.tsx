@@ -247,7 +247,7 @@ export function UndetectableProfilesClient() {
             type="button"
             className={`${buttonBase} ${
               autoRefresh
-                ? "bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/20"
+                ? "bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] text-zinc-100 hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)]"
                 : "bg-white/[0.06] text-zinc-200 hover:bg-white/[0.10]"
             }`}
             onClick={() => setAutoRefresh((v) => !v)}
@@ -286,7 +286,7 @@ export function UndetectableProfilesClient() {
               const busy = busyById[p.id];
               const canCopy = Boolean(p.websocket_link?.trim());
               const badgeClass = running
-                ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"
+                ? "border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)]"
                 : "border-zinc-400/20 bg-white/[0.03] text-zinc-300";
 
               return (
@@ -332,7 +332,7 @@ export function UndetectableProfilesClient() {
                     <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                       <button
                         type="button"
-                        className={`${buttonBase} bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/20`}
+                        className={`${buttonBase} bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] text-zinc-100 hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)]`}
                         onClick={() => startProfile(p.id)}
                         disabled={busy != null}
                         title="Starts the profile and returns websocket_link"

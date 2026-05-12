@@ -34,6 +34,9 @@ function describeLoginMessage(raw: string | undefined): { kind: "info" | "error"
   if (v === "gmail_signin_required") {
     return { kind: "info", text: "Sign in to continue to Gmail." };
   }
+  if (v === "buying_criteria_signin_required") {
+    return { kind: "info", text: "Sign in to view buying criteria." };
+  }
   if (v === "missing_auth_secret") {
     return { kind: "error", text: "AUTH_SECRET is missing or too short. Set it, redeploy/restart, then try again." };
   }
@@ -79,10 +82,12 @@ export default async function LoginPage({ searchParams }: Props) {
   const nextPath = safeNextPath(firstQs(sp.next));
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-emerald-950 text-zinc-100">
+    <div className="min-h-screen bg-gradient-to-br from-[color:var(--ticketing-surface)] via-[color:color-mix(in_oklab,var(--ticketing-surface)_70%,var(--ticketing-surface-elevated)_30%)] to-[color:var(--ticketing-surface-elevated)] text-zinc-100">
       <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-8 px-4 py-16 sm:px-6">
         <header className="space-y-2 text-center">
-          <p className="text-sm font-medium tracking-wide text-emerald-400/90">Event catalogue</p>
+          <p className="text-sm font-medium tracking-wide text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)]">
+            Event catalogue
+          </p>
           <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
           <p className="text-sm text-zinc-400">Use your account to view matches and catalogues.</p>
         </header>

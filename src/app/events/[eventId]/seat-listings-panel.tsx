@@ -8,10 +8,10 @@ import {
 import { formatUsd, formatUsdRangeFromAmounts, priceToNumber } from "@/lib/format-usd";
 
 const searchInpClass =
-  "min-h-10 w-full rounded-lg border border-white/[0.09] bg-[#0c1010] px-2.5 py-1.5 text-sm text-zinc-100 shadow-inner shadow-black/35 placeholder:text-zinc-500 transition-[border-color,box-shadow] focus:border-emerald-400/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]";
+  "min-h-10 w-full rounded-lg border border-white/[0.09] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_92%,white_8%)] px-2.5 py-1.5 text-sm text-zinc-100 shadow-inner shadow-black/35 placeholder:text-zinc-500 transition-[border-color,box-shadow] focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
 
 const selectClass =
-  "min-h-10 w-full min-w-0 rounded-lg border border-white/[0.09] bg-[#0c1010] px-2.5 py-1.5 text-sm text-zinc-100 shadow-inner shadow-black/35 transition-[border-color,box-shadow] focus:border-emerald-400/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]";
+  "min-h-10 w-full min-w-0 rounded-lg border border-white/[0.09] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_92%,white_8%)] px-2.5 py-1.5 text-sm text-zinc-100 shadow-inner shadow-black/35 transition-[border-color,box-shadow] focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
 
 function useMediaQuery(query: string): boolean {
   return useSyncExternalStore(
@@ -144,7 +144,7 @@ function compareCatalogueId(a: string, b: string): number {
 
 /** Ticketing CTA using `--ticketing-accent` / `--ticketing-accent-dim` from globals.css */
 const addToBasketBtnClass =
-  "inline-flex max-w-max shrink-0 items-center justify-center whitespace-nowrap rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_52%,transparent)] bg-[color:var(--ticketing-accent)] px-3 py-1.5 text-sm font-semibold text-emerald-950 shadow-sm shadow-emerald-950/35 transition-[filter,box-shadow] hover:brightness-[1.07] active:brightness-[0.96] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#080c0b]";
+  "inline-flex max-w-max shrink-0 items-center justify-center whitespace-nowrap rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_52%,transparent)] bg-[color:var(--ticketing-accent)] px-3 py-1.5 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter,box-shadow] hover:brightness-[1.07] active:brightness-[0.96] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
 
 /**
  * Placeholder only — no checkout flow yet. Click is harmless (toast + console.info).
@@ -370,7 +370,7 @@ function EmptyCatalogueCategorySection(props: { meta: CatalogueCategoryMeta }) {
         displayCategoryName={meta.displayCategoryName}
         displayCategoryId={meta.displayCategoryId}
       />
-      <div className="rounded-xl border border-white/[0.07] bg-[#0c1010]/80 px-5 py-4 ring-1 ring-white/[0.04]">
+      <div className="rounded-xl border border-white/[0.07] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_88%,transparent)] px-5 py-4 ring-1 ring-white/[0.04]">
         <p className="text-sm font-medium text-zinc-100">No seat listings yet</p>
         <p className="mt-1 text-xs leading-relaxed text-zinc-500">
           This category exists in the catalogue, but there are no synced seat-listing rows for it.
@@ -554,7 +554,7 @@ function sortDisplayRows(rows: SeatListingDTO[][], sortKey: SortKey, sortDir: So
 type PillOption = { key: string; label: string };
 
 const pillBase =
-  "inline-flex min-h-9 max-w-max items-center rounded-full border px-2.5 py-1.5 text-left text-xs font-semibold transition-[background-color,border-color,box-shadow,color] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/45 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e] sm:text-sm";
+  "inline-flex min-h-9 max-w-max items-center rounded-full border px-2.5 py-1.5 text-left text-xs font-semibold transition-[background-color,border-color,box-shadow,color] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] sm:text-sm";
 
 function FilterPillRow(props: {
   label: string;
@@ -581,7 +581,7 @@ function FilterPillRow(props: {
           aria-label={allLabel}
           className={
             value === null
-              ? `${pillBase} shrink-0 border-emerald-400/50 bg-emerald-500/[0.22] text-emerald-50 shadow-sm shadow-emerald-950/25`
+              ? `${pillBase} shrink-0 border-[color:color-mix(in_oklab,var(--ticketing-accent)_48%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)] text-zinc-50 shadow-sm shadow-black/25`
               : `${pillBase} shrink-0 border-white/[0.1] bg-white/[0.04] text-zinc-400 hover:border-white/18 hover:bg-white/[0.07] hover:text-zinc-200`
           }
         >
@@ -596,7 +596,7 @@ function FilterPillRow(props: {
             aria-label={`Filter by ${o.label}`}
             className={
               value === o.key
-                ? `${pillBase} shrink-0 border-emerald-400/50 bg-emerald-500/[0.22] text-emerald-50 shadow-sm shadow-emerald-950/25`
+                ? `${pillBase} shrink-0 border-[color:color-mix(in_oklab,var(--ticketing-accent)_48%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)] text-zinc-50 shadow-sm shadow-black/25`
                 : `${pillBase} shrink-0 border-white/[0.1] bg-white/[0.04] text-zinc-400 hover:border-white/18 hover:bg-white/[0.07] hover:text-zinc-200`
             }
           >
@@ -632,8 +632,8 @@ function SortToggle(props: {
         onClick={() => cycle(key)}
         className={
           active
-            ? "relative inline-flex min-h-9 flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-emerald-50 shadow-sm shadow-emerald-950/20 outline-none focus-visible:z-[2] focus-visible:ring-2 focus-visible:ring-emerald-400/45 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e] sm:px-2.5 sm:text-sm"
-            : "inline-flex min-h-9 flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-zinc-400 outline-none transition-colors hover:text-zinc-200 focus-visible:z-[2] focus-visible:ring-2 focus-visible:ring-emerald-400/45 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e] sm:px-2.5 sm:text-sm"
+            ? "relative inline-flex min-h-9 flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-zinc-50 shadow-sm shadow-black/20 outline-none focus-visible:z-[2] focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] sm:px-2.5 sm:text-sm"
+            : "inline-flex min-h-9 flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-zinc-400 outline-none transition-colors hover:text-zinc-200 focus-visible:z-[2] focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] sm:px-2.5 sm:text-sm"
         }
         aria-pressed={active}
         aria-label={
@@ -644,14 +644,14 @@ function SortToggle(props: {
       >
         {active ? (
           <span
-            className="absolute inset-0 rounded-md bg-emerald-500/22 ring-1 ring-emerald-400/35"
+            className="absolute inset-0 rounded-md bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)] ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_32%,transparent)]"
             aria-hidden
           />
         ) : null}
         <span className="relative z-[1]">{label}</span>
         {active ? (
           <span
-            className="relative z-[1] font-mono text-[10px] tabular-nums text-emerald-200/95 sm:text-xs"
+            className="relative z-[1] font-mono text-[10px] tabular-nums text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_18%)] sm:text-xs"
             aria-hidden
           >
             {sortDir === "asc" ? "↑" : "↓"}
@@ -904,7 +904,7 @@ export function SeatListingsPanel(props: {
       <div className="flex flex-col gap-3">
         {listings.length === 0 && (!allowEmptyCatalogueCategories || catalogueCategories.length === 0) ? (
           <div
-            className="rounded-xl border border-dashed border-white/[0.12] bg-[#0c1010]/90 px-6 py-14 text-center shadow-inner shadow-black/40 ring-1 ring-white/[0.04]"
+            className="rounded-xl border border-dashed border-white/[0.12] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_90%,transparent)] px-6 py-14 text-center shadow-inner shadow-black/40 ring-1 ring-white/[0.04]"
             role="status"
           >
             <p className="text-base font-medium text-zinc-100">No seat listings yet</p>
@@ -947,8 +947,8 @@ export function SeatListingsPanel(props: {
                       aria-expanded={mobileFiltersOpen}
                       className={
                         hasAnyFilters
-                          ? "flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-3 py-2 text-left text-sm font-semibold text-emerald-50 ring-1 ring-emerald-400/20 outline-none transition-colors hover:border-emerald-400/35 hover:bg-emerald-500/15 focus-visible:ring-2 focus-visible:ring-emerald-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
-                          : "flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-white/[0.10] bg-black/30 px-3 py-2 text-left text-sm font-semibold text-zinc-100 ring-1 ring-white/[0.04] outline-none transition-colors hover:border-white/16 hover:bg-black/40 focus-visible:ring-2 focus-visible:ring-emerald-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
+                          ? "flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3 py-2 text-left text-sm font-semibold text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)] outline-none transition-colors hover:border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                          : "flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-white/[0.10] bg-black/30 px-3 py-2 text-left text-sm font-semibold text-zinc-100 ring-1 ring-white/[0.04] outline-none transition-colors hover:border-white/16 hover:bg-black/40 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
                       }
                     >
                       <span>Filters</span>
@@ -1035,7 +1035,7 @@ export function SeatListingsPanel(props: {
                 <label className="mt-0.5 inline-flex items-start gap-2 text-xs text-zinc-300">
                   <input
                     type="checkbox"
-                    className="mt-0.5 h-4 w-4 rounded border-white/[0.18] bg-black/30 text-emerald-500"
+                    className="mt-0.5 h-4 w-4 rounded border-white/[0.18] bg-black/30 text-[color:var(--ticketing-accent)]"
                     checked={includeEmptyCatalogueCategories}
                     onChange={(e) => setIncludeEmptyCatalogueCategories(e.target.checked)}
                     aria-describedby="include-empty-catalogue-hint"
@@ -1056,7 +1056,7 @@ export function SeatListingsPanel(props: {
                       type="button"
                       onClick={() => setMobileMoreFiltersOpen((v) => !v)}
                       aria-expanded={mobileMoreFiltersOpen}
-                      className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-white/[0.10] bg-black/30 px-2.5 py-1.5 text-left text-sm font-semibold text-zinc-100 ring-1 ring-white/[0.04] outline-none transition-colors hover:border-white/16 hover:bg-black/40 focus-visible:ring-2 focus-visible:ring-emerald-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
+                      className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-white/[0.10] bg-black/30 px-2.5 py-1.5 text-left text-sm font-semibold text-zinc-100 ring-1 ring-white/[0.04] outline-none transition-colors hover:border-white/16 hover:bg-black/40 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
                     >
                       <span>More filters · stage & contingent</span>
                       <span className="tabular-nums text-zinc-400" aria-hidden>
@@ -1112,7 +1112,7 @@ export function SeatListingsPanel(props: {
                   {hasAnyFilters ? (
                     <button
                       type="button"
-                      className="rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-xs font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
+                      className="rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-xs font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
                       onClick={() => {
                         setSearch("");
                         setCategoryFilter(null);
@@ -1136,7 +1136,7 @@ export function SeatListingsPanel(props: {
 
             {renderItems.length === 0 || rowCount === 0 ? (
               <div
-                className="rounded-xl border border-white/[0.07] bg-[#0c1010]/80 px-6 py-11 text-center ring-1 ring-white/[0.04]"
+                className="rounded-xl border border-white/[0.07] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_88%,transparent)] px-6 py-11 text-center ring-1 ring-white/[0.04]"
                 role="status"
               >
                 <p className="text-base font-medium text-zinc-100">No matching listings</p>
@@ -1163,11 +1163,11 @@ export function SeatListingsPanel(props: {
                         displayCategoryName={section.displayCategoryName}
                         displayCategoryId={section.displayCategoryId}
                       />
-                      <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#080c0b] shadow-[0_16px_48px_-20px_rgba(0,0,0,0.75)] ring-1 ring-white/[0.05]">
+                      <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-[color:var(--ticketing-surface-elevated)] shadow-[0_16px_48px_-20px_rgba(0,0,0,0.75)] ring-1 ring-white/[0.05]">
                         <div className="overflow-x-auto scroll-pl-4 scroll-pr-4 [-webkit-overflow-scrolling:touch]">
                           <table className="w-full min-w-[38rem] border-collapse text-sm">
                             <thead>
-                              <tr className="sticky top-0 z-10 border-b border-white/[0.08] bg-[#0f1513]/95 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 backdrop-blur-md">
+                              <tr className="sticky top-0 z-10 border-b border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_95%,transparent)] text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 backdrop-blur-md">
                                 <th scope="col" className="px-4 py-3 pl-5 font-medium text-zinc-400 sm:pl-6">
                                   Block
                                 </th>
@@ -1179,7 +1179,7 @@ export function SeatListingsPanel(props: {
                                 </th>
                                 <th
                                   scope="col"
-                                  className="px-4 py-3 pr-4 text-right font-medium text-emerald-200/90"
+                                  className="px-4 py-3 pr-4 text-right font-medium text-[color:color-mix(in_oklab,var(--ticketing-accent)_62%,white_18%)]"
                                 >
                                   Price
                                 </th>
@@ -1235,7 +1235,7 @@ export function SeatListingsPanel(props: {
                                       return (
                                         <tr
                                           key={listing.id}
-                                          className="text-zinc-200 transition-colors hover:bg-emerald-500/[0.06]"
+                                          className="text-zinc-200 transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)]"
                                         >
                                           <td className="max-w-[12rem] px-4 py-3 pl-5 align-top sm:max-w-none sm:pl-6">
                                             <div className="font-medium leading-snug text-zinc-50">
@@ -1253,7 +1253,7 @@ export function SeatListingsPanel(props: {
                                           <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
                                             {listing.seatNumber}
                                           </td>
-                                          <td className="whitespace-nowrap px-4 py-3 pr-4 text-right text-sm font-semibold tabular-nums text-emerald-300">
+                                          <td className="whitespace-nowrap px-4 py-3 pr-4 text-right text-sm font-semibold tabular-nums text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)]">
                                             {formatUsd(listing.amount)}
                                           </td>
                                           <td className="px-4 py-3 pr-5 align-middle sm:pr-6">
@@ -1286,7 +1286,7 @@ export function SeatListingsPanel(props: {
                                     return (
                                       <tr
                                         key={rowKey}
-                                        className="text-zinc-200 transition-colors hover:bg-emerald-500/[0.06]"
+                                        className="text-zinc-200 transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)]"
                                       >
                                         <td className="max-w-[12rem] px-4 py-3 pl-5 align-top sm:max-w-none sm:pl-6">
                                           <div className="font-medium leading-snug text-zinc-50">
@@ -1314,7 +1314,7 @@ export function SeatListingsPanel(props: {
                                             </span>
                                           </div>
                                         </td>
-                                        <td className="whitespace-nowrap px-4 py-3 pr-4 text-right text-sm font-semibold tabular-nums text-emerald-300">
+                                        <td className="whitespace-nowrap px-4 py-3 pr-4 text-right text-sm font-semibold tabular-nums text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)]">
                                           {formatUsdRangeFromAmounts(listings.map((l) => l.amount))}
                                         </td>
                                         <td className="px-4 py-3 pr-5 align-middle sm:pr-6">
@@ -1351,7 +1351,7 @@ export function SeatListingsPanel(props: {
         <div
           role="status"
           aria-live="polite"
-          className="pointer-events-none fixed bottom-6 left-1/2 z-[60] max-w-[min(22rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_42%,transparent)] bg-[#0f1513]/95 px-4 py-2.5 text-center text-sm font-medium text-emerald-100 shadow-lg shadow-black/50 ring-1 ring-white/[0.06] backdrop-blur-md"
+          className="pointer-events-none fixed bottom-6 left-1/2 z-[60] max-w-[min(22rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_42%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_95%,transparent)] px-4 py-2.5 text-center text-sm font-medium text-zinc-100 shadow-lg shadow-black/50 ring-1 ring-white/[0.06] backdrop-blur-md"
         >
           {basketToastMessage}
         </div>

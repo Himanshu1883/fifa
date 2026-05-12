@@ -43,12 +43,12 @@ export default async function GmailPage({ searchParams }: Props) {
   const alertShell =
     "rounded-xl border border-red-400/30 bg-[color:color-mix(in_oklab,red_12%,transparent)] px-4 py-3 text-sm text-red-200 shadow-sm shadow-black/30 ring-1 ring-red-500/15";
   const okShell =
-    "rounded-xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100 shadow-sm shadow-black/30 ring-1 ring-emerald-500/10";
+    "rounded-xl border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-4 py-3 text-sm text-zinc-100 shadow-sm shadow-black/30 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)]";
 
   return (
-    <div className="min-h-screen bg-[#070a09] font-sans text-zinc-100">
+    <div className="min-h-screen bg-[color:var(--ticketing-surface)] font-sans text-zinc-100">
       <div
-        className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_85%_55%_at_50%_-18%,var(--ticketing-accent-dim),transparent_52%),radial-gradient(ellipse_55%_45%_at_100%_0%,rgba(52,211,153,0.06),transparent_45%),radial-gradient(ellipse_50%_40%_at_0%_100%,rgba(255,255,255,0.03),transparent_50%)]"
+        className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_85%_55%_at_50%_-18%,var(--ticketing-accent-dim),transparent_52%),radial-gradient(ellipse_55%_45%_at_100%_0%,color-mix(in_oklab,var(--ticketing-accent)_10%,transparent),transparent_45%),radial-gradient(ellipse_50%_40%_at_0%_100%,rgba(255,255,255,0.03),transparent_50%)]"
         aria-hidden
       />
 

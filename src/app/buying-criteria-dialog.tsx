@@ -19,6 +19,9 @@ type EventStub = {
 const inp =
   "min-h-9 w-full rounded-md border border-white/10 bg-black/35 px-2.5 py-2 text-xs text-zinc-100 shadow-inner shadow-black/30 placeholder:text-zinc-600 focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_48%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
 
+const defaultTriggerClassName =
+  "inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg border border-white/[0.10] bg-white/[0.07] px-4 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/25 transition-colors hover:bg-white/[0.10] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
+
 type FrontRowState = { cat3FrontRow: boolean };
 type EditorTarget = { eventId: number; categoryNum: number };
 type QtyDraft = { minQty: string; maxPriceUsd: string };
@@ -64,7 +67,17 @@ function summarizeRules(rules: BuyingCriteriaRuleRow[]): string {
   return parts.join("; ");
 }
 
-export function BuyingCriteriaDialog({ events }: { events: EventStub[] }) {
+type BuyingCriteriaDialogProps = {
+  events: EventStub[];
+  triggerLabel?: string;
+  triggerClassName?: string;
+};
+
+export function BuyingCriteriaDialog({
+  events,
+  triggerLabel = "Buying criteria",
+  triggerClassName = defaultTriggerClassName,
+}: BuyingCriteriaDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -396,9 +409,9 @@ export function BuyingCriteriaDialog({ events }: { events: EventStub[] }) {
       <button
         type="button"
         onClick={() => openDialog()}
-        className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg border border-white/[0.10] bg-white/[0.07] px-4 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/25 transition-colors hover:bg-white/[0.10] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+        className={triggerClassName}
       >
-        Buying criteria
+        {triggerLabel}
       </button>
 
       {open ? (
@@ -476,7 +489,7 @@ export function BuyingCriteriaDialog({ events }: { events: EventStub[] }) {
                 </p>
               ) : null}
               {note ? (
-                <p className="mt-3 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100">
+                <p className="mt-3 rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3 py-2 text-sm text-zinc-100">
                   {note}
                 </p>
               ) : null}
@@ -523,7 +536,7 @@ export function BuyingCriteriaDialog({ events }: { events: EventStub[] }) {
                             key={event.id}
                             className={`border-t border-white/[0.06] transition-colors hover:bg-[color:color-mix(in_oklab,white_9%,transparent)] ${zebra}`}
                           >
-                            <td className="whitespace-nowrap px-3 py-2.5 pl-4 align-top font-mono text-[11px] font-semibold text-emerald-300/95 sm:px-4 sm:pl-5">
+                            <td className="whitespace-nowrap px-3 py-2.5 pl-4 align-top font-mono text-[11px] font-semibold text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)] sm:px-4 sm:pl-5">
                               {event.matchLabel}
                             </td>
                             <td className="px-3 py-2.5 align-top text-xs text-zinc-200 sm:px-4">
@@ -635,7 +648,7 @@ export function BuyingCriteriaDialog({ events }: { events: EventStub[] }) {
                                 disabled={frontRowSaving || cellDisabled}
                                 className={`inline-flex min-h-9 w-full items-center justify-center rounded-md border px-2.5 text-xs font-semibold shadow-inner shadow-black/25 ring-1 ring-white/[0.04] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_48%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] ${
                                   frontRow
-                                    ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-100"
+                                    ? "border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] text-zinc-100"
                                     : "border-white/10 bg-black/35 text-zinc-400 hover:bg-white/[0.06]"
                                 }`}
                                 aria-pressed={frontRow}
@@ -736,7 +749,7 @@ export function BuyingCriteriaDialog({ events }: { events: EventStub[] }) {
                       </p>
                     ) : null}
                     {editorNote ? (
-                      <p className="mt-3 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100">
+                      <p className="mt-3 rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3 py-2 text-sm text-zinc-100">
                         {editorNote}
                       </p>
                     ) : null}

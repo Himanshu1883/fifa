@@ -241,9 +241,9 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
       : [];
 
   return (
-    <div className="min-h-screen bg-[#070a09] font-sans text-zinc-100">
+    <div className="min-h-screen bg-[color:var(--ticketing-surface)] font-sans text-zinc-100">
       <div
-        className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_85%_55%_at_50%_-18%,rgba(52,211,153,0.13),transparent_52%),radial-gradient(ellipse_55%_45%_at_100%_0%,rgba(52,211,153,0.06),transparent_45%),radial-gradient(ellipse_50%_40%_at_0%_100%,rgba(255,255,255,0.03),transparent_50%)]"
+        className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_85%_55%_at_50%_-18%,var(--ticketing-accent-dim),transparent_52%),radial-gradient(ellipse_55%_45%_at_100%_0%,color-mix(in_oklab,var(--ticketing-accent)_10%,transparent),transparent_45%),radial-gradient(ellipse_50%_40%_at_0%_100%,rgba(255,255,255,0.03),transparent_50%)]"
         aria-hidden
       />
       <div className="flex min-h-screen w-full flex-col gap-4 px-4 pb-12 pt-6 sm:gap-5 sm:px-6 sm:pb-14 sm:pt-7">
@@ -251,7 +251,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
           <nav aria-label="Breadcrumb" className="shrink-0">
             <Link
               href="/"
-              className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-300/95 outline-offset-4 ring-1 ring-white/[0.04] transition-colors hover:border-emerald-500/25 hover:bg-emerald-500/10 hover:text-emerald-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400/55"
+              className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)] outline-offset-4 ring-1 ring-white/[0.04] transition-colors hover:border-[color:color-mix(in_oklab,var(--ticketing-accent)_24%,transparent)] hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] hover:text-[color:color-mix(in_oklab,var(--ticketing-accent)_78%,white_10%)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:color-mix(in_oklab,var(--ticketing-accent)_48%,transparent)]"
             >
               <span aria-hidden className="text-sm leading-none opacity-80">
                 ←
@@ -262,7 +262,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
 
           <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-zinc-900/35 shadow-[0_24px_80px_-24px_rgba(0,0,0,0.85)] ring-1 ring-white/[0.04] backdrop-blur-md">
             <div
-              className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-emerald-400/70 to-transparent"
+              className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-[color:color-mix(in_oklab,var(--ticketing-accent)_75%,transparent)] to-transparent"
               aria-hidden
             />
 
@@ -270,7 +270,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-7">
                 <div className="min-w-0 flex-1 space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-emerald-300/95 ring-1 ring-emerald-400/30">
+                    <span className="rounded-full bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)] ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)]">
                       Match
                     </span>
                     <span className="rounded-full border border-white/[0.1] bg-black/25 px-2.5 py-1 font-mono text-[11px] font-medium tabular-nums text-zinc-300 ring-1 ring-white/[0.05]">
@@ -329,14 +329,16 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                     </p>
                     <p className="mt-0.5 text-[11px] text-zinc-500">rows loaded</p>
                   </div>
-                  <div className="rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3.5 py-3 ring-1 ring-emerald-400/20">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-200/80">
+                  <div className="rounded-xl border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3.5 py-3 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)]">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,white_25%)]">
                       Categories
                     </p>
-                    <p className="mt-1 text-lg font-semibold tabular-nums text-emerald-50 sm:text-xl">
+                    <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-50 sm:text-xl">
                       {eventCategoryCount.toLocaleString("en-US")}
                     </p>
-                    <p className="mt-0.5 text-[11px] text-emerald-200/70">catalogue rows</p>
+                    <p className="mt-0.5 text-[11px] text-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,white_25%)]">
+                      catalogue rows
+                    </p>
                   </div>
                   <div className="rounded-xl border border-white/[0.07] bg-black/25 px-3.5 py-3 ring-1 ring-white/[0.04]">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
@@ -373,15 +375,15 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                     href={`/events/${event.id}?panel=listings`}
                     className={
                       panel === "listings"
-                        ? "flex flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-50 ring-1 ring-emerald-400/35 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/45 sm:flex-none"
-                        : "flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-400 outline-none transition-colors hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-emerald-400/45 sm:flex-none"
+                        ? "flex flex-1 items-center justify-center gap-2 rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)] px-3 py-2 text-sm font-semibold text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,transparent)] sm:flex-none"
+                        : "flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-400 outline-none transition-colors hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,transparent)] sm:flex-none"
                     }
                   >
                     Listings
                     <span
                       className={
                         panel === "listings"
-                          ? "rounded-full bg-emerald-500/25 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-emerald-100"
+                          ? "rounded-full bg-[color:color-mix(in_oklab,var(--ticketing-accent)_20%,transparent)] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-zinc-100"
                           : "rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-zinc-400"
                       }
                       aria-hidden
@@ -395,15 +397,15 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                     href={`/events/${event.id}`}
                     className={
                       panel === "sock"
-                        ? "flex flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-50 ring-1 ring-emerald-400/35 outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/45 sm:flex-none"
-                        : "flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-400 outline-none transition-colors hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-emerald-400/45 sm:flex-none"
+                        ? "flex flex-1 items-center justify-center gap-2 rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)] px-3 py-2 text-sm font-semibold text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,transparent)] sm:flex-none"
+                        : "flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-400 outline-none transition-colors hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,transparent)] sm:flex-none"
                     }
                   >
                     Sock available
                     <span
                       className={
                         panel === "sock"
-                          ? "rounded-full bg-emerald-500/25 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-emerald-100"
+                          ? "rounded-full bg-[color:color-mix(in_oklab,var(--ticketing-accent)_20%,transparent)] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-zinc-100"
                           : "rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-zinc-400"
                       }
                       aria-hidden

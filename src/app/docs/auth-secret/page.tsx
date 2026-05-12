@@ -25,7 +25,10 @@ export default function AuthSecretDocsPage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-10 text-zinc-100">
       <p className="mb-6 text-sm text-zinc-400">
-        <Link href="/login" className="text-emerald-400 hover:text-emerald-300">
+        <Link
+          href="/login"
+          className="text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)] hover:text-[color:color-mix(in_oklab,var(--ticketing-accent)_78%,white_10%)]"
+        >
           ← Back to sign in
         </Link>
       </p>

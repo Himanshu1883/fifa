@@ -6,7 +6,6 @@ import { formatUsd, priceToNumber } from "@/lib/format-usd";
 import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
 import { Prisma } from "@/generated/prisma/client";
 import { AddEventDialog } from "@/app/add-event-dialog";
-import { BuyingCriteriaDialog } from "@/app/buying-criteria-dialog";
 import { EditEventDialog } from "@/app/edit-event-dialog";
 import { EventImportantToggle } from "@/app/event-important-toggle";
 import { EventPrefsEditCell } from "@/app/event-prefs-edit-cell";
@@ -356,9 +355,6 @@ export default async function Home({ searchParams }: Props) {
   const suggestedSortOrder =
     eventsAll.length === 0 ? 1 : Math.max(...eventsAll.map((e) => e.sortOrder)) + 1;
 
-  const criteriaEvents = [...eventsAll];
-  sortHomeEvents(criteriaEvents, listSort, listOrder);
-
   const venueOptions = distinctNonEmptyCaseInsensitive(eventsAll.map((e) => e.venue));
   const countryOptions = distinctNonEmptyCaseInsensitive(eventsAll.map((e) => e.country));
 
@@ -371,9 +367,9 @@ export default async function Home({ searchParams }: Props) {
     "rounded-xl border border-red-400/30 bg-[color:color-mix(in_oklab,red_12%,transparent)] px-4 py-3 text-sm text-red-200 shadow-sm shadow-black/30 ring-1 ring-red-500/15";
 
   return (
-    <div className="min-h-screen bg-[#070a09] font-sans text-zinc-100">
+    <div className="min-h-screen bg-[color:var(--ticketing-surface)] font-sans text-zinc-100">
       <div
-        className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_85%_55%_at_50%_-18%,var(--ticketing-accent-dim),transparent_52%),radial-gradient(ellipse_55%_45%_at_100%_0%,rgba(52,211,153,0.06),transparent_45%),radial-gradient(ellipse_50%_40%_at_0%_100%,rgba(255,255,255,0.03),transparent_50%)]"
+        className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_85%_55%_at_50%_-18%,var(--ticketing-accent-dim),transparent_52%),radial-gradient(ellipse_55%_45%_at_100%_0%,color-mix(in_oklab,var(--ticketing-accent)_10%,transparent),transparent_45%),radial-gradient(ellipse_50%_40%_at_0%_100%,rgba(255,255,255,0.03),transparent_50%)]"
         aria-hidden
       />
 
@@ -399,6 +395,12 @@ export default async function Home({ searchParams }: Props) {
             <div className="absolute right-4 top-4 flex flex-col items-end gap-2 sm:right-8 sm:top-6">
               <div className="flex items-center gap-2">
                 <Link
+                  href="/buying-criteria"
+                  className="rounded-md bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-3 py-1.5 text-xs font-medium text-zinc-100 ring-1 ring-white/10 hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)]"
+                >
+                  Buying criteria
+                </Link>
+                <Link
                   href="/undetectable"
                   className="rounded-md bg-sky-500/15 px-3 py-1.5 text-xs font-medium text-sky-100 ring-1 ring-white/10 hover:bg-sky-500/20"
                 >
@@ -406,7 +408,7 @@ export default async function Home({ searchParams }: Props) {
                 </Link>
                 <Link
                   href="/gmail"
-                  className="rounded-md bg-emerald-500/15 px-3 py-1.5 text-xs font-medium text-emerald-100 ring-1 ring-white/10 hover:bg-emerald-500/20"
+                  className="rounded-md bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-3 py-1.5 text-xs font-medium text-zinc-100 ring-1 ring-white/10 hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)]"
                 >
                   Gmail
                 </Link>
@@ -420,8 +422,9 @@ export default async function Home({ searchParams }: Props) {
               {showBoxofficeControls ? <BoxofficeControlsClient port={boxofficePort} /> : null}
             </div>
             <div className="mx-auto flex w-full max-w-4xl flex-col items-center text-center">
-              <p className="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-100 ring-1 ring-emerald-400/15">
-                2026 FIFA WORLD CUP <span className="text-emerald-200/60">·</span> Live ticket tracker
+              <p className="inline-flex items-center gap-2 rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-100 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)]">
+                2026 FIFA WORLD CUP{" "}
+                <span className="text-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,white_40%)]">·</span> Live ticket tracker
               </p>
 
               <h1 className="mt-6 text-balance text-4xl font-semibold tracking-tight text-white sm:text-5xl sm:leading-[1.04] lg:text-6xl">
@@ -459,19 +462,19 @@ export default async function Home({ searchParams }: Props) {
               <div className="mt-8 flex w-full flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
                 <Link
                   href="#home-events-heading"
-                  className="group inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-emerald-400/25 bg-[color:var(--ticketing-accent)] px-6 text-sm font-semibold text-emerald-950 shadow-sm shadow-black/35 transition-[filter,transform] hover:brightness-[1.06] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                  className="group inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:var(--ticketing-accent)] px-6 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter,transform] hover:brightness-[1.06] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
                 >
                   Browse Last Minute Sales
-                  <span className="rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-950/90">
+                  <span className="rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-950/90">
                     New
                   </span>
-                  <span className="text-emerald-950/80 transition-transform group-hover:translate-x-0.5" aria-hidden>
+                  <span className="text-zinc-950/80 transition-transform group-hover:translate-x-0.5" aria-hidden>
                     →
                   </span>
                 </Link>
                 <Link
                   href="#home-events-heading"
-                  className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                  className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
                 >
                   Browse resale marketplace
                 </Link>
@@ -494,9 +497,6 @@ export default async function Home({ searchParams }: Props) {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                  <BuyingCriteriaDialog
-                    events={criteriaEvents.map((e) => ({ id: e.id, matchLabel: e.matchLabel, name: e.name }))}
-                  />
                   <AddEventDialog suggestedSortOrder={suggestedSortOrder} />
                   <Suspense
                     fallback={
@@ -732,7 +732,7 @@ export default async function Home({ searchParams }: Props) {
                                 key={event.id}
                                 className={`border-t border-white/[0.06] transition-colors hover:bg-[color:color-mix(in_oklab,white_9%,transparent)] ${zebra}`}
                               >
-                                <td className="whitespace-nowrap px-3 py-3 align-middle pl-4 font-mono text-xs text-emerald-300/95 sm:px-4 sm:pl-5">
+                                <td className="whitespace-nowrap px-3 py-3 align-middle pl-4 font-mono text-xs text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)] sm:px-4 sm:pl-5">
                                   {event.matchLabel}
                                 </td>
                                 <td className="max-w-[16rem] px-3 py-3 align-middle sm:max-w-none sm:px-4">

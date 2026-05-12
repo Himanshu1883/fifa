@@ -6,7 +6,7 @@ import { loginAction, type LoginState } from "@/app/actions/auth";
 import { AUTH_SECRET_SETUP_ROUTE } from "@/lib/auth-secret-docs";
 
 const inp =
-  "w-full rounded-lg border border-white/10 bg-zinc-950/80 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/40";
+  "w-full rounded-lg border border-white/10 bg-zinc-950/80 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus:ring-1 focus:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)]";
 
 const initial: LoginState = {};
 
@@ -33,7 +33,7 @@ export function LoginForm({
         <p
           className={
             message.kind === "info"
-              ? "rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100"
+              ? "rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-4 py-3 text-sm text-zinc-100"
               : "rounded-lg border border-red-500/30 bg-red-950/40 px-4 py-3 text-sm text-red-300"
           }
           role={message.kind === "info" ? "status" : "alert"}
@@ -114,7 +114,7 @@ export function LoginForm({
       <button
         type="submit"
         disabled={pending}
-        className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-60"
+        className="rounded-lg bg-[color:var(--ticketing-accent)] px-4 py-2.5 text-sm font-semibold text-zinc-950 transition-[filter] hover:brightness-[1.06] disabled:opacity-60"
       >
         {pending ? "Signing in…" : "Sign in"}
       </button>

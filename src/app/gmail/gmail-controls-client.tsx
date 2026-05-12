@@ -12,7 +12,8 @@ function buttonClass(kind: "primary" | "danger" | "neutral", disabled: boolean):
   const base =
     "inline-flex items-center justify-center rounded-md px-3 py-2 text-xs font-medium ring-1 ring-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
   const dis = disabled ? "opacity-60 pointer-events-none" : "";
-  if (kind === "primary") return `${base} bg-emerald-500/15 text-emerald-100 hover:bg-emerald-500/20 ${dis}`;
+  if (kind === "primary")
+    return `${base} bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] text-zinc-100 hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)] ${dis}`;
   if (kind === "danger") return `${base} bg-red-500/15 text-red-100 hover:bg-red-500/20 ${dis}`;
   return `${base} bg-white/[0.08] text-zinc-200 hover:bg-white/[0.12] ${dis}`;
 }

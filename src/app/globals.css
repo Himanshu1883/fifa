@@ -1,13 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-  /* Event / ticketing surfaces — dark pages override via Tailwind; vars available for fine gradients */
-  --ticketing-accent: #34d399;
-  --ticketing-accent-dim: rgba(52, 211, 153, 0.14);
-  --ticketing-surface: #0f1412;
-  --ticketing-elevated: rgba(255, 255, 255, 0.04);
+  /* Ticketing theme tokens (dark-first): deep navy + amber */
+  --ticketing-accent: #f59e0b;
+  --ticketing-accent-dim: color-mix(in_oklab, var(--ticketing-accent) 18%, transparent);
+  --ticketing-surface: #070b16;
+  --ticketing-surface-elevated: #0b1220;
+  --ticketing-elevated: color-mix(in_oklab, var(--ticketing-surface) 94%, white 6%);
+
+  --background: var(--ticketing-surface);
+  --foreground: #e4e4e7;
 }
 
 @theme inline {
@@ -19,8 +21,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: var(--ticketing-surface);
+    --foreground: #e4e4e7;
   }
 }
 

@@ -4,10 +4,10 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { formatUsd, priceToNumber } from "@/lib/format-usd";
 
 const searchInpClass =
-  "min-h-10 w-full rounded-lg border border-white/[0.09] bg-[#0c1010] px-2.5 py-1.5 text-sm text-zinc-100 shadow-inner shadow-black/35 placeholder:text-zinc-500 transition-[border-color,box-shadow] focus:border-emerald-400/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]";
+  "min-h-10 w-full rounded-lg border border-white/[0.09] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_92%,white_8%)] px-2.5 py-1.5 text-sm text-zinc-100 shadow-inner shadow-black/35 placeholder:text-zinc-500 transition-[border-color,box-shadow] focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
 
 const controlClass =
-  "min-h-10 w-full rounded-lg border border-white/[0.09] bg-[#0c1010] px-2.5 py-1.5 text-sm text-zinc-100 shadow-inner shadow-black/35 placeholder:text-zinc-500 transition-[border-color,box-shadow] focus:border-emerald-400/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]";
+  "min-h-10 w-full rounded-lg border border-white/[0.09] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_92%,white_8%)] px-2.5 py-1.5 text-sm text-zinc-100 shadow-inner shadow-black/35 placeholder:text-zinc-500 transition-[border-color,box-shadow] focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
 
 function useMediaQuery(query: string): boolean {
   return useSyncExternalStore(
@@ -305,7 +305,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
 
       {rows.length === 0 ? (
         <div
-          className="rounded-xl border border-dashed border-white/[0.12] bg-[#0c1010]/90 px-6 py-10 text-center shadow-inner shadow-black/40 ring-1 ring-white/[0.04]"
+          className="rounded-xl border border-dashed border-white/[0.12] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_90%,transparent)] px-6 py-10 text-center shadow-inner shadow-black/40 ring-1 ring-white/[0.04]"
           role="status"
         >
           <p className="text-base font-medium text-zinc-100">No sock_available rows</p>
@@ -362,8 +362,8 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                   aria-expanded={mobileFiltersOpen}
                   className={
                     hasAnyFilters
-                      ? "flex min-h-10 items-center justify-between gap-2 rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-3 py-2 text-left text-sm font-semibold text-emerald-50 ring-1 ring-emerald-400/20 outline-none transition-colors hover:border-emerald-400/35 hover:bg-emerald-500/15 focus-visible:ring-2 focus-visible:ring-emerald-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e] sm:col-span-2 lg:col-span-4"
-                      : "flex min-h-10 items-center justify-between gap-2 rounded-lg border border-white/[0.10] bg-black/30 px-3 py-2 text-left text-sm font-semibold text-zinc-100 ring-1 ring-white/[0.04] outline-none transition-colors hover:border-white/16 hover:bg-black/40 focus-visible:ring-2 focus-visible:ring-emerald-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e] sm:col-span-2 lg:col-span-4"
+                      ? "flex min-h-10 items-center justify-between gap-2 rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3 py-2 text-left text-sm font-semibold text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)] outline-none transition-colors hover:border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] sm:col-span-2 lg:col-span-4"
+                      : "flex min-h-10 items-center justify-between gap-2 rounded-lg border border-white/[0.10] bg-black/30 px-3 py-2 text-left text-sm font-semibold text-zinc-100 ring-1 ring-white/[0.04] outline-none transition-colors hover:border-white/16 hover:bg-black/40 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] sm:col-span-2 lg:col-span-4"
                   }
                 >
                   <span>Filters</span>
@@ -485,7 +485,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                     </label>
                     <button
                       type="button"
-                      className="min-h-10 rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-left text-sm font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
+                      className="min-h-10 rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-left text-sm font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
                       onClick={() => setShowMoreFilters((v) => !v)}
                       aria-expanded={showMoreFilters}
                     >
@@ -549,7 +549,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className="rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-xs font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
+                  className="rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-xs font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
                   onClick={() => {
                     setSearch("");
                     setKind("");
@@ -577,7 +577,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
 
           {filtered.length === 0 ? (
             <div
-              className="rounded-xl border border-white/[0.07] bg-[#0c1010]/80 px-6 py-10 text-center ring-1 ring-white/[0.04]"
+              className="rounded-xl border border-white/[0.07] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_88%,transparent)] px-6 py-10 text-center ring-1 ring-white/[0.04]"
               role="status"
             >
               <p className="text-base font-medium text-zinc-100">No matching rows</p>
@@ -586,11 +586,11 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
               </p>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-[#080c0b] shadow-[0_16px_48px_-20px_rgba(0,0,0,0.75)] ring-1 ring-white/[0.05]">
+            <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-[color:var(--ticketing-surface-elevated)] shadow-[0_16px_48px_-20px_rgba(0,0,0,0.75)] ring-1 ring-white/[0.05]">
               <div className="max-h-[70vh] overflow-auto [-webkit-overflow-scrolling:touch]">
                 <table className="w-full min-w-[72rem] border-collapse text-sm">
                   <thead>
-                    <tr className="sticky top-0 z-10 border-b border-white/[0.08] bg-[#0f1513]/95 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 backdrop-blur-md">
+                    <tr className="sticky top-0 z-10 border-b border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_95%,transparent)] text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 backdrop-blur-md">
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
                         Area
                       </th>
@@ -622,7 +622,10 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                   </thead>
                   <tbody className="divide-y divide-white/[0.05]">
                     {filtered.map((r) => (
-                      <tr key={r.id} className="text-zinc-200 transition-colors hover:bg-emerald-500/[0.06]">
+                      <tr
+                        key={r.id}
+                        className="text-zinc-200 transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)]"
+                      >
                         <td className="px-4 py-3 text-sm font-medium text-zinc-50">{r.areaName}</td>
                         <td className="px-4 py-3 text-sm text-zinc-200">{r.categoryName}</td>
                         <td className="px-4 py-3 text-sm font-medium text-zinc-50">{r.blockName}</td>
@@ -632,7 +635,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
                           {r.seatNumber}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-emerald-300">
+                        <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)]">
                           {formatSockUsd(r.amount)}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500" title={r.createdAt}>
@@ -644,7 +647,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                         <td className="whitespace-nowrap px-4 py-3 pr-5 text-right sm:pr-6">
                           <button
                             type="button"
-                            className="inline-flex items-center justify-center rounded-md border border-white/[0.10] bg-black/25 p-2 text-zinc-200 shadow-inner shadow-black/35 transition-[border-color,background-color,transform] hover:border-white/[0.16] hover:bg-white/[0.04] active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
+                            className="inline-flex items-center justify-center rounded-md border border-white/[0.10] bg-black/25 p-2 text-zinc-200 shadow-inner shadow-black/35 transition-[border-color,background-color,transform] hover:border-white/[0.16] hover:bg-white/[0.04] active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
                             aria-label={`Row info: ${r.areaName}, ${r.categoryName}, ${r.blockName}, row ${r.row}, seat ${r.seatNumber}`}
                             onClick={() => setOpenRow(r)}
                           >
@@ -672,7 +675,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
           }}
         >
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-          <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-white/[0.10] bg-[#070a0a] shadow-[0_28px_80px_-26px_rgba(0,0,0,0.85)] ring-1 ring-white/[0.06]">
+          <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-white/[0.10] bg-[color:var(--ticketing-surface-elevated)] shadow-[0_28px_80px_-26px_rgba(0,0,0,0.85)] ring-1 ring-white/[0.06]">
             <div className="border-b border-white/[0.08] px-4 py-4 sm:px-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -685,7 +688,9 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                   <p className="mt-1 text-xs text-zinc-500">
                     Row <span className="font-mono text-zinc-300">{openRow.row}</span> · Seat{" "}
                     <span className="font-mono text-zinc-300">{openRow.seatNumber}</span> ·{" "}
-                    <span className="font-mono text-emerald-300">{formatSockUsd(openRow.amount)}</span>
+                    <span className="font-mono text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)]">
+                      {formatSockUsd(openRow.amount)}
+                    </span>
                   </p>
                   <p className="mt-1 text-xs text-zinc-500">
                     Kind{" "}
@@ -696,7 +701,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                 </div>
                 <button
                   type="button"
-                  className="shrink-0 rounded-lg border border-white/[0.10] bg-black/30 px-2.5 py-1.5 text-xs font-medium text-zinc-200 hover:bg-white/[0.05] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
+                  className="shrink-0 rounded-lg border border-white/[0.10] bg-black/30 px-2.5 py-1.5 text-xs font-medium text-zinc-200 hover:bg-white/[0.05] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
                   onClick={() => setOpenRow(null)}
                 >
                   Close

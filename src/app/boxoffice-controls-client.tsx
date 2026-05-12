@@ -122,7 +122,7 @@ export function BoxofficeControlsClient({ port }: { port: string }) {
             type="button"
             onClick={() => broadcast("start")}
             disabled={isPending}
-            className="rounded-md bg-emerald-500/15 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-100 ring-1 ring-white/10 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-md bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-2.5 py-1.5 text-[11px] font-semibold text-zinc-100 ring-1 ring-white/10 hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             Start
           </button>
@@ -192,7 +192,11 @@ export function BoxofficeControlsClient({ port }: { port: string }) {
               if (!s) return null;
               const at = new Date(s.at);
               const time = Number.isFinite(s.at) ? at.toLocaleTimeString() : "—";
-              const tone = s.isError ? "text-rose-200" : s.running ? "text-emerald-200" : "text-zinc-200";
+              const tone = s.isError
+                ? "text-rose-200"
+                : s.running
+                  ? "text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)]"
+                  : "text-zinc-200";
               return (
                 <li key={c.id} className="rounded-lg border border-white/[0.08] bg-black/20 px-2.5 py-2">
                   <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">

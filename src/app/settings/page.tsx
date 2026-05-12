@@ -20,7 +20,8 @@ type EndpointItem = {
 
 function pillClass(method: string): string {
   const m = method.toUpperCase();
-  if (m === "GET") return "border-emerald-400/25 bg-emerald-400/10 text-emerald-200";
+  if (m === "GET")
+    return "border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)]";
   if (m === "POST") return "border-sky-400/25 bg-sky-400/10 text-sky-200";
   return "border-white/15 bg-white/5 text-zinc-200";
 }
@@ -381,9 +382,9 @@ export default async function SettingsPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#070a09] font-sans text-zinc-100">
+    <div className="min-h-screen bg-[color:var(--ticketing-surface)] font-sans text-zinc-100">
       <div
-        className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_85%_55%_at_50%_-18%,var(--ticketing-accent-dim),transparent_52%),radial-gradient(ellipse_55%_45%_at_100%_0%,rgba(52,211,153,0.06),transparent_45%),radial-gradient(ellipse_50%_40%_at_0%_100%,rgba(255,255,255,0.03),transparent_50%)]"
+        className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_85%_55%_at_50%_-18%,var(--ticketing-accent-dim),transparent_52%),radial-gradient(ellipse_55%_45%_at_100%_0%,color-mix(in_oklab,var(--ticketing-accent)_10%,transparent),transparent_45%),radial-gradient(ellipse_50%_40%_at_0%_100%,rgba(255,255,255,0.03),transparent_50%)]"
         aria-hidden
       />
 
