@@ -371,17 +371,14 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
               </div>
             </header>
 
-            <div className="border-t border-white/[0.06] px-4 py-3 sm:px-7 sm:py-3.5">
-              <div
-                className="flex w-full flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between"
-                aria-label="Sections"
-              >
-                <div
-                  className="flex w-full rounded-xl bg-black/40 p-1 ring-1 ring-white/[0.08] sm:w-auto"
-                  role="tablist"
-                  aria-label="Event sections"
-                >
-                  {hasSeatListings ? (
+            {hasSeatListings ? (
+              <div className="border-t border-white/[0.06] px-4 py-3 sm:px-7 sm:py-3.5">
+                <div className="flex w-full flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+                  <div
+                    className="flex w-full rounded-xl bg-black/40 p-1 ring-1 ring-white/[0.08] sm:w-auto"
+                    role="tablist"
+                    aria-label="Event sections"
+                  >
                     <Link
                       role="tab"
                       aria-selected={effectivePanel === "listings"}
@@ -404,36 +401,32 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                         {seatListingsCount.toLocaleString("en-US")}
                       </span>
                     </Link>
-                  ) : null}
-                  <Link
-                    role="tab"
-                    aria-selected={effectivePanel === "sock"}
-                    href={`/events/${event.id}`}
-                    className={
-                      effectivePanel === "sock"
-                        ? "flex flex-1 items-center justify-center gap-2 rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)] px-3 py-2 text-sm font-semibold text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,transparent)] sm:flex-none"
-                        : "flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-400 outline-none transition-colors hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,transparent)] sm:flex-none"
-                    }
-                  >
-                    Sock available
-                    <span
+                    <Link
+                      role="tab"
+                      aria-selected={effectivePanel === "sock"}
+                      href={`/events/${event.id}`}
                       className={
                         effectivePanel === "sock"
-                          ? "rounded-full bg-[color:color-mix(in_oklab,var(--ticketing-accent)_20%,transparent)] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-zinc-100"
-                          : "rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-zinc-400"
+                          ? "flex flex-1 items-center justify-center gap-2 rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)] px-3 py-2 text-sm font-semibold text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,transparent)] sm:flex-none"
+                          : "flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-400 outline-none transition-colors hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,transparent)] sm:flex-none"
                       }
-                      aria-hidden
                     >
-                      {sockAvailableCount.toLocaleString("en-US")}
-                    </span>
-                  </Link>
+                      Sock available
+                      <span
+                        className={
+                          effectivePanel === "sock"
+                            ? "rounded-full bg-[color:color-mix(in_oklab,var(--ticketing-accent)_20%,transparent)] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-zinc-100"
+                            : "rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-zinc-400"
+                        }
+                        aria-hidden
+                      >
+                        {sockAvailableCount.toLocaleString("en-US")}
+                      </span>
+                    </Link>
+                  </div>
                 </div>
-
-                <p className="text-[11px] leading-snug text-zinc-500 sm:text-xs">
-                  Filters live inside each section to keep the header focused.
-                </p>
               </div>
-            </div>
+            ) : null}
 
             <div className="border-t border-white/[0.06] px-0 pb-6 pt-4 sm:pb-7">
               {effectivePanel === "sock" ? (
