@@ -90,13 +90,33 @@ export async function POST(req: NextRequest) {
   let parsedRowCount: number | undefined;
 
   try {
-    const { prefId, rows, featureCount, skippedCount } = parseSockAvailableGeojsonBody(
-      raw,
-      prefQs,
-    );
+    const {
+      prefId,
+      rows,
+      featureCount,
+      skippedCount,
+      skippedMissingSeatIdCount,
+      skippedMissingCategoryIdCount,
+    } = parseSockAvailableGeojsonBody(raw, prefQs);
     parsedPrefId = prefId;
     parsedFeatureCount = featureCount;
     parsedRowCount = rows.length;
+
+    if (skippedMissingSeatIdCount > 0 || skippedMissingCategoryIdCount > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Invalid payload: every feature must include `properties.id` (seatId) and `properties.seatCategoryId` (categoryId). No data was changed.",
+          prefId,
+          featureCount,
+          rowCount: rows.length,
+          skippedCount,
+          skippedMissingSeatIdCount,
+          skippedMissingCategoryIdCount,
+        },
+        { status: 400 },
+      );
+    }
 
     const result = await prisma.$transaction(
       async (tx) => syncSockAvailableForEvent(tx, prefId, rows),
@@ -123,6 +143,8 @@ export async function POST(req: NextRequest) {
       deletedCount: result.deletedCount,
       insertedCount: result.insertedCount,
       skippedCount,
+      skippedMissingSeatIdCount,
+      skippedMissingCategoryIdCount,
     });
   } catch (err) {
     if (err instanceof CataloguePayloadError) {

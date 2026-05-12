@@ -15,6 +15,21 @@ export type SockAvailableRowInput = {
   categoryId: string;
 };
 
+type BuildSkipReason =
+  | "missing_block"
+  | "missing_area"
+  | "missing_contingent_id"
+  | "missing_seat_id"
+  | "missing_seat_number"
+  | "missing_resale_movement_id"
+  | "missing_row"
+  | "missing_category_id"
+  | "invalid";
+
+type BuildRowResult =
+  | { kind: "ok"; row: SockAvailableRowInput }
+  | { kind: "skip"; reason: BuildSkipReason };
+
 function localizedLabel(raw: unknown): string {
   if (typeof raw === "string") return raw.trim();
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "";
@@ -220,48 +235,52 @@ function resolveFeaturesRaw(
 
 function tryBuildRow(
   props: Record<string, unknown>,
-): SockAvailableRowInput | null {
+): BuildRowResult {
   const block = readBlockAreaPair(props, "block");
   const area = readBlockAreaPair(props, "area");
-  if (!block || !area) return null;
+  if (!block) return { kind: "skip", reason: "missing_block" };
+  if (!area) return { kind: "skip", reason: "missing_area" };
 
   const contingentId = coerceId(props.contingentId ?? props.contingent_id);
-  if (!contingentId) return null;
+  if (!contingentId) return { kind: "skip", reason: "missing_contingent_id" };
 
   const seatId = coerceId(props.id);
-  if (!seatId) return null;
+  if (!seatId) return { kind: "skip", reason: "missing_seat_id" };
 
   const seatNumber = coerceId(props.number);
-  if (!seatNumber) return null;
+  if (!seatNumber) return { kind: "skip", reason: "missing_seat_number" };
 
   const resaleMovementId = coerceId(
     props.resaleMovementId ?? props.resale_movement_id,
   );
-  if (!resaleMovementId) return null;
+  if (!resaleMovementId) return { kind: "skip", reason: "missing_resale_movement_id" };
 
   const row = coerceId(props.row);
-  if (!row) return null;
+  if (!row) return { kind: "skip", reason: "missing_row" };
 
   const categoryId = coerceId(props.seatCategoryId ?? props.seat_category_id);
-  if (!categoryId) return null;
+  if (!categoryId) return { kind: "skip", reason: "missing_category_id" };
 
   const categoryName = localizedLabel(props.seatCategory ?? props.seat_category);
 
   const amount = coerceMoneyFinite(props.amount);
 
   return {
-    areaId: area.id,
-    areaName: area.name,
-    blockId: block.id,
-    blockName: block.name,
-    contingentId,
-    seatId,
-    seatNumber,
-    amount,
-    resaleMovementId,
-    row,
-    categoryName,
-    categoryId,
+    kind: "ok",
+    row: {
+      areaId: area.id,
+      areaName: area.name,
+      blockId: block.id,
+      blockName: block.name,
+      contingentId,
+      seatId,
+      seatNumber,
+      amount,
+      resaleMovementId,
+      row,
+      categoryName,
+      categoryId,
+    },
   };
 }
 
@@ -273,6 +292,8 @@ export function parseSockAvailableGeojsonBody(
   rows: SockAvailableRowInput[];
   featureCount: number;
   skippedCount: number;
+  skippedMissingSeatIdCount: number;
+  skippedMissingCategoryIdCount: number;
 } {
   const { root, prefObjects, topLevelArray } = unwrapPayload(raw);
   const features = coerceFeaturesFromUnknown(resolveFeaturesRaw(root, topLevelArray));
@@ -288,6 +309,8 @@ export function parseSockAvailableGeojsonBody(
 
   const rows: SockAvailableRowInput[] = [];
   let skippedCount = 0;
+  let skippedMissingSeatIdCount = 0;
+  let skippedMissingCategoryIdCount = 0;
 
   for (const f of features) {
     if (!f || typeof f !== "object" || Array.isArray(f)) {
@@ -302,11 +325,13 @@ export function parseSockAvailableGeojsonBody(
     }
 
     const built = tryBuildRow(props as Record<string, unknown>);
-    if (!built) {
+    if (built.kind === "skip") {
       skippedCount += 1;
+      if (built.reason === "missing_seat_id") skippedMissingSeatIdCount += 1;
+      if (built.reason === "missing_category_id") skippedMissingCategoryIdCount += 1;
       continue;
     }
-    rows.push(built);
+    rows.push(built.row);
   }
 
   if (features.length > 0 && rows.length === 0) {
@@ -318,6 +343,13 @@ export function parseSockAvailableGeojsonBody(
     );
   }
 
-  return { prefId, rows, featureCount: features.length, skippedCount };
+  return {
+    prefId,
+    rows,
+    featureCount: features.length,
+    skippedCount,
+    skippedMissingSeatIdCount,
+    skippedMissingCategoryIdCount,
+  };
 }
 
