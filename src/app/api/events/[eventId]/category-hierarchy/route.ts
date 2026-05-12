@@ -14,7 +14,7 @@ type CategoryHierarchyItem = {
 const getCategoryHierarchyForEvent = unstable_cache(
   async (eventId: number): Promise<{ hierarchy: CategoryHierarchyItem[] }> => {
     const [categoryRows, seatNowRows] = await Promise.all([
-      prisma.eventCategory.findMany({
+      prisma.shopEventCategoryBlock.findMany({
         where: { eventId },
         select: {
           categoryId: true,
@@ -61,7 +61,7 @@ const getCategoryHierarchyForEvent = unstable_cache(
 
     return { hierarchy };
   },
-  ["event-category-hierarchy-v1"],
+  ["event-category-hierarchy-v2"],
   { revalidate: 15 },
 );
 

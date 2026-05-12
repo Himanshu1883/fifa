@@ -231,7 +231,7 @@ const getHomeEventCategoryCounts = unstable_cache(
   async (eventIds: number[]) => {
     if (eventIds.length === 0) return [] as { eventId: number; categoryCount: number; blockCount: number }[];
 
-    // `EventCategory` is a high-cardinality catalogue table; for the home grid we only need
+    // `shop_event_category` is a high-cardinality catalogue table; for the home grid we only need
     // distinct counts, not the full per-event hierarchy (loaded lazily on demand).
     return prisma.$queryRaw<{ eventId: number; categoryCount: number; blockCount: number }[]>(
       Prisma.sql`
@@ -239,13 +239,13 @@ const getHomeEventCategoryCounts = unstable_cache(
           "event_id" as "eventId",
           COUNT(DISTINCT "category_id")::int as "categoryCount",
           COUNT(DISTINCT "category_block_id")::int as "blockCount"
-        FROM "EventCategory"
+        FROM "shop_event_category"
         WHERE "event_id" IN (${Prisma.join(eventIds)})
         GROUP BY "event_id"
       `,
     );
   },
-  ["home-event-category-counts-v1"],
+  ["home-event-category-counts-v2"],
   { revalidate: 60 },
 );
 
