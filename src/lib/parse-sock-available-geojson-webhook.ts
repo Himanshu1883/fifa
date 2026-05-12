@@ -9,7 +9,7 @@ export type SockAvailableRowInput = {
   seatId: string;
   seatNumber: string;
   amount: number | null;
-  resaleMovementId: string;
+  resaleMovementId: string | null;
   row: string;
   categoryName: string;
   categoryId: string;
@@ -21,7 +21,6 @@ type BuildSkipReason =
   | "missing_contingent_id"
   | "missing_seat_id"
   | "missing_seat_number"
-  | "missing_resale_movement_id"
   | "missing_row"
   | "missing_category_id"
   | "invalid";
@@ -235,6 +234,7 @@ function resolveFeaturesRaw(
 
 function tryBuildRow(
   props: Record<string, unknown>,
+  featureId: string,
 ): BuildRowResult {
   const block = readBlockAreaPair(props, "block");
   const area = readBlockAreaPair(props, "area");
@@ -244,16 +244,21 @@ function tryBuildRow(
   const contingentId = coerceId(props.contingentId ?? props.contingent_id);
   if (!contingentId) return { kind: "skip", reason: "missing_contingent_id" };
 
-  const seatId = coerceId(props.id);
+  const seatId = coerceId(props.id ?? props.seatId ?? props.seat_id ?? featureId);
   if (!seatId) return { kind: "skip", reason: "missing_seat_id" };
 
-  const seatNumber = coerceId(props.number);
+  const seatNumber = coerceId(props.number ?? props.seatNumber ?? props.seat_number);
   if (!seatNumber) return { kind: "skip", reason: "missing_seat_number" };
 
-  const resaleMovementId = coerceId(
-    props.resaleMovementId ?? props.resale_movement_id,
-  );
-  if (!resaleMovementId) return { kind: "skip", reason: "missing_resale_movement_id" };
+  const movementRaw =
+    props.resaleMovementId ??
+    props.resale_movement_id ??
+    props.movementId ??
+    props.movement_id ??
+    props.listingId ??
+    props.listing_id;
+  const movementCoerced = movementRaw === null || movementRaw === undefined ? "" : coerceId(movementRaw);
+  const resaleMovementId = movementCoerced ? movementCoerced : null;
 
   const row = coerceId(props.row);
   if (!row) return { kind: "skip", reason: "missing_row" };
@@ -263,7 +268,10 @@ function tryBuildRow(
 
   const categoryName = localizedLabel(props.seatCategory ?? props.seat_category);
 
-  const amount = coerceMoneyFinite(props.amount);
+  const amountFallback =
+    (props as Record<string, unknown>).seatBasedPriceAmount ??
+    (props as Record<string, unknown>).seat_based_price_amount;
+  const amount = coerceMoneyFinite(props.amount ?? amountFallback);
 
   return {
     kind: "ok",
@@ -335,7 +343,8 @@ export function parseSockAvailableGeojsonBody(
       continue;
     }
 
-    const built = tryBuildRow(props as Record<string, unknown>);
+    const featureId = coerceId(feat.id);
+    const built = tryBuildRow(props as Record<string, unknown>, featureId);
     if (built.kind === "skip") {
       skippedCount += 1;
       if (built.reason === "missing_seat_id") skippedMissingSeatIdCount += 1;
@@ -349,7 +358,9 @@ export function parseSockAvailableGeojsonBody(
     throw new CataloguePayloadError(
       [
         "No usable features found in payload.",
-        "Expected each feature to have `properties.block.id`, `properties.area.id`, `properties.contingentId`, `properties.id`, `properties.number`, `properties.resaleMovementId`, `properties.row`, and `properties.seatCategoryId`.",
+        "Expected each feature to have `properties.block.id`, `properties.area.id`, `properties.contingentId`, `properties.number`, `properties.row`, and `properties.seatCategoryId`.",
+        "Seat id is read from `properties.id` (or `properties.seatId`, or feature-level `id`).",
+        "Movement/listing id is read from `properties.resaleMovementId` (or `properties.movementId`, or `properties.listingId`). If missing, it is stored as NULL.",
       ].join(" "),
     );
   }

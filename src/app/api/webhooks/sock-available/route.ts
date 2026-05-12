@@ -116,23 +116,6 @@ export async function POST(req: NextRequest) {
         ? "LAST_MINUTE"
         : "RESALE";
 
-    if (skippedMissingSeatIdCount > 0 || skippedMissingCategoryIdCount > 0) {
-      return NextResponse.json(
-        {
-          error:
-            "Invalid payload: every feature must include `properties.id` (seatId) and `properties.seatCategoryId` (categoryId). No data was changed.",
-          prefId,
-          featureCount,
-          rowCount: rows.length,
-          skippedCount,
-          skippedMissingSeatIdCount,
-          skippedMissingCategoryIdCount,
-          kind,
-        },
-        { status: 400 },
-      );
-    }
-
     const result = await prisma.$transaction(
       async (tx) => syncSockAvailableForEvent(tx, prefId, kind, rows),
       // Large payloads can take longer than Prisma's default interactive transaction timeout.
@@ -150,11 +133,13 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+      partial: skippedCount > 0,
       lookup: "pref-or-resale",
       prefId,
       eventId: result.eventId,
       featureCount,
       rowCount: rows.length,
+      acceptedCount: rows.length,
       deletedCount: result.deletedCount,
       insertedCount: result.insertedCount,
       skippedCount,
@@ -216,15 +201,17 @@ export async function GET(req: NextRequest) {
       kind: 'optional: "resale" (default) or "last_minute" — replace is scoped to this kind',
     },
     mapping: {
-      amount: "properties.amount (optional; integer cents persisted as-is)",
+      amount:
+        "properties.amount (optional; integer cents) OR properties.seatBasedPriceAmount (optional; integer cents)",
       areaId: "properties.area.id",
       areaName: "properties.area.name.en (best-effort locale)",
       blockId: "properties.block.id",
       blockName: "properties.block.name.en (best-effort locale)",
       contingentId: "properties.contingentId",
-      seatId: "properties.id",
+      seatId: "properties.id (or properties.seatId or feature.id)",
       seatNumber: "properties.number",
-      resaleMovementId: "properties.resaleMovementId",
+      resaleMovementId:
+        "properties.resaleMovementId (or properties.movementId / properties.listingId). Optional; if missing it is stored as NULL.",
       row: "properties.row",
       categoryName: "properties.seatCategory",
       categoryId: "properties.seatCategoryId",

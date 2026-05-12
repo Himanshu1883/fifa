@@ -34,13 +34,12 @@ export async function syncSockAvailableForEvent(
   });
   if (!ev) return null;
 
-  const byMovement = new Map<string, SockAvailableRowInput>();
+  const byMovementOrSeat = new Map<string, SockAvailableRowInput>();
   for (const r of rows) {
-    if (!byMovement.has(r.resaleMovementId)) {
-      byMovement.set(r.resaleMovementId, r);
-    }
+    const key = r.resaleMovementId ? `m:${r.resaleMovementId}` : `s:${r.seatId}`;
+    if (!byMovementOrSeat.has(key)) byMovementOrSeat.set(key, r);
   }
-  const uniqueRows = Array.from(byMovement.values());
+  const uniqueRows = Array.from(byMovementOrSeat.values());
   const skippedDuplicateInPayloadCount = rows.length - uniqueRows.length;
 
   const deleted = await tx.sockAvailable.deleteMany({

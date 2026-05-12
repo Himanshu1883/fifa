@@ -228,7 +228,7 @@ model SockAvailable {
   seatId            String   @map("seatid")
   seatNumber        String   @map("seat_number")
   amount            Decimal? @map("amount") @db.Decimal(18, 4)
-  resaleMovementId  String   @map("resalemovementid")
+  resaleMovementId  String?  @map("resalemovementid")
   row               String   @map("row")
   categoryName      String   @map("categoryname")
   categoryId        String   @map("category_id")

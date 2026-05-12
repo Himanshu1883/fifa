@@ -30,7 +30,7 @@ export type SockAvailableDTO = {
   row: string;
   seatNumber: string;
   seatId: string;
-  resaleMovementId: string;
+  resaleMovementId: string | null;
   categoryName: string;
   categoryId: string;
   areaId: string;
@@ -40,7 +40,7 @@ export type SockAvailableDTO = {
   updatedAt: string;
 };
 
-function norm(s: string): string {
+function norm(s: unknown): string {
   return String(s ?? "").trim();
 }
 
@@ -345,7 +345,7 @@ export function SockAvailablePanel(props: {
       if (rowQ && !norm(r.row).toLowerCase().includes(rowQ)) return false;
       if (seatQ && !norm(r.seatNumber).toLowerCase().includes(seatQ)) return false;
       if (contingentQ && !norm(r.contingentId).toLowerCase().includes(contingentQ)) return false;
-      if (movementQ && !norm(r.resaleMovementId).toLowerCase().includes(movementQ)) return false;
+      if (movementQ && !norm(r.resaleMovementId ?? "").toLowerCase().includes(movementQ)) return false;
 
       const usd = amountRawToUsdNumber(r.amount);
       if (hasMin && (!Number.isFinite(usd) || usd < minN)) return false;
@@ -364,7 +364,7 @@ export function SockAvailablePanel(props: {
         r.row,
         r.seatNumber,
         r.seatId,
-        r.resaleMovementId,
+        r.resaleMovementId ?? "",
         r.categoryName,
         r.categoryId,
         r.areaId,
@@ -1232,7 +1232,7 @@ export function SockAvailablePanel(props: {
                           </td>
                           <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.contingentId}</td>
                           <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.seatId}</td>
-                          <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.resaleMovementId}</td>
+                          <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.resaleMovementId ?? "—"}</td>
                           <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.categoryId}</td>
                           <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.areaId}</td>
                           <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.blockId}</td>
@@ -1423,7 +1423,7 @@ export function SockAvailablePanel(props: {
                       <p key={s.id} className="font-mono text-[11px] text-zinc-200">
                         Seat <span className="text-zinc-50">{s.seatNumber}</span> · seatId{" "}
                         <span className="text-zinc-300">{s.seatId}</span> · movement{" "}
-                        <span className="text-zinc-300">{s.resaleMovementId}</span>
+                        <span className="text-zinc-300">{s.resaleMovementId ?? "—"}</span>
                       </p>
                     ))}
                   </div>
@@ -1447,7 +1447,7 @@ export function SockAvailablePanel(props: {
                   <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                     Resale movement
                   </p>
-                  <p className="mt-1 font-mono text-xs text-zinc-200">{openGroup.seats[0]?.resaleMovementId}</p>
+                  <p className="mt-1 font-mono text-xs text-zinc-200">{openGroup.seats[0]?.resaleMovementId ?? "—"}</p>
                 </div>
                 <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
