@@ -50,6 +50,7 @@ model Event {
   prefId        String                   @map("pref_id")
   resalePrefId  String?                  @map("resale_pref_id")
   categories    EventCategory[]
+  shopEventCategoryBlocks ShopEventCategoryBlock[]
   blockPrices   EventCategoryBlockPrice[]
   blockAvailability EventCategoryBlockAvailability[]
   seatListings  EventSeatListing[]
@@ -205,6 +206,24 @@ model EventCategory {
 
   @@unique([eventId, categoryId, categoryBlockId])
   @@index([eventId])
+}
+
+model ShopEventCategoryBlock {
+  eventId            Int     @map("event_id")
+  event              Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  categoryId         String  @map("category_id")
+  categoryName       String  @map("category_name")
+
+  categoryBlockId    String  @map("category_block_id")
+  categoryBlockName  String  @map("category_block_name")
+
+  categoryPrice      Decimal? @map("category_price") @db.Decimal(14, 4)
+  blockPrice         Decimal? @map("block_price") @db.Decimal(14, 4)
+
+  @@id([eventId, categoryId, categoryBlockId])
+  @@index([eventId])
+  @@map("shop_event_category")
 }
 
 /// Singleton row `id = 1`: round-robin cursor for `GET /api/resale-pref/next`.

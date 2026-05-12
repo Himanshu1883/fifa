@@ -160,6 +160,26 @@ export default async function SettingsPage() {
       ],
     },
     {
+      title: "Shop event category blocks (face value)",
+      path: "/api/webhooks/shop-event-category",
+      methods: ["GET", "POST"],
+      queryParams: [
+        {
+          name: "eventId",
+          required: false,
+          notes: "Required only when POST body is a raw array (no wrapper object)",
+        },
+      ],
+      notes:
+        "Stores face-value category×block rows for an event (shop_event_category). Snapshot replace: each POST deletes all existing rows for the eventId then inserts the unique payload. Prices accept integer cents (stored as USD dollars ÷100) or decimal USD strings/numbers.",
+      sampleCurl: [
+        `curl -sS "${baseUrl}/api/webhooks/shop-event-category"`,
+        `curl -sS -X POST "${baseUrl}/api/webhooks/shop-event-category?eventId=EVENT_ID" \\`,
+        `  -H "Content-Type: application/json" \\`,
+        `  --data-binary @shop-event-category.json`,
+      ],
+    },
+    {
       title: "Event block seat now (category×block availability)",
       path: "/api/webhooks/event-block-seat-now",
       methods: ["GET", "POST"],

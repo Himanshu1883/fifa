@@ -134,14 +134,14 @@ function parseHomeCountryFilter(q: { country?: string | string[] }): string {
   return firstQs(q.country)?.trim() ?? "";
 }
 
-type HomeSockKind = "" | "RESALE" | "LAST_MINUTE";
+type HomeSockKind = "RESALE" | "LAST_MINUTE";
 function parseHomeSockKindFilter(q: { kind?: string | string[] }): HomeSockKind {
   const raw = (firstQs(q.kind) ?? "").trim().toLowerCase();
-  if (!raw) return "";
+  if (!raw) return "RESALE";
   if (raw === "resale") return "RESALE";
   if (raw === "last_minute" || raw === "last-minute" || raw === "lastminute" || raw === "lm" || raw === "shop")
     return "LAST_MINUTE";
-  return "";
+  return "RESALE";
 }
 
 function compareNullablePrice(
@@ -206,7 +206,7 @@ const getHomeSockAggregates = unstable_cache(
     }
     const where = {
       eventId: { in: eventIds },
-      ...(kind ? { kind } : {}),
+      kind,
     } satisfies Prisma.SockAvailableWhereInput;
     const [sockAgg, sockAggByCategory] = await Promise.all([
       prisma.sockAvailable.groupBy({
@@ -381,7 +381,7 @@ export default async function Home({ searchParams }: Props) {
   const homeKindHref = (nextKind: HomeSockKind): string => {
     const sp = new URLSearchParams();
     if (prefsErr) sp.set("prefsErr", prefsErr);
-    if (nextKind) sp.set("kind", nextKind);
+    if (nextKind !== "RESALE") sp.set("kind", nextKind);
     if (venueFilter.trim()) sp.set("venue", venueFilter.trim());
     if (countryFilter.trim()) sp.set("country", countryFilter.trim());
     if (importantFilter === "important") sp.set("important", "1");
@@ -477,7 +477,7 @@ export default async function Home({ searchParams }: Props) {
               >
                 <div className="px-4 text-center">
                   <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    Tickets{sockKind === "RESALE" ? " (Resale)" : sockKind === "LAST_MINUTE" ? " (Shop)" : ""}
+                    Tickets{sockKind === "RESALE" ? " (Resale)" : " (Shop)"}
                   </dt>
                   <dd className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-[color:color-mix(in_oklab,var(--ticketing-accent)_88%,white_8%)] sm:text-4xl">
                     {totalTickets.toLocaleString("en-US")}
@@ -492,7 +492,7 @@ export default async function Home({ searchParams }: Props) {
                 <div className="px-4 text-center">
                   <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Sources</dt>
                   <dd className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-white sm:text-4xl">
-                    {sockKind ? 1 : 2}
+                    1
                   </dd>
                 </div>
               </dl>
