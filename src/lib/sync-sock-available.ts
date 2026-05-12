@@ -34,6 +34,20 @@ export async function syncSockAvailableForEvent(
   });
   if (!ev) return null;
 
+  // Guard: if parsing/validation produced 0 accepted rows, do NOT delete existing rows.
+  // This avoids wiping data on bad/empty payloads.
+  if (rows.length === 0) {
+    return {
+      eventId: ev.id,
+      deletedCount: 0,
+      rowCount: 0,
+      uniqueRowCount: 0,
+      insertedCount: 0,
+      skippedDuplicateInPayloadCount: 0,
+      skippedDbCount: 0,
+    };
+  }
+
   const byMovementOrSeat = new Map<string, SockAvailableRowInput>();
   for (const r of rows) {
     const key = r.resaleMovementId ? `m:${r.resaleMovementId}` : `s:${r.seatId}`;
