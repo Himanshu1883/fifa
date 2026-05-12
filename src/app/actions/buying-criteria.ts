@@ -111,3 +111,34 @@ export async function saveBuyingCriteriaBulkAction(input: BuyingCriteriaRow[]): 
   return { ok: true, saved: data.length };
 }
 
+export async function setCat3FrontRowAction(
+  eventId: number,
+  cat3FrontRow: boolean,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsedId = eventIdSchema.safeParse(eventId);
+  if (!parsedId.success) {
+    return { ok: false, error: "Invalid event id." };
+  }
+
+  try {
+    await prisma.eventBuyingCriteria.upsert({
+      where: { eventId: parsedId.data },
+      create: {
+        eventId: parsedId.data,
+        cat1: null,
+        cat2: null,
+        cat3: null,
+        cat3FrontRow,
+        cat4: null,
+      },
+      update: { cat3FrontRow },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Could not update CAT 3 front row. (${msg})` };
+  }
+
+  revalidatePath("/");
+  return { ok: true };
+}
+
