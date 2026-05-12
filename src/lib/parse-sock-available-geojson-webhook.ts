@@ -294,6 +294,7 @@ export function parseSockAvailableGeojsonBody(
   skippedCount: number;
   skippedMissingSeatIdCount: number;
   skippedMissingCategoryIdCount: number;
+  kind: "RESALE" | "LAST_MINUTE";
 } {
   const { root, prefObjects, topLevelArray } = unwrapPayload(raw);
   const features = coerceFeaturesFromUnknown(resolveFeaturesRaw(root, topLevelArray));
@@ -306,6 +307,16 @@ export function parseSockAvailableGeojsonBody(
       "Missing prefId — use ?prefId= or ?resalePrefId= or JSON fields prefId / resalePrefId.",
     );
   }
+
+  const kindFromQs =
+    (root && typeof root.kind === "string" ? root.kind : "") ||
+    (root && typeof root.source === "string" ? root.source : "") ||
+    (root && typeof root.dataKind === "string" ? root.dataKind : "");
+  const kindRaw = (kindFromQs || "").trim().toLowerCase();
+  const kind: "RESALE" | "LAST_MINUTE" =
+    kindRaw === "last_minute" || kindRaw === "lastminute" || kindRaw === "last-minute"
+      ? "LAST_MINUTE"
+      : "RESALE";
 
   const rows: SockAvailableRowInput[] = [];
   let skippedCount = 0;
@@ -350,6 +361,7 @@ export function parseSockAvailableGeojsonBody(
     skippedCount,
     skippedMissingSeatIdCount,
     skippedMissingCategoryIdCount,
+    kind,
   };
 }
 

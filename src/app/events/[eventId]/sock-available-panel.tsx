@@ -35,6 +35,7 @@ export type SockAvailableDTO = {
   categoryId: string;
   areaId: string;
   blockId: string;
+  kind: "RESALE" | "LAST_MINUTE";
   createdAt: string;
   updatedAt: string;
 };
@@ -102,6 +103,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
   const [search, setSearch] = useState("");
   const [openRow, setOpenRow] = useState<SockAvailableDTO | null>(null);
 
+  const [kind, setKind] = useState<"" | "RESALE" | "LAST_MINUTE">("");
   const [area, setArea] = useState<string>("");
   const [category, setCategory] = useState<string>("");
   const [block, setBlock] = useState<string>("");
@@ -154,6 +156,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const kindQ = norm(kind).toLowerCase();
     const areaQ = norm(area).toLowerCase();
     const categoryQ = norm(category).toLowerCase();
     const blockQ = norm(block).toLowerCase();
@@ -173,6 +176,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
     const hasTo = Number.isFinite(toMs);
 
     const out = rows.filter((r) => {
+      if (kindQ && norm(r.kind).toLowerCase() !== kindQ) return false;
       if (areaQ && norm(r.areaName).toLowerCase() !== areaQ) return false;
       if (categoryQ && norm(r.categoryName).toLowerCase() !== categoryQ) return false;
       if (blockQ && norm(r.blockName).toLowerCase() !== blockQ) return false;
@@ -244,6 +248,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
 
     return sorted;
   }, [
+    kind,
     area,
     block,
     category,
@@ -372,6 +377,17 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
             {filtersVisible ? (
               <>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      Kind
+                    </label>
+                    <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)} className={controlClass}>
+                      <option value="">All</option>
+                      <option value="RESALE">Resale</option>
+                      <option value="LAST_MINUTE">Last‑minute</option>
+                    </select>
+                  </div>
+
                   <div className="flex min-w-0 flex-col gap-1">
                     <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                       Area
@@ -536,6 +552,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                   className="rounded-lg border border-white/[0.10] bg-black/25 px-3 py-2 text-xs font-medium text-zinc-200 shadow-inner shadow-black/35 hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e]"
                   onClick={() => {
                     setSearch("");
+                    setKind("");
                     setArea("");
                     setCategory("");
                     setBlock("");
@@ -669,6 +686,12 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                     Row <span className="font-mono text-zinc-300">{openRow.row}</span> · Seat{" "}
                     <span className="font-mono text-zinc-300">{openRow.seatNumber}</span> ·{" "}
                     <span className="font-mono text-emerald-300">{formatSockUsd(openRow.amount)}</span>
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Kind{" "}
+                    <span className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[11px] text-zinc-200">
+                      {openRow.kind === "LAST_MINUTE" ? "LAST_MINUTE" : "RESALE"}
+                    </span>
                   </p>
                 </div>
                 <button

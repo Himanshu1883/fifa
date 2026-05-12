@@ -84,10 +84,15 @@ export async function POST(req: NextRequest) {
   const prefQs =
     req.nextUrl.searchParams.get("prefId") ??
     req.nextUrl.searchParams.get("resalePrefId");
+  const kindQs =
+    req.nextUrl.searchParams.get("kind") ??
+    req.nextUrl.searchParams.get("source") ??
+    req.nextUrl.searchParams.get("dataKind");
 
   let parsedPrefId: string | undefined;
   let parsedFeatureCount: number | undefined;
   let parsedRowCount: number | undefined;
+  let parsedKind: string | undefined;
 
   try {
     const {
@@ -97,10 +102,19 @@ export async function POST(req: NextRequest) {
       skippedCount,
       skippedMissingSeatIdCount,
       skippedMissingCategoryIdCount,
+      kind: kindFromBody,
     } = parseSockAvailableGeojsonBody(raw, prefQs);
     parsedPrefId = prefId;
     parsedFeatureCount = featureCount;
     parsedRowCount = rows.length;
+    parsedKind = kindQs?.trim() ? kindQs.trim() : kindFromBody;
+
+    const kind =
+      parsedKind?.toLowerCase() === "last_minute" ||
+      parsedKind?.toLowerCase() === "lastminute" ||
+      parsedKind?.toLowerCase() === "last-minute"
+        ? "LAST_MINUTE"
+        : "RESALE";
 
     if (skippedMissingSeatIdCount > 0 || skippedMissingCategoryIdCount > 0) {
       return NextResponse.json(
@@ -113,13 +127,14 @@ export async function POST(req: NextRequest) {
           skippedCount,
           skippedMissingSeatIdCount,
           skippedMissingCategoryIdCount,
+          kind,
         },
         { status: 400 },
       );
     }
 
     const result = await prisma.$transaction(
-      async (tx) => syncSockAvailableForEvent(tx, prefId, rows),
+      async (tx) => syncSockAvailableForEvent(tx, prefId, kind, rows),
       // Large payloads can take longer than Prisma's default interactive transaction timeout.
       { maxWait: 20_000, timeout: 120_000 },
     );
@@ -145,6 +160,7 @@ export async function POST(req: NextRequest) {
       skippedCount,
       skippedMissingSeatIdCount,
       skippedMissingCategoryIdCount,
+      kind,
     });
   } catch (err) {
     if (err instanceof CataloguePayloadError) {
@@ -167,6 +183,7 @@ export async function POST(req: NextRequest) {
         contentLength: req.headers.get("content-length") ?? "(unknown)",
         parsedFeatureCount: parsedFeatureCount ?? "(unknown)",
         parsedRowCount: parsedRowCount ?? "(unknown)",
+        kind: parsedKind ?? kindQs ?? "(default)",
       },
       err,
     );
@@ -196,6 +213,7 @@ export async function GET(req: NextRequest) {
     query: {
       prefId: "ticketing catalogue pref id (can match Event.prefId or Event.resalePrefId)",
       resalePrefId: "alias for prefId (same id value)",
+      kind: 'optional: "resale" (default) or "last_minute" — replace is scoped to this kind',
     },
     mapping: {
       amount: "properties.amount (optional; integer cents persisted as-is)",

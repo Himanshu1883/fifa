@@ -119,6 +119,11 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
     prisma.eventCategory.count({ where: { eventId: event.id } }),
   ]);
 
+  const [sockResaleCount, sockLastMinuteCount] = await Promise.all([
+    prisma.sockAvailable.count({ where: { eventId: event.id, kind: "RESALE" } }),
+    prisma.sockAvailable.count({ where: { eventId: event.id, kind: "LAST_MINUTE" } }),
+  ]);
+
   const seatListingsTruncated = false;
 
   const listingsPayload =
@@ -203,6 +208,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
               categoryId: true,
               areaId: true,
               blockId: true,
+              kind: true,
               createdAt: true,
               updatedAt: true,
             },
@@ -228,6 +234,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
           categoryId: r.categoryId,
           areaId: r.areaId,
           blockId: r.blockId,
+          kind: r.kind,
           createdAt: r.createdAt.toISOString(),
           updatedAt: r.updatedAt.toISOString(),
         }))
@@ -338,7 +345,13 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                     <p className="mt-1 text-lg font-semibold tabular-nums text-white sm:text-xl">
                       {sockAvailableCount.toLocaleString("en-US")}
                     </p>
-                    <p className="mt-0.5 text-[11px] text-zinc-500">rows loaded</p>
+                    <p className="mt-0.5 text-[11px] text-zinc-500">
+                      <span className="tabular-nums text-zinc-400">{sockResaleCount.toLocaleString("en-US")}</span>
+                      <span> resale</span>
+                      <span className="text-zinc-700"> · </span>
+                      <span className="tabular-nums text-zinc-400">{sockLastMinuteCount.toLocaleString("en-US")}</span>
+                      <span> last‑minute</span>
+                    </p>
                   </div>
                 </div>
               </div>

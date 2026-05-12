@@ -27,6 +27,11 @@ enum CataloguePriceSource {
   RESELL_PREF
 }
 
+enum SockAvailableKind {
+  RESALE
+  LAST_MINUTE
+}
+
 model Event {
   id            Int                      @id @default(autoincrement())
   matchLabel    String                   @map("match_label")
@@ -201,12 +206,14 @@ model SockAvailable {
   row               String   @map("row")
   categoryName      String   @map("categoryname")
   categoryId        String   @map("category_id")
+  kind              SockAvailableKind @default(RESALE) @map("kind")
 
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  @@unique([eventId, resaleMovementId])
+  @@unique([eventId, resaleMovementId, kind])
   @@index([eventId])
+  @@index([eventId, kind])
   @@map("sock_available")
 }
 

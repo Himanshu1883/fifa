@@ -1,4 +1,5 @@
 import type { Prisma } from "@/generated/prisma/client";
+import type { SockAvailableKind } from "@/generated/prisma/enums";
 import type { SockAvailableRowInput } from "@/lib/parse-sock-available-geojson-webhook";
 
 type Tx = Pick<Prisma.TransactionClient, "sockAvailable" | "event">;
@@ -14,6 +15,7 @@ const CREATE_MANY_CHUNK = 500;
 export async function syncSockAvailableForEvent(
   tx: Tx,
   prefOrResalePrefId: string,
+  kind: SockAvailableKind,
   rows: SockAvailableRowInput[],
 ): Promise<{
   eventId: number;
@@ -42,7 +44,7 @@ export async function syncSockAvailableForEvent(
   const skippedDuplicateInPayloadCount = rows.length - uniqueRows.length;
 
   const deleted = await tx.sockAvailable.deleteMany({
-    where: { eventId: ev.id },
+    where: { eventId: ev.id, kind },
   });
 
   let insertedCount = 0;
@@ -63,6 +65,7 @@ export async function syncSockAvailableForEvent(
         row: r.row,
         categoryName: r.categoryName,
         categoryId: r.categoryId,
+        kind,
       })),
       skipDuplicates: true,
     });
