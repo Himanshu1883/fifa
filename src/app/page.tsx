@@ -25,6 +25,8 @@ type Props = {
     sort?: string | string[];
     order?: string | string[];
     important?: string | string[];
+    venue?: string | string[];
+    country?: string | string[];
   }>;
 };
 
@@ -122,6 +124,14 @@ function parseImportantFilter(q: { important?: string | string[] }): HomeImporta
   if (raw === "1") return "important";
   if (raw === "0") return "notImportant";
   return "all";
+}
+
+function parseHomeVenueFilter(q: { venue?: string | string[] }): string {
+  return firstQs(q.venue)?.trim() ?? "";
+}
+
+function parseHomeCountryFilter(q: { country?: string | string[] }): string {
+  return firstQs(q.country)?.trim() ?? "";
 }
 
 function compareNullablePrice(
@@ -231,6 +241,8 @@ export default async function Home({ searchParams }: Props) {
   const prefsErr = prefsRaw ?? undefined;
   const { sort: listSort, order: listOrder } = parseHomeListSort(q);
   const importantFilter = parseImportantFilter(q);
+  const venueFilter = parseHomeVenueFilter(q);
+  const countryFilter = parseHomeCountryFilter(q);
   const boxofficePort = process.env.BOXOFFICE_WS_PORT ?? "3020";
   const showBoxofficeControls =
     process.env.NODE_ENV === "development" ||
@@ -315,12 +327,21 @@ export default async function Home({ searchParams }: Props) {
       };
     });
 
+    const venueQ = venueFilter.trim().toLowerCase();
+    const countryQ = countryFilter.trim().toLowerCase();
+
+    const filteredByVenueCountry = eventsAll.filter((e) => {
+      if (venueQ && String(e.venue ?? "").trim().toLowerCase() !== venueQ) return false;
+      if (countryQ && String(e.country ?? "").trim().toLowerCase() !== countryQ) return false;
+      return true;
+    });
+
     events =
       importantFilter === "important"
-        ? eventsAll.filter((e) => e.isImportant)
+        ? filteredByVenueCountry.filter((e) => e.isImportant)
         : importantFilter === "notImportant"
-          ? eventsAll.filter((e) => !e.isImportant)
-          : eventsAll;
+          ? filteredByVenueCountry.filter((e) => !e.isImportant)
+          : filteredByVenueCountry;
 
     sortHomeEvents(events, listSort, listOrder);
   } catch (err) {
@@ -339,6 +360,7 @@ export default async function Home({ searchParams }: Props) {
   sortHomeEvents(criteriaEvents, listSort, listOrder);
 
   const venueOptions = distinctNonEmptyCaseInsensitive(eventsAll.map((e) => e.venue));
+  const countryOptions = distinctNonEmptyCaseInsensitive(eventsAll.map((e) => e.country));
 
   const totalTickets = events.reduce((acc, e) => acc + e.ticketsCount, 0);
   const eventsWithTickets = events.filter((e) => e.ticketsCount > 0).length;
@@ -476,7 +498,15 @@ export default async function Home({ searchParams }: Props) {
                       <div className="h-11 min-w-[14rem] animate-pulse rounded-lg border border-white/[0.06] bg-black/25" />
                     }
                   >
-                    <HomeEventSortControls sort={listSort} order={listOrder} important={importantFilter} />
+                    <HomeEventSortControls
+                      sort={listSort}
+                      order={listOrder}
+                      important={importantFilter}
+                      venueOptions={venueOptions}
+                      countryOptions={countryOptions}
+                      venue={venueFilter}
+                      country={countryFilter}
+                    />
                   </Suspense>
                 </div>
               </div>

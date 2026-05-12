@@ -9,6 +9,10 @@ export type HomeImportantFilter = "all" | "important" | "notImportant";
 const sel =
   "min-h-9 rounded-lg border border-white/[0.09] bg-[#0c1010] px-2.5 py-1.5 text-xs text-zinc-100 shadow-inner shadow-black/35 transition-[border-color,box-shadow] focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
 
+function normalizeOpt(v: string): string {
+  return v.trim();
+}
+
 function importantToParam(v: HomeImportantFilter): "1" | "0" | null {
   if (v === "important") return "1";
   if (v === "notImportant") return "0";
@@ -20,6 +24,8 @@ function buildQuery(
   sort: HomeSortKey,
   order: "asc" | "desc",
   important: HomeImportantFilter,
+  venue: string,
+  country: string,
 ): string {
   const params = new URLSearchParams(base.toString());
   const next = new URLSearchParams();
@@ -28,6 +34,11 @@ function buildQuery(
     const v = params.get(key);
     if (v != null && v !== "") next.set(key, v);
   }
+
+  const venueVal = normalizeOpt(venue);
+  if (venueVal) next.set("venue", venueVal);
+  const countryVal = normalizeOpt(country);
+  if (countryVal) next.set("country", countryVal);
 
   const imp = importantToParam(important);
   if (imp) next.set("important", imp);
@@ -49,10 +60,18 @@ export function HomeEventSortControls({
   sort,
   order,
   important,
+  venueOptions,
+  countryOptions,
+  venue,
+  country,
 }: {
   sort: HomeSortKey;
   order: "asc" | "desc";
   important: HomeImportantFilter;
+  venueOptions: string[];
+  countryOptions: string[];
+  venue: string;
+  country: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -60,13 +79,19 @@ export function HomeEventSortControls({
   const [pending, startTransition] = useTransition();
 
   const navigate = useCallback(
-    (nextSort: HomeSortKey, nextOrder: "asc" | "desc", nextImportant: HomeImportantFilter) => {
-      const href = `${pathname}${buildQuery(searchParams, nextSort, nextOrder, nextImportant)}`;
+    (
+      nextSort: HomeSortKey,
+      nextOrder: "asc" | "desc",
+      nextImportant: HomeImportantFilter,
+      nextVenue: string,
+      nextCountry: string,
+    ) => {
+      const href = `${pathname}${buildQuery(searchParams, nextSort, nextOrder, nextImportant, nextVenue, nextCountry)}`;
       startTransition(() => {
         router.push(href);
       });
     },
-    [pathname, router, searchParams]
+    [pathname, router, searchParams],
   );
 
   return (
@@ -84,7 +109,7 @@ export function HomeEventSortControls({
         value={sort}
         onChange={(e) => {
           const v = e.target.value as HomeSortKey;
-          navigate(v, v === sort ? order : "asc", important);
+          navigate(v, v === sort ? order : "asc", important, venue, country);
         }}
       >
         <option value="match">Match order</option>
@@ -98,11 +123,63 @@ export function HomeEventSortControls({
         id="home-sort-order"
         className={sel}
         value={order}
-        onChange={(e) => navigate(sort, e.target.value === "desc" ? "desc" : "asc", important)}
+        onChange={(e) => navigate(sort, e.target.value === "desc" ? "desc" : "asc", important, venue, country)}
       >
         <option value="asc">Ascending</option>
         <option value="desc">Descending</option>
       </select>
+
+      {venueOptions.length > 0 ? (
+        <>
+          <span className="ml-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+            Venue
+          </span>
+          <label className="sr-only" htmlFor="home-venue-filter">
+            Filter by venue
+          </label>
+          <select
+            id="home-venue-filter"
+            className={sel}
+            value={venue}
+            onChange={(e) => {
+              navigate(sort, order, important, e.target.value, country);
+            }}
+          >
+            <option value="">All venues</option>
+            {venueOptions.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </>
+      ) : null}
+
+      {countryOptions.length > 0 ? (
+        <>
+          <span className="ml-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+            Country
+          </span>
+          <label className="sr-only" htmlFor="home-country-filter">
+            Filter by country
+          </label>
+          <select
+            id="home-country-filter"
+            className={sel}
+            value={country}
+            onChange={(e) => {
+              navigate(sort, order, important, venue, e.target.value);
+            }}
+          >
+            <option value="">All countries</option>
+            {countryOptions.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </>
+      ) : null}
 
       <span className="ml-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
         Important
@@ -116,7 +193,7 @@ export function HomeEventSortControls({
         value={important}
         onChange={(e) => {
           const v = e.target.value as HomeImportantFilter;
-          navigate(sort, order, v);
+          navigate(sort, order, v, venue, country);
         }}
       >
         <option value="all">All</option>
