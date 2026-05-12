@@ -419,46 +419,63 @@ export default async function Home({ searchParams }: Props) {
               </div>
               {showBoxofficeControls ? <BoxofficeControlsClient port={boxofficePort} /> : null}
             </div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-              Schedule &amp; catalogue
-            </p>
-            <div
-              className="mt-3 h-px w-full max-w-lg bg-gradient-to-r from-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,transparent)] via-white/[0.12] to-transparent"
-              aria-hidden
-            />
-            <div className="mt-6 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between lg:gap-8">
-              <div className="min-w-0 space-y-2">
-                <h1 className="text-balance text-3xl font-semibold tracking-tight text-white sm:text-[2.125rem] sm:leading-tight lg:text-[2.35rem] lg:leading-[1.08]">
-                  Match schedule
-                </h1>
-                <p className="max-w-2xl text-pretty text-sm leading-relaxed text-zinc-400">
-                  Fixtures with venue context, lowest sock_available price, and{" "}
-                  <code className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[11px] text-zinc-300">
-                    EventCategory
-                  </code>{" "}
-                  rollups. Edit pref IDs from each row; expand counts for the full category hierarchy.
-                </p>
-              </div>
+            <div className="mx-auto flex w-full max-w-4xl flex-col items-center text-center">
+              <p className="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-100 ring-1 ring-emerald-400/15">
+                2026 FIFA WORLD CUP <span className="text-emerald-200/60">·</span> Live ticket tracker
+              </p>
+
+              <h1 className="mt-6 text-balance text-4xl font-semibold tracking-tight text-white sm:text-5xl sm:leading-[1.04] lg:text-6xl">
+                Every World Cup ticket,{" "}
+                <span className="text-[color:var(--ticketing-accent)]">one page.</span>
+              </h1>
+
+              <p className="mt-4 max-w-3xl text-pretty text-sm leading-relaxed text-zinc-400 sm:text-base">
+                Resale marketplace listings and face-value Last Minute Sales drops across all matches.
+                Sort by price, filter by stage, venue and country — no extensions, no affiliate links.
+              </p>
 
               <dl
-                className="flex w-full flex-col divide-y divide-white/[0.07] overflow-hidden rounded-xl border border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface)_42%,transparent)] shadow-inner shadow-black/25 ring-1 ring-white/[0.04] sm:flex-row sm:divide-x sm:divide-y-0 lg:w-auto lg:min-w-[min(100%,24rem)] lg:shrink-0"
+                className="mt-10 grid w-full max-w-3xl grid-cols-3 divide-x divide-white/[0.10] overflow-hidden rounded-2xl border border-white/[0.08] bg-black/25 px-2 py-4 shadow-inner shadow-black/35 ring-1 ring-white/[0.05]"
                 aria-label="Schedule totals"
               >
-                <div className="px-4 py-3.5 sm:flex-1 sm:py-4">
-                  <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">Matches</dt>
-                  <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-zinc-50 sm:text-2xl sm:leading-none">
-                    {events.length.toLocaleString("en-US")}
-                  </dd>
-                </div>
-                <div className="px-4 py-3.5 sm:flex-1 sm:py-4">
-                  <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                    Tickets
-                  </dt>
-                  <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-[color:color-mix(in_oklab,var(--ticketing-accent)_88%,white_8%)] sm:text-2xl sm:leading-none">
+                <div className="px-4 text-center">
+                  <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Tickets</dt>
+                  <dd className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-[color:color-mix(in_oklab,var(--ticketing-accent)_88%,white_8%)] sm:text-4xl">
                     {totalTickets.toLocaleString("en-US")}
                   </dd>
                 </div>
+                <div className="px-4 text-center">
+                  <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Matches</dt>
+                  <dd className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-white sm:text-4xl">
+                    {events.length.toLocaleString("en-US")}
+                  </dd>
+                </div>
+                <div className="px-4 text-center">
+                  <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Sources</dt>
+                  <dd className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-white sm:text-4xl">2</dd>
+                </div>
               </dl>
+
+              <div className="mt-8 flex w-full flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
+                <Link
+                  href="#home-events-heading"
+                  className="group inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-emerald-400/25 bg-[color:var(--ticketing-accent)] px-6 text-sm font-semibold text-emerald-950 shadow-sm shadow-black/35 transition-[filter,transform] hover:brightness-[1.06] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                >
+                  Browse Last Minute Sales
+                  <span className="rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-950/90">
+                    New
+                  </span>
+                  <span className="text-emerald-950/80 transition-transform group-hover:translate-x-0.5" aria-hidden>
+                    →
+                  </span>
+                </Link>
+                <Link
+                  href="#home-events-heading"
+                  className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                >
+                  Browse resale marketplace
+                </Link>
+              </div>
             </div>
           </header>
 
