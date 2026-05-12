@@ -1087,6 +1087,9 @@ export function SockAvailablePanel(props: {
                         Seat span
                       </th>
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
+                        Source
+                      </th>
+                      <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
                         Amount
                       </th>
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
@@ -1119,6 +1122,17 @@ export function SockAvailablePanel(props: {
                               {g.togetherCount} together
                             </span>
                           ) : null}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-xs font-semibold text-zinc-200">
+                          <span
+                            className={
+                              g.kind === "LAST_MINUTE"
+                                ? "inline-flex items-center rounded-full border border-white/[0.10] bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-200"
+                                : "inline-flex items-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_12%,transparent)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-100"
+                            }
+                          >
+                            {g.kind === "LAST_MINUTE" ? "Shop" : "Resale"}
+                          </span>
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-bold tabular-nums text-[color:var(--ticketing-accent)]">
                           {formatSockUsd(g.amount)}
