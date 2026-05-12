@@ -107,6 +107,8 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
   const query = searchParams ? await searchParams : {};
   const panel = normalizePanelKey(readFirstStringParam(query.panel));
   const initialSockKind = normalizeSockKind(readFirstStringParam(query.kind));
+  const resaleCtaActive = initialSockKind === "RESALE";
+  const lastMinuteCtaActive = initialSockKind === "LAST_MINUTE" || initialSockKind === "";
 
   const trimmed = rawId.trim();
   if (!trimmed) notFound();
@@ -312,16 +314,30 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                   <div className="flex flex-wrap items-center gap-2">
                     <Link
                       href={`/events/${event.id}?kind=LAST_MINUTE`}
-                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[color:color-mix(in_oklab,var(--ticketing-accent)_52%,transparent)] bg-[color:var(--ticketing-accent)] px-4 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter] hover:brightness-[1.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                      className={
+                        lastMinuteCtaActive
+                          ? "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[color:color-mix(in_oklab,var(--ticketing-accent)_52%,transparent)] bg-[color:var(--ticketing-accent)] px-4 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter] hover:brightness-[1.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                          : "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/[0.12] bg-white/[0.06] px-4 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/25 transition-colors hover:bg-white/[0.10] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                      }
                     >
                       <span>Browse Last Minute Sales</span>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-black/15 px-2 py-0.5 text-[11px] font-semibold text-zinc-950/90 ring-1 ring-black/10">
+                      <span
+                        className={
+                          lastMinuteCtaActive
+                            ? "inline-flex items-center gap-1 rounded-full bg-black/15 px-2 py-0.5 text-[11px] font-semibold text-zinc-950/90 ring-1 ring-black/10"
+                            : "inline-flex items-center gap-1 rounded-full bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-2 py-0.5 text-[11px] font-semibold text-[color:color-mix(in_oklab,var(--ticketing-accent)_85%,white_10%)] ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)]"
+                        }
+                      >
                         New <span aria-hidden>→</span>
                       </span>
                     </Link>
                     <Link
                       href={`/events/${event.id}?kind=RESALE`}
-                      className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/[0.12] bg-white/[0.06] px-4 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/25 transition-colors hover:bg-white/[0.10] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                      className={
+                        resaleCtaActive
+                          ? "inline-flex min-h-10 items-center justify-center rounded-xl border border-[color:color-mix(in_oklab,var(--ticketing-accent)_52%,transparent)] bg-[color:var(--ticketing-accent)] px-4 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter] hover:brightness-[1.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                          : "inline-flex min-h-10 items-center justify-center rounded-xl border border-white/[0.12] bg-white/[0.06] px-4 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/25 transition-colors hover:bg-white/[0.10] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                      }
                     >
                       Browse Resale Marketplace
                     </Link>
