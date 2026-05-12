@@ -23,6 +23,9 @@ type TogetherDraft = { togetherCount: 2 | 3 | 4 | 5 | 6; maxPriceUsd: string };
 const inp =
   "min-h-9 w-full rounded-md border border-white/10 bg-black/35 px-2.5 py-2 text-xs text-zinc-100 shadow-inner shadow-black/30 placeholder:text-zinc-600 focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_48%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] disabled:opacity-55";
 
+const inpAccent =
+  "font-bold tabular-nums text-[color:var(--ticketing-accent)] placeholder:font-medium placeholder:tabular-nums placeholder:text-zinc-600";
+
 function formatTime(ts: number): string {
   const d = new Date(ts);
   return d.toLocaleString(undefined, {
@@ -439,7 +442,7 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
             placeholder="Qty"
             aria-label={`${matchLabel} cat ${cat} qty`}
             disabled={disabled}
-            className={`${inp} w-[5.1rem]`}
+            className={`${inp} ${inpAccent} w-[5.1rem]`}
           />
           <input
             value={qtyDraftByKey[key]?.maxPriceUsd ?? ""}
@@ -448,7 +451,7 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
             placeholder="Max $"
             aria-label={`${matchLabel} cat ${cat} max price`}
             disabled={disabled}
-            className={`${inp} w-[6.2rem]`}
+            className={`${inp} ${inpAccent} w-[6.2rem]`}
           />
         </div>
         <div className="flex items-center justify-between gap-2">
@@ -781,7 +784,7 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
                       value={newTogetherPrice}
                       onChange={(e) => setNewTogetherPrice(e.target.value)}
                       inputMode="decimal"
-                      className={inp}
+                      className={`${inp} ${inpAccent}`}
                       placeholder="Max $"
                       disabled={editorSaving}
                     />
