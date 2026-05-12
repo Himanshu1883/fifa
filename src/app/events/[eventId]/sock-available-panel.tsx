@@ -448,7 +448,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
 
   return (
     <section className={`relative flex flex-col gap-3 sm:gap-4 ${sectionPad}`} aria-label="Sock available table">
-      <div className="flex items-end justify-between gap-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
         <div className="space-y-1">
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
             sock_available
@@ -457,13 +457,46 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
             Sock available rows
           </h2>
         </div>
-        <p className="text-[11px] font-medium tabular-nums text-zinc-500">
-          <span className="text-zinc-300">{filtered.length.toLocaleString("en-US")}</span>
-          <span> shown</span>
-          <span className="text-zinc-600"> / </span>
-          <span className="text-zinc-400">{groupedLoadedCount.toLocaleString("en-US")}</span>
-          <span> loaded</span>
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+              Seats together
+            </span>
+            <div
+              className="flex items-center rounded-xl bg-black/35 p-1 ring-1 ring-white/[0.10] shadow-inner shadow-black/35"
+              role="group"
+              aria-label="Seats together filter"
+            >
+              {([1, 2, 3, 4, 5, 6] as const).map((v) => {
+                const active = seatsTogetherMin === v;
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setSeatsTogetherMin(v)}
+                    className={
+                      active
+                        ? "min-h-8 rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] px-2.5 text-xs font-semibold tabular-nums text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_32%,transparent)] outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
+                        : "min-h-8 rounded-lg px-2.5 text-xs font-semibold tabular-nums text-zinc-300 outline-none transition-colors hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
+                    }
+                    aria-pressed={active}
+                    aria-label={`Seats together ${v === 6 ? "6+" : v}`}
+                  >
+                    {v === 6 ? "6+" : v}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <p className="text-[11px] font-medium tabular-nums text-zinc-500">
+            <span className="text-zinc-300">{filtered.length.toLocaleString("en-US")}</span>
+            <span> shown</span>
+            <span className="text-zinc-600"> / </span>
+            <span className="text-zinc-400">{groupedLoadedCount.toLocaleString("en-US")}</span>
+            <span> loaded</span>
+          </p>
+        </div>
       </div>
 
       {rows.length === 0 ? (
@@ -658,7 +691,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                   </div>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div className="flex min-w-0 flex-col gap-1">
                     <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                       Seat contains
@@ -669,23 +702,6 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                       className={controlClass}
                       placeholder="e.g. 24"
                     />
-                  </div>
-                  <div className="flex min-w-0 flex-col gap-1">
-                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                      Seats together
-                    </label>
-                    <select
-                      value={seatsTogetherMin}
-                      onChange={(e) => setSeatsTogetherMin(Number(e.target.value) as typeof seatsTogetherMin)}
-                      className={controlClass}
-                    >
-                      <option value={1}>1</option>
-                      <option value={2}>2</option>
-                      <option value={3}>3</option>
-                      <option value={4}>4</option>
-                      <option value={5}>5</option>
-                      <option value={6}>6+</option>
-                    </select>
                   </div>
                   <div className="flex min-w-0 flex-col gap-1">
                     <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
@@ -875,7 +891,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                       </select>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
                       <div className="flex min-w-0 flex-col gap-1">
                         <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                           Row contains
@@ -897,23 +913,6 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                           className={controlClass}
                           placeholder="e.g. 24"
                         />
-                      </div>
-                      <div className="flex min-w-0 flex-col gap-1">
-                        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                          Seats together
-                        </label>
-                        <select
-                          value={seatsTogetherMin}
-                          onChange={(e) => setSeatsTogetherMin(Number(e.target.value) as typeof seatsTogetherMin)}
-                          className={controlClass}
-                        >
-                          <option value={1}>1</option>
-                          <option value={2}>2</option>
-                          <option value={3}>3</option>
-                          <option value={4}>4</option>
-                          <option value={5}>5</option>
-                          <option value={6}>6+</option>
-                        </select>
                       </div>
                     </div>
 
