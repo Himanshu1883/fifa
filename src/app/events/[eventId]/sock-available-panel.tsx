@@ -635,7 +635,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
                           {r.seatNumber}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)]">
+                        <td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-bold tabular-nums text-[color:var(--ticketing-accent)]">
                           {formatSockUsd(r.amount)}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500" title={r.createdAt}>

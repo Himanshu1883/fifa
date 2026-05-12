@@ -1253,7 +1253,7 @@ export function SeatListingsPanel(props: {
                                           <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
                                             {listing.seatNumber}
                                           </td>
-                                          <td className="whitespace-nowrap px-4 py-3 pr-4 text-right text-sm font-semibold tabular-nums text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)]">
+                                          <td className="whitespace-nowrap px-4 py-3 pr-4 text-right text-sm font-bold tabular-nums text-[color:var(--ticketing-accent)]">
                                             {formatUsd(listing.amount)}
                                           </td>
                                           <td className="px-4 py-3 pr-5 align-middle sm:pr-6">
@@ -1314,7 +1314,7 @@ export function SeatListingsPanel(props: {
                                             </span>
                                           </div>
                                         </td>
-                                        <td className="whitespace-nowrap px-4 py-3 pr-4 text-right text-sm font-semibold tabular-nums text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)]">
+                                        <td className="whitespace-nowrap px-4 py-3 pr-4 text-right text-sm font-bold tabular-nums text-[color:var(--ticketing-accent)]">
                                           {formatUsdRangeFromAmounts(listings.map((l) => l.amount))}
                                         </td>
                                         <td className="px-4 py-3 pr-5 align-middle sm:pr-6">

@@ -594,7 +594,7 @@ export default async function Home({ searchParams }: Props) {
                                   Lowest price
                                 </dt>
                                 <dd
-                                  className="mt-0.5 tabular-nums font-semibold text-zinc-100"
+                                  className="mt-0.5 tabular-nums font-bold text-[color:var(--ticketing-accent)]"
                                   title={priceTitle}
                                 >
                                   {priceLabel}
@@ -615,25 +615,33 @@ export default async function Home({ searchParams }: Props) {
                                 <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                                   Cat1
                                 </dt>
-                                <dd className="mt-0.5 font-medium text-zinc-200">{cellUsdFromCentsString(event.cat1)}</dd>
+                                <dd className="mt-0.5 font-bold tabular-nums text-[color:var(--ticketing-accent)]">
+                                  {cellUsdFromCentsString(event.cat1)}
+                                </dd>
                               </div>
                               <div>
                                 <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                                   Cat2
                                 </dt>
-                                <dd className="mt-0.5 font-medium text-zinc-200">{cellUsdFromCentsString(event.cat2)}</dd>
+                                <dd className="mt-0.5 font-bold tabular-nums text-[color:var(--ticketing-accent)]">
+                                  {cellUsdFromCentsString(event.cat2)}
+                                </dd>
                               </div>
                               <div>
                                 <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                                   Cat3
                                 </dt>
-                                <dd className="mt-0.5 font-medium text-zinc-200">{cellUsdFromCentsString(event.cat3)}</dd>
+                                <dd className="mt-0.5 font-bold tabular-nums text-[color:var(--ticketing-accent)]">
+                                  {cellUsdFromCentsString(event.cat3)}
+                                </dd>
                               </div>
                               <div className="col-span-2 sm:col-span-1">
                                 <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                                   Cat4
                                 </dt>
-                                <dd className="mt-0.5 font-medium text-zinc-200">{cellUsdFromCentsString(event.cat4)}</dd>
+                                <dd className="mt-0.5 font-bold tabular-nums text-[color:var(--ticketing-accent)]">
+                                  {cellUsdFromCentsString(event.cat4)}
+                                </dd>
                               </div>
                             </dl>
 
@@ -762,16 +770,16 @@ export default async function Home({ searchParams }: Props) {
                                 <td className="max-w-[10rem] px-3 py-3 align-middle text-zinc-300 sm:px-4">
                                   {cellText(event.country)}
                                 </td>
-                                <td className="max-w-[12rem] px-3 py-3 align-middle text-zinc-300 sm:px-4">
+                                <td className="max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums text-[color:var(--ticketing-accent)] sm:px-4">
                                   {cellUsdFromCentsString(event.cat1)}
                                 </td>
-                                <td className="max-w-[12rem] px-3 py-3 align-middle text-zinc-300 sm:px-4">
+                                <td className="max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums text-[color:var(--ticketing-accent)] sm:px-4">
                                   {cellUsdFromCentsString(event.cat2)}
                                 </td>
-                                <td className="max-w-[12rem] px-3 py-3 align-middle text-zinc-300 sm:px-4">
+                                <td className="max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums text-[color:var(--ticketing-accent)] sm:px-4">
                                   {cellUsdFromCentsString(event.cat3)}
                                 </td>
-                                <td className="max-w-[12rem] px-3 py-3 align-middle text-zinc-300 sm:px-4">
+                                <td className="max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums text-[color:var(--ticketing-accent)] sm:px-4">
                                   {cellUsdFromCentsString(event.cat4)}
                                 </td>
                                 <HomeEventCategoryBlockCells
@@ -781,7 +789,7 @@ export default async function Home({ searchParams }: Props) {
                                   blockCount={event.blockCount}
                                 />
                                 <td
-                                  className="whitespace-nowrap px-3 py-3 text-right align-middle font-medium tabular-nums text-zinc-100 sm:px-4"
+                                  className="whitespace-nowrap px-3 py-3 text-right align-middle font-bold tabular-nums text-[color:var(--ticketing-accent)] sm:px-4"
                                   title={priceTitle}
                                 >
                                   {priceLabel}
