@@ -69,6 +69,132 @@ function formatTsCompact(ts: string): string {
   return s.length >= 19 ? s.slice(0, 19).replace("T", " ") : s;
 }
 
+function parseStrictInt(s: string): number | null {
+  const v = norm(s);
+  if (!/^\d+$/.test(v)) return null;
+  const n = Number.parseInt(v, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+type SockAvailableGroup = {
+  id: string;
+  kind: SockAvailableDTO["kind"];
+  amount: string | null;
+  areaName: string;
+  categoryName: string;
+  blockName: string;
+  row: string;
+  seatSpan: string;
+  togetherCount: number;
+  seats: SockAvailableDTO[];
+  seatSortStart: number | null;
+  createdAtMinMs: number;
+  createdAtMaxMs: number;
+  updatedAtMinMs: number;
+  updatedAtMaxMs: number;
+};
+
+function groupSockAvailableRows(rows: SockAvailableDTO[]): SockAvailableGroup[] {
+  const byKey = new Map<string, SockAvailableDTO[]>();
+  for (const r of rows) {
+    const key = [
+      r.kind,
+      norm(r.areaName),
+      norm(r.categoryName),
+      norm(r.blockName),
+      norm(r.row),
+      r.amount ?? "",
+    ].join("|");
+    const bucket = byKey.get(key);
+    if (bucket) bucket.push(r);
+    else byKey.set(key, [r]);
+  }
+
+  const out: SockAvailableGroup[] = [];
+
+  const pushGroup = (key: string, seats: SockAvailableDTO[], seatSortStart: number | null) => {
+    if (seats.length === 0) return;
+    const first = seats[0];
+    const last = seats[seats.length - 1];
+    const togetherCount = seats.length;
+    const seatSpan = togetherCount === 1 ? first.seatNumber : `${first.seatNumber}-${last.seatNumber}`;
+
+    let createdAtMinMs = Number.POSITIVE_INFINITY;
+    let createdAtMaxMs = Number.NEGATIVE_INFINITY;
+    let updatedAtMinMs = Number.POSITIVE_INFINITY;
+    let updatedAtMaxMs = Number.NEGATIVE_INFINITY;
+
+    for (const s of seats) {
+      const c = Date.parse(s.createdAt);
+      const u = Date.parse(s.updatedAt);
+      if (Number.isFinite(c)) {
+        createdAtMinMs = Math.min(createdAtMinMs, c);
+        createdAtMaxMs = Math.max(createdAtMaxMs, c);
+      }
+      if (Number.isFinite(u)) {
+        updatedAtMinMs = Math.min(updatedAtMinMs, u);
+        updatedAtMaxMs = Math.max(updatedAtMaxMs, u);
+      }
+    }
+
+    if (!Number.isFinite(createdAtMinMs)) createdAtMinMs = Number.NaN;
+    if (!Number.isFinite(createdAtMaxMs)) createdAtMaxMs = Number.NaN;
+    if (!Number.isFinite(updatedAtMinMs)) updatedAtMinMs = Number.NaN;
+    if (!Number.isFinite(updatedAtMaxMs)) updatedAtMaxMs = Number.NaN;
+
+    out.push({
+      id: `${key}|${first.id}|${seatSpan}|${togetherCount}`,
+      kind: first.kind,
+      amount: first.amount,
+      areaName: first.areaName,
+      categoryName: first.categoryName,
+      blockName: first.blockName,
+      row: first.row,
+      seatSpan,
+      togetherCount,
+      seats,
+      seatSortStart,
+      createdAtMinMs,
+      createdAtMaxMs,
+      updatedAtMinMs,
+      updatedAtMaxMs,
+    });
+  };
+
+  for (const [key, bucket] of byKey.entries()) {
+    const numeric: Array<{ seatN: number; r: SockAvailableDTO }> = [];
+    const nonNumeric: SockAvailableDTO[] = [];
+
+    for (const r of bucket) {
+      const seatN = parseStrictInt(r.seatNumber);
+      if (seatN == null) nonNumeric.push(r);
+      else numeric.push({ seatN, r });
+    }
+
+    for (const r of nonNumeric) pushGroup(key, [r], null);
+
+    numeric.sort((a, b) => a.seatN - b.seatN || norm(a.r.seatNumber).localeCompare(norm(b.r.seatNumber)) || a.r.id - b.r.id);
+
+    let runStart = 0;
+    for (let i = 0; i < numeric.length; i++) {
+      const prev = i > 0 ? numeric[i - 1] : null;
+      const cur = numeric[i];
+      const isBreak = i > 0 && (cur.seatN !== prev!.seatN + 1);
+      if (isBreak) {
+        const run = numeric.slice(runStart, i).map((x) => x.r);
+        pushGroup(key, run, numeric[runStart]!.seatN);
+        runStart = i;
+      }
+    }
+    if (numeric.length > 0) {
+      const run = numeric.slice(runStart).map((x) => x.r);
+      pushGroup(key, run, numeric[runStart]!.seatN);
+    }
+  }
+
+  return out;
+}
+
 function InfoIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className="h-4 w-4">
@@ -101,7 +227,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
   const smUp = useMediaQuery("(min-width: 640px)");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [openRow, setOpenRow] = useState<SockAvailableDTO | null>(null);
+  const [openGroup, setOpenGroup] = useState<SockAvailableGroup | null>(null);
 
   const [kind, setKind] = useState<"" | "RESALE" | "LAST_MINUTE">("");
   const [area, setArea] = useState<string>("");
@@ -109,6 +235,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
   const [block, setBlock] = useState<string>("");
   const [row, setRow] = useState<string>("");
   const [seat, setSeat] = useState<string>("");
+  const [seatsTogetherMin, setSeatsTogetherMin] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
   const [contingent, setContingent] = useState<string>("");
   const [movement, setMovement] = useState<string>("");
   const [minUsd, setMinUsd] = useState<string>("");
@@ -120,13 +247,13 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
   const [filtersExpanded, setFiltersExpanded] = useState(false);
 
   useEffect(() => {
-    if (!openRow) return;
+    if (!openGroup) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpenRow(null);
+      if (e.key === "Escape") setOpenGroup(null);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openRow]);
+  }, [openGroup]);
 
   const areaOptions = useMemo(() => {
     const set = new Set<string>();
@@ -176,7 +303,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
     const hasFrom = Number.isFinite(fromMs);
     const hasTo = Number.isFinite(toMs);
 
-    const out = rows.filter((r) => {
+    const eligibleRows = rows.filter((r) => {
       if (kindQ && norm(r.kind).toLowerCase() !== kindQ) return false;
       if (areaQ && norm(r.areaName).toLowerCase() !== areaQ) return false;
       if (categoryQ && norm(r.categoryName).toLowerCase() !== categoryQ) return false;
@@ -218,33 +345,64 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
       return hay.includes(q);
     });
 
-    const sorted = [...out].sort((a, b) => {
+    const grouped = groupSockAvailableRows(eligibleRows).filter((g) => g.togetherCount >= seatsTogetherMin);
+
+    const sorted = [...grouped].sort((a, b) => {
+      let cmp = 0;
       switch (sortKey) {
-        case "created_desc":
-          return Date.parse(b.createdAt) - Date.parse(a.createdAt);
-        case "created_asc":
-          return Date.parse(a.createdAt) - Date.parse(b.createdAt);
-        case "updated_desc":
-          return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
-        case "updated_asc":
-          return Date.parse(a.updatedAt) - Date.parse(b.updatedAt);
+        case "created_desc": {
+          const av = Number.isFinite(a.createdAtMaxMs) ? a.createdAtMaxMs : Number.NEGATIVE_INFINITY;
+          const bv = Number.isFinite(b.createdAtMaxMs) ? b.createdAtMaxMs : Number.NEGATIVE_INFINITY;
+          cmp = bv - av;
+          break;
+        }
+        case "created_asc": {
+          const av = Number.isFinite(a.createdAtMinMs) ? a.createdAtMinMs : Number.POSITIVE_INFINITY;
+          const bv = Number.isFinite(b.createdAtMinMs) ? b.createdAtMinMs : Number.POSITIVE_INFINITY;
+          cmp = av - bv;
+          break;
+        }
+        case "updated_desc": {
+          const av = Number.isFinite(a.updatedAtMaxMs) ? a.updatedAtMaxMs : Number.NEGATIVE_INFINITY;
+          const bv = Number.isFinite(b.updatedAtMaxMs) ? b.updatedAtMaxMs : Number.NEGATIVE_INFINITY;
+          cmp = bv - av;
+          break;
+        }
+        case "updated_asc": {
+          const av = Number.isFinite(a.updatedAtMinMs) ? a.updatedAtMinMs : Number.POSITIVE_INFINITY;
+          const bv = Number.isFinite(b.updatedAtMinMs) ? b.updatedAtMinMs : Number.POSITIVE_INFINITY;
+          cmp = av - bv;
+          break;
+        }
         case "amount_desc":
-          return amountRawToUsdNumber(b.amount) - amountRawToUsdNumber(a.amount);
+          cmp = amountRawToUsdNumber(b.amount) - amountRawToUsdNumber(a.amount);
+          break;
         case "amount_asc":
-          return amountRawToUsdNumber(a.amount) - amountRawToUsdNumber(b.amount);
+          cmp = amountRawToUsdNumber(a.amount) - amountRawToUsdNumber(b.amount);
+          break;
         case "area_asc":
-          return norm(a.areaName).localeCompare(norm(b.areaName));
+          cmp = norm(a.areaName).localeCompare(norm(b.areaName));
+          break;
         case "category_asc":
-          return norm(a.categoryName).localeCompare(norm(b.categoryName));
+          cmp = norm(a.categoryName).localeCompare(norm(b.categoryName));
+          break;
         case "block_asc":
-          return norm(a.blockName).localeCompare(norm(b.blockName));
+          cmp = norm(a.blockName).localeCompare(norm(b.blockName));
+          break;
         case "row_asc":
-          return norm(a.row).localeCompare(norm(b.row), undefined, { numeric: true, sensitivity: "base" });
+          cmp = norm(a.row).localeCompare(norm(b.row), undefined, { numeric: true, sensitivity: "base" });
+          break;
         case "seat_asc":
-          return norm(a.seatNumber).localeCompare(norm(b.seatNumber), undefined, { numeric: true, sensitivity: "base" });
+          if (a.seatSortStart != null && b.seatSortStart != null) cmp = a.seatSortStart - b.seatSortStart;
+          else if (a.seatSortStart != null) cmp = -1;
+          else if (b.seatSortStart != null) cmp = 1;
+          else cmp = norm(a.seatSpan).localeCompare(norm(b.seatSpan), undefined, { numeric: true, sensitivity: "base" });
+          break;
         default:
-          return 0;
+          cmp = 0;
       }
+      if (Number.isFinite(cmp) && cmp !== 0) return cmp;
+      return a.id.localeCompare(b.id);
     });
 
     return sorted;
@@ -262,9 +420,12 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
     row,
     rows,
     search,
+    seatsTogetherMin,
     seat,
     sortKey,
   ]);
+
+  const groupedLoadedCount = useMemo(() => groupSockAvailableRows(rows).length, [rows]);
 
   const sectionPad = embedInParentCard ? "px-4 sm:px-7" : "";
   const filtersVisible = smUp ? filtersExpanded : mobileFiltersOpen;
@@ -275,6 +436,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
       block ||
       row ||
       seat ||
+      seatsTogetherMin !== 1 ||
       contingent ||
       movement ||
       minUsd ||
@@ -299,7 +461,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
           <span className="text-zinc-300">{filtered.length.toLocaleString("en-US")}</span>
           <span> shown</span>
           <span className="text-zinc-600"> / </span>
-          <span className="text-zinc-400">{rows.length.toLocaleString("en-US")}</span>
+          <span className="text-zinc-400">{groupedLoadedCount.toLocaleString("en-US")}</span>
           <span> loaded</span>
         </p>
       </div>
@@ -404,7 +566,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                 <span className="tabular-nums text-zinc-300">{filtered.length.toLocaleString("en-US")}</span>
                 <span> shown</span>
                 <span className="text-zinc-700"> · </span>
-                <span className="tabular-nums text-zinc-500">{rows.length.toLocaleString("en-US")}</span>
+                <span className="tabular-nums text-zinc-500">{groupedLoadedCount.toLocaleString("en-US")}</span>
                 <span> loaded</span>
                 <span>.</span>
               </p>
@@ -421,6 +583,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                     setBlock("");
                     setRow("");
                     setSeat("");
+                    setSeatsTogetherMin(1);
                     setContingent("");
                     setMovement("");
                     setMinUsd("");
@@ -495,7 +658,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                   </div>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                   <div className="flex min-w-0 flex-col gap-1">
                     <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                       Seat contains
@@ -506,6 +669,23 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                       className={controlClass}
                       placeholder="e.g. 24"
                     />
+                  </div>
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      Seats together
+                    </label>
+                    <select
+                      value={seatsTogetherMin}
+                      onChange={(e) => setSeatsTogetherMin(Number(e.target.value) as typeof seatsTogetherMin)}
+                      className={controlClass}
+                    >
+                      <option value={1}>1</option>
+                      <option value={2}>2</option>
+                      <option value={3}>3</option>
+                      <option value={4}>4</option>
+                      <option value={5}>5</option>
+                      <option value={6}>6+</option>
+                    </select>
                   </div>
                   <div className="flex min-w-0 flex-col gap-1">
                     <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
@@ -695,7 +875,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                       </select>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-3 sm:grid-cols-3">
                       <div className="flex min-w-0 flex-col gap-1">
                         <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                           Row contains
@@ -717,6 +897,23 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                           className={controlClass}
                           placeholder="e.g. 24"
                         />
+                      </div>
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                          Seats together
+                        </label>
+                        <select
+                          value={seatsTogetherMin}
+                          onChange={(e) => setSeatsTogetherMin(Number(e.target.value) as typeof seatsTogetherMin)}
+                          className={controlClass}
+                        >
+                          <option value={1}>1</option>
+                          <option value={2}>2</option>
+                          <option value={3}>3</option>
+                          <option value={4}>4</option>
+                          <option value={5}>5</option>
+                          <option value={6}>6+</option>
+                        </select>
                       </div>
                     </div>
 
@@ -829,6 +1026,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                           setBlock("");
                           setRow("");
                           setSeat("");
+                          setSeatsTogetherMin(1);
                           setContingent("");
                           setMovement("");
                           setMinUsd("");
@@ -879,7 +1077,7 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                         Row
                       </th>
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
-                        Seat
+                        Seat span
                       </th>
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
                         Amount
@@ -896,35 +1094,46 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/[0.05]">
-                    {filtered.map((r) => (
+                    {filtered.map((g) => (
                       <tr
-                        key={r.id}
+                        key={g.id}
                         className="text-zinc-200 transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)]"
                       >
-                        <td className="px-4 py-3 text-sm font-medium text-zinc-50">{r.areaName}</td>
-                        <td className="px-4 py-3 text-sm text-zinc-200">{r.categoryName}</td>
-                        <td className="px-4 py-3 text-sm font-medium text-zinc-50">{r.blockName}</td>
+                        <td className="px-4 py-3 text-sm font-medium text-zinc-50">{g.areaName}</td>
+                        <td className="px-4 py-3 text-sm text-zinc-200">{g.categoryName}</td>
+                        <td className="px-4 py-3 text-sm font-medium text-zinc-50">{g.blockName}</td>
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
-                          {r.row}
+                          {g.row}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">
-                          {r.seatNumber}
+                          <span>{g.seatSpan}</span>
+                          {g.togetherCount > 1 ? (
+                            <span className="ml-2 inline-flex items-center rounded-full border border-white/[0.10] bg-black/25 px-2 py-0.5 text-[10px] font-semibold text-zinc-200">
+                              {g.togetherCount} together
+                            </span>
+                          ) : null}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-bold tabular-nums text-[color:var(--ticketing-accent)]">
-                          {formatSockUsd(r.amount)}
+                          {formatSockUsd(g.amount)}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500" title={r.createdAt}>
-                          {formatTsCompact(r.createdAt)}
+                        <td
+                          className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500"
+                          title={Number.isFinite(g.createdAtMaxMs) ? new Date(g.createdAtMaxMs).toISOString() : undefined}
+                        >
+                          {Number.isFinite(g.createdAtMaxMs) ? formatTsCompact(new Date(g.createdAtMaxMs).toISOString()) : "—"}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500" title={r.updatedAt}>
-                          {formatTsCompact(r.updatedAt)}
+                        <td
+                          className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500"
+                          title={Number.isFinite(g.updatedAtMaxMs) ? new Date(g.updatedAtMaxMs).toISOString() : undefined}
+                        >
+                          {Number.isFinite(g.updatedAtMaxMs) ? formatTsCompact(new Date(g.updatedAtMaxMs).toISOString()) : "—"}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 pr-5 text-right sm:pr-6">
                           <button
                             type="button"
                             className="inline-flex items-center justify-center rounded-md border border-white/[0.10] bg-black/25 p-2 text-zinc-200 shadow-inner shadow-black/35 transition-[border-color,background-color,transform] hover:border-white/[0.16] hover:bg-white/[0.04] active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
-                            aria-label={`Row info: ${r.areaName}, ${r.categoryName}, ${r.blockName}, row ${r.row}, seat ${r.seatNumber}`}
-                            onClick={() => setOpenRow(r)}
+                            aria-label={`Row info: ${g.areaName}, ${g.categoryName}, ${g.blockName}, row ${g.row}, seat ${g.seatSpan}`}
+                            onClick={() => setOpenGroup(g)}
                           >
                             <InfoIcon />
                           </button>
@@ -939,14 +1148,14 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
         </>
       )}
 
-      {openRow ? (
+      {openGroup ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8"
           role="dialog"
           aria-modal="true"
           aria-label="Sock available row details"
           onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setOpenRow(null);
+            if (e.target === e.currentTarget) setOpenGroup(null);
           }}
         >
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
@@ -958,26 +1167,36 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
                     sock_available
                   </p>
                   <p className="mt-1 truncate text-sm font-semibold tracking-tight text-white">
-                    {openRow.areaName} · {openRow.categoryName} · {openRow.blockName}
+                    {openGroup.areaName} · {openGroup.categoryName} · {openGroup.blockName}
                   </p>
                   <p className="mt-1 text-xs text-zinc-500">
-                    Row <span className="font-mono text-zinc-300">{openRow.row}</span> · Seat{" "}
-                    <span className="font-mono text-zinc-300">{openRow.seatNumber}</span> ·{" "}
+                    Row <span className="font-mono text-zinc-300">{openGroup.row}</span> · Seat{" "}
+                    <span className="font-mono text-zinc-300">{openGroup.seatSpan}</span>{" "}
+                    {openGroup.togetherCount > 1 ? (
+                      <>
+                        <span className="text-zinc-700">·</span>{" "}
+                        <span className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[11px] text-zinc-200">
+                          {openGroup.togetherCount} together
+                        </span>{" "}
+                      </>
+                    ) : (
+                      <span className="text-zinc-700">·</span>
+                    )}{" "}
                     <span className="font-mono text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)]">
-                      {formatSockUsd(openRow.amount)}
+                      {formatSockUsd(openGroup.amount)}
                     </span>
                   </p>
                   <p className="mt-1 text-xs text-zinc-500">
                     Kind{" "}
                     <span className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[11px] text-zinc-200">
-                      {openRow.kind === "LAST_MINUTE" ? "LAST_MINUTE" : "RESALE"}
+                      {openGroup.kind === "LAST_MINUTE" ? "LAST_MINUTE" : "RESALE"}
                     </span>
                   </p>
                 </div>
                 <button
                   type="button"
                   className="shrink-0 rounded-lg border border-white/[0.10] bg-black/30 px-2.5 py-1.5 text-xs font-medium text-zinc-200 hover:bg-white/[0.05] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
-                  onClick={() => setOpenRow(null)}
+                  onClick={() => setOpenGroup(null)}
                 >
                   Close
                 </button>
@@ -985,53 +1204,68 @@ export function SockAvailablePanel(props: { rows: SockAvailableDTO[]; embedInPar
             </div>
 
             <div className="space-y-4 px-4 py-4 sm:px-5">
+              {openGroup.togetherCount > 1 ? (
+                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">Grouped seats</p>
+                  <div className="mt-2 space-y-1">
+                    {openGroup.seats.map((s) => (
+                      <p key={s.id} className="font-mono text-[11px] text-zinc-200">
+                        Seat <span className="text-zinc-50">{s.seatNumber}</span> · seatId{" "}
+                        <span className="text-zinc-300">{s.seatId}</span> · movement{" "}
+                        <span className="text-zinc-300">{s.resaleMovementId}</span>
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                     Contingent ID
                   </p>
-                  <p className="mt-1 font-mono text-xs text-zinc-200">{openRow.contingentId}</p>
+                  <p className="mt-1 font-mono text-xs text-zinc-200">{openGroup.seats[0]?.contingentId}</p>
                 </div>
                 <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                     Seat ID
                   </p>
-                  <p className="mt-1 font-mono text-xs text-zinc-200">{openRow.seatId}</p>
+                  <p className="mt-1 font-mono text-xs text-zinc-200">{openGroup.seats[0]?.seatId}</p>
                 </div>
                 <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                     Resale movement
                   </p>
-                  <p className="mt-1 font-mono text-xs text-zinc-200">{openRow.resaleMovementId}</p>
+                  <p className="mt-1 font-mono text-xs text-zinc-200">{openGroup.seats[0]?.resaleMovementId}</p>
                 </div>
                 <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                     Category ID
                   </p>
-                  <p className="mt-1 font-mono text-xs text-zinc-200">{openRow.categoryId}</p>
+                  <p className="mt-1 font-mono text-xs text-zinc-200">{openGroup.seats[0]?.categoryId}</p>
                 </div>
                 <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                     Area ID
                   </p>
-                  <p className="mt-1 font-mono text-xs text-zinc-200">{openRow.areaId}</p>
+                  <p className="mt-1 font-mono text-xs text-zinc-200">{openGroup.seats[0]?.areaId}</p>
                 </div>
                 <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                     Block ID
                   </p>
-                  <p className="mt-1 font-mono text-xs text-zinc-200">{openRow.blockId}</p>
+                  <p className="mt-1 font-mono text-xs text-zinc-200">{openGroup.seats[0]?.blockId}</p>
                 </div>
               </div>
 
               <div className="text-[11px] text-zinc-500">
                 Created{" "}
-                <span className="font-mono text-zinc-300" title={openRow.createdAt}>
-                  {formatTsCompact(openRow.createdAt)}
+                <span className="font-mono text-zinc-300" title={openGroup.seats[0]?.createdAt}>
+                  {formatTsCompact(openGroup.seats[0]?.createdAt ?? "")}
                 </span>{" "}
                 · Updated{" "}
-                <span className="font-mono text-zinc-300" title={openRow.updatedAt}>
-                  {formatTsCompact(openRow.updatedAt)}
+                <span className="font-mono text-zinc-300" title={openGroup.seats[0]?.updatedAt}>
+                  {formatTsCompact(openGroup.seats[0]?.updatedAt ?? "")}
                 </span>
               </div>
             </div>
