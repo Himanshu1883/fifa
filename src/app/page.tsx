@@ -428,13 +428,13 @@ export default async function Home({ searchParams }: Props) {
               </p>
 
               <h1 className="mt-6 text-balance text-4xl font-semibold tracking-tight text-white sm:text-5xl sm:leading-[1.04] lg:text-6xl">
-                Every World Cup ticket,{" "}
-                <span className="text-[color:var(--ticketing-accent)]">one page.</span>
+                All World Cup tickets,{" "}
+                <span className="text-[color:var(--ticketing-accent)]">in one place.</span>
               </h1>
 
               <p className="mt-4 max-w-3xl text-pretty text-sm leading-relaxed text-zinc-400 sm:text-base">
-                Resale marketplace listings and face-value Last Minute Sales drops across all matches.
-                Sort by price, filter by stage, venue and country — no extensions, no affiliate links.
+                Browse resale marketplace listings and official face-value Last Minute Sales drops across every match.
+                Sort by price and filter by stage, venue, or country.
               </p>
 
               <dl
