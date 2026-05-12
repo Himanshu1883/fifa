@@ -13,12 +13,14 @@ export const runtime = "nodejs";
 type Props = {
   searchParams: Promise<HomeSearchParams>;
 };
-export default async function Home({ searchParams }: Props) {
+
+export default async function ResalePage({ searchParams }: Props) {
   const q = await searchParams;
   const kindRaw = (firstQs(q.kind) ?? "").trim();
-  if (kindRaw && parseHomeSockKindFilter(q) === "RESALE") {
+  if (kindRaw && parseHomeSockKindFilter(q) === "LAST_MINUTE") {
     const qs = homeQueryStringFrom(q);
-    redirect(`${homeBasePathForKind("RESALE")}${qs ? `?${qs}` : ""}`);
+    redirect(`${homeBasePathForKind("LAST_MINUTE")}${qs ? `?${qs}` : ""}`);
   }
-  return <HomePage searchParams={Promise.resolve(q)} kind="LAST_MINUTE" />;
+  return <HomePage searchParams={Promise.resolve(q)} kind="RESALE" />;
 }
+
