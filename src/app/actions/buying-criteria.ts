@@ -108,6 +108,7 @@ export async function saveBuyingCriteriaBulkAction(input: BuyingCriteriaRow[]): 
   }
 
   revalidatePath("/");
+  revalidatePath("/resale");
   return { ok: true, saved: data.length };
 }
 
@@ -139,6 +140,7 @@ export async function setCat3FrontRowAction(
   }
 
   revalidatePath("/");
+  revalidatePath("/resale");
   return { ok: true };
 }
 

@@ -177,6 +177,7 @@ export async function replaceBuyingCriteriaRulesAction(
   }
 
   revalidatePath("/");
+  revalidatePath("/resale");
   return { ok: true };
 }
 
@@ -273,6 +274,7 @@ FROM dedup d;
   }
 
   revalidatePath("/");
+  revalidatePath("/resale");
   return { ok: true, saved: items.length };
 }
 

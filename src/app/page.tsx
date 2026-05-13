@@ -9,6 +9,7 @@ import {
 } from "@/app/home/HomePage";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type Props = {
   searchParams: Promise<HomeSearchParams>;
