@@ -8,7 +8,7 @@ import {
   type BuyingCriteriaRuleInput,
   type BuyingCriteriaRuleRow,
 } from "@/app/actions/buying-criteria-rules";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
 type EventStub = {
   id: number;
@@ -18,7 +18,8 @@ type EventStub = {
 
 type QtyDraft = { minQty: string; maxPriceUsd: string };
 type EditorTarget = { eventId: number; categoryNum: 1 | 2 | 3 | 4 };
-type TogetherDraft = { togetherCount: 2 | 3 | 4 | 5 | 6; maxPriceUsd: string };
+type TogetherCount = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+type TogetherDraft = { id: string; togetherCount: TogetherCount; maxPriceUsd: string };
 
 const inp =
   "min-h-9 w-full rounded-md border border-white/10 bg-black/35 px-2.5 py-2 text-xs text-zinc-100 shadow-inner shadow-black/30 placeholder:text-zinc-600 focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_48%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] disabled:opacity-55";
@@ -50,19 +51,48 @@ function normalizeMoneyInput(raw: string): string {
   return withoutDollar.replaceAll(",", "").trim();
 }
 
-function summarizeTogether(rules: BuyingCriteriaRuleRow[]): string {
+function formatUsdFromCents(cents: number): string {
+  const dollars = cents / 100;
+  return Number.isInteger(dollars) ? `$${dollars.toFixed(0)}` : `$${dollars.toFixed(2)}`;
+}
+
+function formatUsdFromInput(raw: string): string | null {
+  const norm = normalizeMoneyInput(raw);
+  if (!norm) return null;
+  const n = Number(norm);
+  if (!Number.isFinite(n)) return `$${norm}`;
+  return Number.isInteger(n) ? `$${n.toFixed(0)}` : `$${n.toFixed(2)}`;
+}
+
+function clampTogetherCount(n: number): TogetherCount {
+  const clamped = Math.min(10, Math.max(1, Math.trunc(n)));
+  return clamped as TogetherCount;
+}
+
+function renderTogetherSummary(rules: BuyingCriteriaRuleRow[]): ReactNode {
   const parts = rules
     .filter((r) => r.kind === "TOGETHER_UNDER_PRICE" && r.togetherCount != null && r.maxPriceUsdCents != null)
     .slice()
     .sort((a, b) => (a.togetherCount ?? 0) - (b.togetherCount ?? 0))
     .map((r) => {
       const t = r.togetherCount ?? 0;
-      const label = t === 6 ? "6+" : String(t);
-      const dollars = (r.maxPriceUsdCents ?? 0) / 100;
-      const price = Number.isInteger(dollars) ? `$${dollars.toFixed(0)}` : `$${dollars.toFixed(2)}`;
-      return `${label} together ≤${price}`;
+      const price = formatUsdFromCents(r.maxPriceUsdCents ?? 0);
+      return (
+        <span key={`together-${r.id}`} className="whitespace-nowrap">
+          {t} together ≤
+          <span className="font-bold tabular-nums text-[color:var(--ticketing-accent)]">{price}</span>
+        </span>
+      );
     });
-  return parts.length ? parts.join(" · ") : "No together rules";
+
+  if (parts.length === 0) return "No together rules";
+
+  const interleaved: ReactNode[] = [];
+  for (let i = 0; i < parts.length; i += 1) {
+    if (i) interleaved.push(" · ");
+    interleaved.push(parts[i]);
+  }
+  return <>{interleaved}</>;
 }
 
 function clampCategory(n: number): 1 | 2 | 3 | 4 | null {
@@ -87,10 +117,11 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
 
   const [editor, setEditor] = useState<EditorTarget | null>(null);
   const [togetherDrafts, setTogetherDrafts] = useState<TogetherDraft[]>([]);
-  const [newTogetherCount, setNewTogetherCount] = useState<2 | 3 | 4 | 5 | 6>(2);
+  const [newTogetherCount, setNewTogetherCount] = useState<TogetherCount>(2);
   const [newTogetherPrice, setNewTogetherPrice] = useState("600");
   const [editorSaving, setEditorSaving] = useState(false);
   const [editorError, setEditorError] = useState<string | null>(null);
+  const draftSeqRef = useRef(0);
 
   const searchId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
@@ -329,22 +360,24 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
       .map(
         (r) =>
           ({
-            togetherCount: (r.togetherCount ?? 2) as 2 | 3 | 4 | 5 | 6,
+            id: `db-${r.id}`,
+            togetherCount: clampTogetherCount(r.togetherCount ?? 2),
             maxPriceUsd: usdInputFromCents(r.maxPriceUsdCents),
           }) satisfies TogetherDraft,
       );
     setTogetherDrafts(existing);
   };
 
-  const upsertTogetherDraft = (d: TogetherDraft) => {
-    setTogetherDrafts((prev) => {
-      const filtered = prev.filter((x) => x.togetherCount !== d.togetherCount);
-      return [...filtered, d].sort((a, b) => a.togetherCount - b.togetherCount);
-    });
+  const addTogetherDraft = (togetherCount: TogetherCount, maxPriceUsd: string) => {
+    draftSeqRef.current += 1;
+    const uuid = globalThis.crypto?.randomUUID?.();
+    const id = uuid ? `draft-${uuid}` : `draft-${Date.now()}-${draftSeqRef.current}`;
+    const nextDraft: TogetherDraft = { id, togetherCount, maxPriceUsd };
+    setTogetherDrafts((prev) => [...prev, nextDraft].sort((a, b) => a.togetherCount - b.togetherCount));
   };
 
-  const removeTogetherDraft = (count: TogetherDraft["togetherCount"]) => {
-    setTogetherDrafts((prev) => prev.filter((x) => x.togetherCount !== count));
+  const removeTogetherDraft = (id: TogetherDraft["id"]) => {
+    setTogetherDrafts((prev) => prev.filter((x) => x.id !== id));
   };
 
   const saveTogetherEditor = async () => {
@@ -436,7 +469,7 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
     const key = `${eventId}-${cat}`;
     const disabled = saving || loading || editorSaving;
     const rules = rulesByEventId[eventId]?.[cat] ?? [];
-    const togetherSummary = summarizeTogether(rules);
+    const togetherSummary = renderTogetherSummary(rules);
     return (
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
@@ -741,24 +774,28 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
                 </div>
                 {togetherDrafts.length ? (
                   <ul className="mt-2 space-y-2">
-                    {togetherDrafts.map((r) => (
+                    {togetherDrafts.map((r) => {
+                      const price = formatUsdFromInput(r.maxPriceUsd);
+                      return (
                       <li
-                        key={r.togetherCount}
+                        key={r.id}
                         className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/25 px-3 py-2"
                       >
                         <span className="text-xs font-medium text-zinc-200">
-                          {r.togetherCount === 6 ? "6+ together" : `${r.togetherCount} together`} ≤ ${r.maxPriceUsd.trim() || "—"}
+                          {r.togetherCount} together ≤{" "}
+                          <span className="font-bold tabular-nums text-[color:var(--ticketing-accent)]">{price ?? "—"}</span>
                         </span>
                         <button
                           type="button"
-                          onClick={() => removeTogetherDraft(r.togetherCount)}
+                          onClick={() => removeTogetherDraft(r.id)}
                           disabled={editorSaving}
                           className="rounded-md border border-white/12 bg-transparent px-2 py-1 text-[11px] font-semibold text-zinc-300 transition-colors hover:bg-white/[0.06] disabled:opacity-55"
                         >
                           Remove
                         </button>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 ) : (
                   <p className="mt-2 text-xs text-zinc-500">No together rules yet.</p>
@@ -772,15 +809,20 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
                     <label className="sr-only">Together count</label>
                     <select
                       value={newTogetherCount}
-                      onChange={(e) => setNewTogetherCount(Number(e.target.value) as 2 | 3 | 4 | 5 | 6)}
+                      onChange={(e) => setNewTogetherCount(Number(e.target.value) as TogetherCount)}
                       className={inp}
                       disabled={editorSaving}
                     >
+                      <option value={1}>1 together</option>
                       <option value={2}>2 together</option>
                       <option value={3}>3 together</option>
                       <option value={4}>4 together</option>
                       <option value={5}>5 together</option>
-                      <option value={6}>6+ together</option>
+                      <option value={6}>6 together</option>
+                      <option value={7}>7 together</option>
+                      <option value={8}>8 together</option>
+                      <option value={9}>9 together</option>
+                      <option value={10}>10 together</option>
                     </select>
                   </div>
                   <div>
@@ -798,15 +840,12 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
                 <button
                   type="button"
                   onClick={() =>
-                    upsertTogetherDraft({
-                      togetherCount: newTogetherCount,
-                      maxPriceUsd: newTogetherPrice,
-                    })
+                    addTogetherDraft(newTogetherCount, newTogetherPrice)
                   }
                   disabled={editorSaving}
                   className="mt-2 inline-flex min-h-9 w-full items-center justify-center rounded-md border border-white/12 bg-black/35 px-2.5 text-xs font-semibold text-zinc-200 transition-colors hover:bg-white/[0.06] disabled:opacity-55"
                 >
-                  Add / replace together rule
+                  Add together rule
                 </button>
                 <p className="mt-2 text-xs leading-relaxed text-zinc-500">
                   Prices are in USD. These rules apply only when that many tickets are together.

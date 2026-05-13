@@ -36,7 +36,7 @@ const ruleSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("TOGETHER_UNDER_PRICE"),
-    togetherCount: z.number().int().min(2).max(6),
+    togetherCount: z.number().int().min(1).max(10),
     maxPriceUsd: moneySchema,
   }),
 ]);

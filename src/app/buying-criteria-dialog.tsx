@@ -8,7 +8,7 @@ import {
   type BuyingCriteriaRuleInput,
   type BuyingCriteriaRuleRow,
 } from "@/app/actions/buying-criteria-rules";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
 type EventStub = {
   id: number;
@@ -37,6 +37,17 @@ function formatUsdFromCents(cents: number | null): string {
   return whole ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`;
 }
 
+function formatUsdFromInput(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const withoutDollar = trimmed.startsWith("$") ? trimmed.slice(1) : trimmed;
+  const norm = withoutDollar.replaceAll(",", "").trim();
+  if (!norm) return null;
+  const n = Number(norm);
+  if (!Number.isFinite(n)) return `$${norm}`;
+  return Number.isInteger(n) ? `$${n.toFixed(0)}` : `$${n.toFixed(2)}`;
+}
+
 function usdInputFromCents(cents: number | null): string {
   if (cents === null) return "";
   const whole = cents % 100 === 0;
@@ -44,7 +55,7 @@ function usdInputFromCents(cents: number | null): string {
   return whole ? v.toFixed(0) : v.toFixed(2);
 }
 
-function summarizeRules(rules: BuyingCriteriaRuleRow[]): string {
+function summarizeRules(rules: BuyingCriteriaRuleRow[]): ReactNode {
   if (!rules.length) return "—";
   const parts = rules
     .slice()
@@ -59,12 +70,28 @@ function summarizeRules(rules: BuyingCriteriaRuleRow[]): string {
     })
     .map((r) => {
       const price = formatUsdFromCents(r.maxPriceUsdCents);
-      if (r.kind === "QTY_UNDER_PRICE") return `Qty≥${r.minQty ?? "?"} ≤${price}`;
+      if (r.kind === "QTY_UNDER_PRICE")
+        return (
+          <span key={`qty-${r.id}`} className="whitespace-nowrap">
+            Qty≥{r.minQty ?? "?"} ≤{" "}
+            <span className="font-bold tabular-nums text-[color:var(--ticketing-accent)]">{price}</span>
+          </span>
+        );
       const t = r.togetherCount ?? 0;
-      const label = t === 6 ? "6+T" : `${t}T`;
-      return `${label} ≤${price}`;
+      return (
+        <span key={`tog-${r.id}`} className="whitespace-nowrap">
+          {t} together ≤{" "}
+          <span className="font-bold tabular-nums text-[color:var(--ticketing-accent)]">{price}</span>
+        </span>
+      );
     });
-  return parts.join("; ");
+
+  const interleaved: ReactNode[] = [];
+  for (let i = 0; i < parts.length; i += 1) {
+    if (i) interleaved.push("; ");
+    interleaved.push(parts[i]);
+  }
+  return <>{interleaved}</>;
 }
 
 type BuyingCriteriaDialogProps = {
@@ -352,13 +379,7 @@ export function BuyingCriteriaDialog({
   const addTogetherRule = () => {
     setEditorError(null);
     setDraftRules((prev) => {
-      const filtered = prev.filter(
-        (r) => !(r.kind === "TOGETHER_UNDER_PRICE" && r.togetherCount === newTogetherCount),
-      );
-      return [
-        ...filtered,
-        { kind: "TOGETHER_UNDER_PRICE", togetherCount: newTogetherCount, maxPriceUsd: newTogetherPrice },
-      ];
+      return [...prev, { kind: "TOGETHER_UNDER_PRICE", togetherCount: newTogetherCount, maxPriceUsd: newTogetherPrice }];
     });
   };
 
@@ -397,11 +418,21 @@ export function BuyingCriteriaDialog({
     setEditor(null);
   };
 
-  const summarizeDraftRule = (r: BuyingCriteriaRuleInput): string => {
-    const price = r.maxPriceUsd.trim() ? `$${r.maxPriceUsd.trim()}` : "—";
-    if (r.kind === "QTY_UNDER_PRICE") return `Qty≥${r.minQty} ≤${price}`;
-    const label = r.togetherCount === 6 ? "6+T" : `${r.togetherCount}T`;
-    return `${label} ≤${price}`;
+  const summarizeDraftRule = (r: BuyingCriteriaRuleInput): ReactNode => {
+    const price = formatUsdFromInput(r.maxPriceUsd) ?? "—";
+    if (r.kind === "QTY_UNDER_PRICE") {
+      return (
+        <>
+          Qty≥{r.minQty} ≤ <span className="font-bold tabular-nums text-[color:var(--ticketing-accent)]">{price}</span>
+        </>
+      );
+    }
+    return (
+      <>
+        {r.togetherCount} together ≤{" "}
+        <span className="font-bold tabular-nums text-[color:var(--ticketing-accent)]">{price}</span>
+      </>
+    );
   };
 
   return (
@@ -827,11 +858,16 @@ export function BuyingCriteriaDialog({
                               onChange={(e) => setNewTogetherCount(Number(e.target.value))}
                               className={inp}
                             >
+                              <option value={1}>1 together</option>
                               <option value={2}>2 together</option>
                               <option value={3}>3 together</option>
                               <option value={4}>4 together</option>
                               <option value={5}>5 together</option>
-                              <option value={6}>6+ together</option>
+                              <option value={6}>6 together</option>
+                              <option value={7}>7 together</option>
+                              <option value={8}>8 together</option>
+                              <option value={9}>9 together</option>
+                              <option value={10}>10 together</option>
                             </select>
                           </div>
                           <div>
@@ -851,7 +887,7 @@ export function BuyingCriteriaDialog({
                           disabled={editorSaving}
                           className="mt-2 inline-flex min-h-9 w-full items-center justify-center rounded-md border border-white/12 bg-black/35 px-2.5 text-xs font-semibold text-zinc-200 transition-colors hover:bg-white/[0.06] disabled:opacity-50"
                         >
-                          Add / replace together rule
+                          Add together rule
                         </button>
                       </div>
                     </div>
