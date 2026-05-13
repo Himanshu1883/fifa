@@ -107,6 +107,9 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
 
   const [query, setQuery] = useState("");
+  const [visibleEventIds, setVisibleEventIds] = useState<number[]>([]);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addQuery, setAddQuery] = useState("");
   const [cat3FrontRowByEventId, setCat3FrontRowByEventId] = useState<Record<number, boolean>>({});
   const [frontRowSavingByEventId, setFrontRowSavingByEventId] = useState<Record<number, boolean>>({});
 
@@ -125,13 +128,58 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
 
   const searchId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
+  const addSearchId = useId();
+  const addSearchRef = useRef<HTMLInputElement>(null);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
   const eventsById = useMemo(() => new Map(events.map((e) => [e.id, e])), [events]);
+
+  const hasCriteriaByEventId = useMemo(() => {
+    const next: Record<number, boolean> = {};
+    for (const e of events) next[e.id] = false;
+
+    for (const e of events) {
+      if (cat3FrontRowByEventId[e.id]) next[e.id] = true;
+    }
+
+    for (const [eventIdRaw, perCat] of Object.entries(rulesByEventId)) {
+      const eventId = Number(eventIdRaw);
+      if (!Number.isFinite(eventId)) continue;
+      if (!perCat) continue;
+      if (
+        (perCat[1]?.length ?? 0) > 0 ||
+        (perCat[2]?.length ?? 0) > 0 ||
+        (perCat[3]?.length ?? 0) > 0 ||
+        (perCat[4]?.length ?? 0) > 0
+      ) {
+        next[eventId] = true;
+      }
+    }
+
+    return next;
+  }, [events, cat3FrontRowByEventId, rulesByEventId]);
+
+  const visibleEvents = useMemo(() => {
+    const set = new Set(visibleEventIds);
+    return events.filter((e) => set.has(e.id));
+  }, [events, visibleEventIds]);
 
   const filteredEvents = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return events;
-    return events.filter((e) => `${e.matchLabel} ${e.name}`.toLowerCase().includes(q));
-  }, [events, query]);
+    if (!q) return visibleEvents;
+    return visibleEvents.filter((e) => `${e.matchLabel} ${e.name}`.toLowerCase().includes(q));
+  }, [visibleEvents, query]);
+
+  const missingEvents = useMemo(() => {
+    if (loading) return [];
+    const visibleSet = new Set(visibleEventIds);
+    return events.filter((e) => !(hasCriteriaByEventId[e.id] ?? false) && !visibleSet.has(e.id));
+  }, [events, hasCriteriaByEventId, visibleEventIds, loading]);
+
+  const filteredMissingEvents = useMemo(() => {
+    const q = addQuery.trim().toLowerCase();
+    if (!q) return missingEvents;
+    return missingEvents.filter((e) => `${e.matchLabel} ${e.name}`.toLowerCase().includes(q));
+  }, [missingEvents, addQuery]);
 
   const initState = (eventIds: number[]) => {
     const frontBase: Record<number, boolean> = {};
@@ -153,6 +201,8 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
     const eventIds = events.map((e) => e.id);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset local drafts when the events list changes
     initState(eventIds);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset visible list when the events list changes
+    setVisibleEventIds([]);
 
     let cancelled = false;
     setLoading(true);
@@ -165,6 +215,13 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
       ]);
       if (cancelled) return;
       setLoading(false);
+
+      const seededHas: Record<number, boolean> = {};
+      for (const id of eventIds) seededHas[id] = false;
+      if (frontRes.ok) for (const row of frontRes.rows) if (row.cat3FrontRow) seededHas[row.eventId] = true;
+      if (rulesRes.ok) for (const rule of rulesRes.rules) seededHas[rule.eventId] = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- seed visible events based on fetched buying criteria
+      setVisibleEventIds(events.filter((e) => seededHas[e.id]).map((e) => e.id));
 
       if (!frontRes.ok) setError(frontRes.error);
       if (frontRes.ok) {
@@ -215,6 +272,20 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
     searchRef.current?.focus();
   }, []);
 
+  useEffect(() => {
+    if (!addOpen) return;
+    addSearchRef.current?.focus();
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (editorSaving || saving) return;
+      setAddOpen(false);
+      queueMicrotask(() => addButtonRef.current?.focus());
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [addOpen, editor, editorSaving, saving]);
+
   const markDirty = (key: string) => {
     if (!dirtyQtyKeysRef.current.has(key)) {
       dirtyQtyKeysRef.current.add(key);
@@ -246,6 +317,25 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
   const clearSearch = () => {
     setQuery("");
     searchRef.current?.focus();
+  };
+
+  const clearAddSearch = () => {
+    setAddQuery("");
+    addSearchRef.current?.focus();
+  };
+
+  const openAddModal = () => {
+    if (loading || editor || editorSaving || saving) return;
+    setAddQuery("");
+    setAddOpen(true);
+  };
+
+  const selectMissingEvent = (eventId: number) => {
+    setVisibleEventIds((prev) => (prev.includes(eventId) ? prev : [...prev, eventId]));
+    setQuery("");
+    setNote("Event added (not saved yet).");
+    setAddOpen(false);
+    queueMicrotask(() => addButtonRef.current?.focus());
   };
 
   const clearAllQtyDrafts = () => {
@@ -539,6 +629,15 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
 
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           <button
+            ref={addButtonRef}
+            type="button"
+            onClick={() => openAddModal()}
+            disabled={addOpen || loading || saving || !!editor || editorSaving || missingEvents.length === 0}
+            className="inline-flex min-h-10 items-center justify-center rounded-lg border border-white/12 bg-white/[0.06] px-4 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/25 transition-colors hover:bg-white/[0.10] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] disabled:opacity-55"
+          >
+            Add buying criteria
+          </button>
+          <button
             type="button"
             onClick={() => void saveDirtyQty()}
             disabled={saving || loading || dirtyCount === 0}
@@ -598,6 +697,21 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
         <p className="rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3 py-2 text-sm text-zinc-100">
           {note}
         </p>
+      ) : null}
+
+      {!loading && visibleEvents.length === 0 ? (
+        <div className="rounded-2xl border border-white/[0.08] bg-black/20 p-6 text-center ring-1 ring-white/[0.04]">
+          <p className="text-sm font-semibold text-zinc-100">No buying criteria yet</p>
+          <p className="mt-1 text-sm text-zinc-500">Add an event to start setting Qty/Max $ and Together rules.</p>
+          <button
+            type="button"
+            onClick={() => openAddModal()}
+            disabled={loading || saving || editorSaving || missingEvents.length === 0}
+            className="mt-4 inline-flex min-h-10 items-center justify-center rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_52%,transparent)] bg-[color:var(--ticketing-accent)] px-4 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter] hover:brightness-[1.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] disabled:opacity-55"
+          >
+            Add buying criteria
+          </button>
+        </div>
       ) : null}
 
       <div className="sm:hidden">
@@ -851,6 +965,107 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
                   Prices are in USD. These rules apply only when that many tickets are together.
                 </p>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {addOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-b from-black/70 via-black/55 to-black/70 p-4 backdrop-blur-md"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !editorSaving && !saving) {
+              setAddOpen(false);
+              queueMicrotask(() => addButtonRef.current?.focus());
+            }
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Add buying criteria"
+            className="w-full max-w-[44rem] overflow-hidden rounded-2xl border border-white/[0.10] bg-[color:color-mix(in_oklab,var(--ticketing-surface)_96%,transparent)] shadow-2xl shadow-black/60 ring-1 ring-white/[0.05]"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-white/[0.06] px-5 py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-semibold text-zinc-100">Add buying criteria</h2>
+                  <p className="mt-1 text-xs text-zinc-500">Pick an event that currently has no criteria.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddOpen(false);
+                    queueMicrotask(() => addButtonRef.current?.focus());
+                  }}
+                  disabled={saving || editorSaving}
+                  className="rounded-lg border border-white/12 bg-transparent px-3 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/[0.06] disabled:opacity-55"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <label htmlFor={addSearchId} className="sr-only">
+                    Search missing events
+                  </label>
+                  <input
+                    ref={addSearchRef}
+                    id={addSearchId}
+                    value={addQuery}
+                    onChange={(e) => setAddQuery(e.target.value)}
+                    placeholder="Search missing events…"
+                    autoComplete="off"
+                    className={`${inp} max-w-xl`}
+                  />
+                  {addQuery.trim() ? (
+                    <button
+                      type="button"
+                      onClick={() => clearAddSearch()}
+                      className="rounded-md border border-white/12 bg-black/35 px-3 py-2 text-xs font-semibold text-zinc-200 transition-colors hover:bg-white/[0.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_48%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                    >
+                      Clear search
+                    </button>
+                  ) : null}
+                </div>
+                <p className="text-[11px] text-zinc-500">
+                  Showing <span className="font-semibold text-zinc-200">{filteredMissingEvents.length}</span> /{" "}
+                  <span className="font-semibold text-zinc-200">{missingEvents.length}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="px-5 pb-5 pt-4">
+              {missingEvents.length === 0 ? (
+                <p className="text-sm text-zinc-500">All events already have buying criteria.</p>
+              ) : filteredMissingEvents.length === 0 ? (
+                <p className="text-sm text-zinc-500">No matches.</p>
+              ) : (
+                <ul className="max-h-[min(60vh,28rem)] space-y-2 overflow-auto overscroll-contain pr-1">
+                  {filteredMissingEvents.map((e) => (
+                    <li key={e.id}>
+                      <button
+                        type="button"
+                        onClick={() => selectMissingEvent(e.id)}
+                        className="flex w-full items-start justify-between gap-3 rounded-xl border border-white/[0.08] bg-black/20 px-4 py-3 text-left ring-1 ring-white/[0.04] transition-colors hover:bg-white/[0.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_48%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-mono text-[11px] font-semibold text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)]">
+                            {e.matchLabel}
+                          </div>
+                          <div className="mt-1 text-sm font-medium text-zinc-100">{e.name}</div>
+                        </div>
+                        <span className="shrink-0 rounded-md border border-white/12 bg-black/25 px-2.5 py-1.5 text-xs font-semibold text-zinc-200">
+                          Select
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
         </div>
