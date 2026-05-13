@@ -1,9 +1,11 @@
 "use server";
 
 import bcrypt from "bcryptjs";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AUTH_SECRET_SETUP_ROUTE } from "@/lib/auth-secret-docs";
 import { setSessionCookie, signSessionToken } from "@/lib/auth/session";
+import { clientInfoFromHeaders } from "@/lib/auth/client-info";
 import { prisma } from "@/lib/prisma";
 
 const USERNAME_MAX = 64;
@@ -55,14 +57,30 @@ export async function loginAction(
     return { error: "Invalid username or password." };
   }
 
+  const h = await headers();
+  const { ip, userAgent } = clientInfoFromHeaders(h);
+
   let token: string;
   try {
-    token = await signSessionToken(user.id, user.username);
+    token = await signSessionToken(user.id, user.username, {
+      approved: user.isApproved,
+      admin: user.isAdmin,
+    });
   } catch {
     return {
       error: `Could not create a session. Set AUTH_SECRET (32+ random characters), redeploy or restart dev, then try again. Setup: ${AUTH_SECRET_SETUP_ROUTE}`,
     };
   }
   await setSessionCookie(token);
-  redirect(nextPath ?? "/");
+
+  await prisma.userLoginAudit.create({
+    data: {
+      userId: user.id,
+      ip,
+      userAgent,
+      method: "PASSWORD",
+    },
+  });
+
+  redirect(user.isApproved ? (nextPath ?? "/") : "/pending-approval");
 }

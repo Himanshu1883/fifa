@@ -45,11 +45,24 @@ export function tryAuthSecretKeyBytes(): Uint8Array | null {
   return new TextEncoder().encode(secret);
 }
 
-export type SessionPayload = { sub: string; name: string };
+export type SessionPayload = {
+  sub: string;
+  name: string;
+  approved: boolean;
+  admin: boolean;
+};
 
-export async function signSessionToken(userId: number, username: string): Promise<string> {
+export async function signSessionToken(
+  userId: number,
+  username: string,
+  claims?: { approved?: boolean; admin?: boolean },
+): Promise<string> {
   const key = getAuthSecretKeyBytes();
-  return new SignJWT({ name: username })
+  return new SignJWT({
+    name: username,
+    approved: claims?.approved === true,
+    admin: claims?.admin === true,
+  })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(String(userId))
     .setIssuedAt()
@@ -67,8 +80,15 @@ export async function verifySessionToken(
     const { payload } = await jwtVerify(token, k, { algorithms: ["HS256"] });
     const sub = payload.sub;
     const name = payload.name;
+    const approved = payload.approved;
+    const admin = payload.admin;
     if (typeof sub !== "string" || typeof name !== "string") return null;
-    return { sub, name };
+    return {
+      sub,
+      name,
+      approved: approved === true,
+      admin: admin === true,
+    };
   } catch {
     return null;
   }

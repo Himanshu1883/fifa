@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 
+import { clientInfoFromHeaders } from "@/lib/auth/client-info";
 import { setSessionCookie, signSessionToken, tryAuthSecretKeyBytes } from "@/lib/auth/session";
 import { requireGoogleOAuthEnv } from "@/lib/auth/google-oauth-env";
 import { prisma } from "@/lib/prisma";
@@ -164,15 +165,29 @@ export async function GET(req: Request) {
     });
   }
 
+  const { ip, userAgent } = clientInfoFromHeaders(req.headers);
+
   let token: string;
   try {
-    token = await signSessionToken(user.id, user.username);
+    token = await signSessionToken(user.id, user.username, {
+      approved: user.isApproved,
+      admin: user.isAdmin,
+    });
   } catch {
     return redirectToLogin(req, { msg: "missing_auth_secret" });
   }
   await setSessionCookie(token);
 
-  const dest = cookieState.next ?? "/";
+  await prisma.userLoginAudit.create({
+    data: {
+      userId: user.id,
+      ip,
+      userAgent,
+      method: "GOOGLE",
+    },
+  });
+
+  const dest = user.isApproved ? (cookieState.next ?? "/") : "/pending-approval";
   return NextResponse.redirect(new URL(dest, origin));
 }
 

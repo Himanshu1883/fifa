@@ -31,11 +31,17 @@ function describeLoginMessage(raw: string | undefined): { kind: "info" | "error"
   const v = (raw ?? "").trim();
   if (!v) return null;
 
+  if (v === "signin_required") {
+    return { kind: "info", text: "Sign in to continue." };
+  }
   if (v === "gmail_signin_required") {
     return { kind: "info", text: "Sign in to continue to Gmail." };
   }
   if (v === "buying_criteria_signin_required") {
     return { kind: "info", text: "Sign in to view buying criteria." };
+  }
+  if (v === "pending_approval") {
+    return { kind: "info", text: "Your account is pending admin approval." };
   }
   if (v === "missing_auth_secret") {
     return { kind: "error", text: "AUTH_SECRET is missing or too short. Set it, redeploy/restart, then try again." };
@@ -72,7 +78,7 @@ export default async function LoginPage({ searchParams }: Props) {
   }
 
   if (session && tryAuthSecretKeyBytes()) {
-    redirect("/");
+    redirect(session.approved ? "/" : "/pending-approval");
   }
 
   const showAuthSecretMissing = tryAuthSecretKeyBytes() === null;

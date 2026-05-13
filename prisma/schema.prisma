@@ -17,9 +17,36 @@ model User {
   googleSub    String?  @unique @map("google_sub")
   googleEmail  String?  @map("google_email")
   createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  isAdmin      Boolean  @default(false) @map("is_admin")
+  isApproved   Boolean  @default(false) @map("is_approved")
+  approvedAt   DateTime? @map("approved_at")
+
   gmailAccounts GmailAccount[]
+  loginAudits   UserLoginAudit[]
 
   @@map("users")
+}
+
+enum AuthMethod {
+  PASSWORD
+  GOOGLE
+}
+
+model UserLoginAudit {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  ip        String?   @db.VarChar(64)
+  userAgent String?   @map("user_agent") @db.Text
+  method    AuthMethod
+
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("user_login_audits")
 }
 
 enum CataloguePriceSource {
