@@ -276,6 +276,7 @@ export function SockAvailablePanel(props: {
   const [filtersExpanded, setFiltersExpanded] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keep internal filter state in sync with prop changes
     setKind(initialKind);
   }, [initialKind]);
 

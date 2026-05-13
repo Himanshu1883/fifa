@@ -111,9 +111,9 @@ function milliDigitsToUsdDecimalString(milliDigits: string): string {
   // Upstream integer amounts are in thousandths of a USD (÷ 1000).
   // USD stores to cents; round half-up at the cent (10 mills = 1 cent).
   const mills = BigInt(digits);
-  const centsTotal = (mills + 5n) / 10n;
-  const dollars = centsTotal / 100n;
-  const cents = centsTotal % 100n;
+  const centsTotal = (mills + BigInt(5)) / BigInt(10);
+  const dollars = centsTotal / BigInt(100);
+  const cents = centsTotal % BigInt(100);
   return `${dollars.toString()}.${cents.toString().padStart(2, "0")}`;
 }
 

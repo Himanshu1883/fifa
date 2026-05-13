@@ -120,6 +120,7 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
 
   useEffect(() => {
     const eventIds = events.map((e) => e.id);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset local drafts when the events list changes
     initState(eventIds);
 
     let cancelled = false;
@@ -357,17 +358,21 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
     const qtyMax = normalizeMoneyInput(qtyDraft.maxPriceUsd);
 
     const rules: BuyingCriteriaRuleInput[] = [];
-    if (qtyMin !== "" || qtyMax !== "") {
-      const minQty = Number(qtyMin);
-      if (!Number.isFinite(minQty) || !Number.isInteger(minQty) || minQty <= 0) {
-        setEditorSaving(false);
-        setEditorError("Qty must be a positive whole number (or leave it blank).");
-        return;
-      }
-      if (qtyMax === "") {
-        setEditorSaving(false);
-        setEditorError("Max $ is required when Qty is set (or leave both blank).");
-        return;
+    if (qtyMin !== "" && qtyMax === "") {
+      setEditorSaving(false);
+      setEditorError("Max $ is required when Qty is set (or leave both blank).");
+      return;
+    }
+    if (qtyMax !== "") {
+      let minQty = 1;
+      if (qtyMin !== "") {
+        const parsed = Number(qtyMin);
+        if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
+          setEditorSaving(false);
+          setEditorError("Qty must be a positive whole number (or leave it blank).");
+          return;
+        }
+        minQty = parsed;
       }
       rules.push({ kind: "QTY_UNDER_PRICE", minQty, maxPriceUsd: qtyMax });
     }

@@ -317,11 +317,11 @@ export async function HomePage({
     });
 
     const eventIds = rows.map((r) => r.id);
-    const [{ sockAgg, sockAggByCategory }, categoryCounts, buyingCriteriaQtyRules] = await Promise.all([
+    const [{ sockAgg, sockAggByCategory }, categoryCounts, buyingCriteriaPriceLimitRules] = await Promise.all([
       getHomeSockAggregates(eventIds, sockKind),
       getHomeEventCategoryCounts(eventIds),
       prisma.eventBuyingCriteriaRule.findMany({
-        where: { eventId: { in: eventIds }, kind: "QTY_UNDER_PRICE", maxPriceUsdCents: { not: null } },
+        where: { eventId: { in: eventIds }, maxPriceUsdCents: { not: null } },
         select: { eventId: true, categoryNum: true, maxPriceUsdCents: true },
       }),
     ]);
@@ -332,7 +332,7 @@ export async function HomePage({
     }
 
     const limitByEventId = new Map<number, { 1: number | null; 2: number | null; 3: number | null; 4: number | null }>();
-    for (const r of buyingCriteriaQtyRules) {
+    for (const r of buyingCriteriaPriceLimitRules) {
       const cat = r.categoryNum;
       if (cat !== 1 && cat !== 2 && cat !== 3 && cat !== 4) continue;
       const cents = r.maxPriceUsdCents;

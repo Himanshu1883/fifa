@@ -192,8 +192,8 @@ export async function saveBuyingCriteriaQtyRulesBulkAction(
 
   try {
     const payload = items.map((it) => {
-      const hasBoth = it.minQty !== null && it.maxPriceUsd !== null && it.maxPriceUsd.trim() !== "";
-      if (!hasBoth) {
+      const hasPrice = it.maxPriceUsd !== null && it.maxPriceUsd.trim() !== "";
+      if (!hasPrice) {
         return {
           event_id: it.eventId,
           category_num: it.categoryNum,
@@ -243,8 +243,8 @@ dedup AS (
   SELECT DISTINCT ON (event_id, category_num)
     event_id, category_num, min_qty, max_price_usd_cents
   FROM input
-  WHERE min_qty IS NOT NULL AND max_price_usd_cents IS NOT NULL
-  ORDER BY event_id, category_num
+  WHERE max_price_usd_cents IS NOT NULL
+  ORDER BY event_id, category_num, max_price_usd_cents ASC, min_qty ASC NULLS LAST
 )
 INSERT INTO "event_buying_criteria_rules" (
   "event_id",
