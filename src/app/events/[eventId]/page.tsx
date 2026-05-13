@@ -125,6 +125,14 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
     redirect(`/events/${canonical}${suffix}`);
   }
 
+  // Default to LAST_MINUTE when `kind` is missing.
+  if (!initialSockKind) {
+    const sp = new URLSearchParams();
+    if (panel !== "sock") sp.set("panel", panel);
+    sp.set("kind", "LAST_MINUTE");
+    redirect(`/events/${event.id}?${sp.toString()}`);
+  }
+
   const [seatListingsCount, sockAvailableCount, eventCategoryCount] = await Promise.all([
     prisma.eventSeatListing.count({ where: { eventId: event.id } }),
     prisma.sockAvailable.count({ where: { eventId: event.id } }),

@@ -643,7 +643,7 @@ export async function HomePage({
                                     {event.matchLabel}
                                   </span>
                                   <h3 className="min-w-0 text-base font-semibold leading-snug tracking-tight text-white">
-                                    <Link href={`/events/${event.id}`} className={eventNameLinkClass}>
+                                    <Link href={`/events/${event.id}?kind=LAST_MINUTE`} className={eventNameLinkClass}>
                                       {event.name}
                                     </Link>
                                   </h3>
@@ -869,7 +869,10 @@ export async function HomePage({
                                 </td>
                                 <td className="max-w-[16rem] px-3 py-3 align-middle sm:max-w-none sm:px-4">
                                   <div className="flex min-w-0 items-center gap-2">
-                                    <Link href={`/events/${event.id}`} className={`${eventNameLinkClass} min-w-0 truncate`}>
+                                    <Link
+                                      href={`/events/${event.id}?kind=LAST_MINUTE`}
+                                      className={`${eventNameLinkClass} min-w-0 truncate`}
+                                    >
                                       {event.name}
                                     </Link>
                                     <EditEventDialog event={event} venueOptions={venueOptions} />
