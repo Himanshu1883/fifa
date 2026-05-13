@@ -45,6 +45,10 @@ type HomeEventRow = {
   cat2: string | null;
   cat3: string | null;
   cat4: string | null;
+  cat1LimitUsdCents: number | null;
+  cat2LimitUsdCents: number | null;
+  cat3LimitUsdCents: number | null;
+  cat4LimitUsdCents: number | null;
   categoryCount: number;
   blockCount: number;
 };
@@ -60,6 +64,22 @@ function cellText(value: string | null | undefined): string {
 function cellUsdFromCentsString(value: string | null | undefined): string {
   const t = value?.trim();
   return t ? formatUsd(t) : "—";
+}
+
+function cellUsdWithLimitFromCentsString(
+  value: string | null | undefined,
+  limitUsdCents: number | null | undefined,
+): { label: string; withinLimit: boolean } {
+  const t = value?.trim();
+  if (!t) return { label: "—", withinLimit: false };
+  const priceLabel = formatUsd(t);
+  if (limitUsdCents == null) return { label: priceLabel, withinLimit: false };
+  const limitLabel = formatUsd(String(limitUsdCents));
+  const priceCents = priceToNumber(t);
+  return {
+    label: `${priceLabel}/${limitLabel}`,
+    withinLimit: Number.isFinite(priceCents) && priceCents <= limitUsdCents,
+  };
 }
 
 function distinctNonEmptyCaseInsensitive(values: Array<string | null | undefined>): string[] {
@@ -297,14 +317,30 @@ export async function HomePage({
     });
 
     const eventIds = rows.map((r) => r.id);
-    const [{ sockAgg, sockAggByCategory }, categoryCounts] = await Promise.all([
+    const [{ sockAgg, sockAggByCategory }, categoryCounts, buyingCriteriaQtyRules] = await Promise.all([
       getHomeSockAggregates(eventIds, sockKind),
       getHomeEventCategoryCounts(eventIds),
+      prisma.eventBuyingCriteriaRule.findMany({
+        where: { eventId: { in: eventIds }, kind: "QTY_UNDER_PRICE", maxPriceUsdCents: { not: null } },
+        select: { eventId: true, categoryNum: true, maxPriceUsdCents: true },
+      }),
     ]);
 
     const countsByEventId = new Map<number, { categoryCount: number; blockCount: number }>();
     for (const r of categoryCounts) {
       countsByEventId.set(r.eventId, { categoryCount: r.categoryCount, blockCount: r.blockCount });
+    }
+
+    const limitByEventId = new Map<number, { 1: number | null; 2: number | null; 3: number | null; 4: number | null }>();
+    for (const r of buyingCriteriaQtyRules) {
+      const cat = r.categoryNum;
+      if (cat !== 1 && cat !== 2 && cat !== 3 && cat !== 4) continue;
+      const cents = r.maxPriceUsdCents;
+      if (cents == null) continue;
+      const prev = limitByEventId.get(r.eventId) ?? { 1: null, 2: null, 3: null, 4: null };
+      const existing = prev[cat];
+      prev[cat] = existing == null ? cents : Math.min(existing, cents);
+      limitByEventId.set(r.eventId, prev);
     }
 
     const byEvent = new Map<number, { ticketsCount: number; lowestPriceCents: string | null }>();
@@ -341,6 +377,7 @@ export async function HomePage({
       const agg = byEvent.get(e.id);
       const counts = countsByEventId.get(e.id);
       const cats = catMinByEvent.get(e.id);
+      const limits = limitByEventId.get(e.id);
       return {
         ...e,
         matchNum: parseEventMatchNumber(e.matchLabel, e.name),
@@ -350,6 +387,10 @@ export async function HomePage({
         cat2: cats?.cat2 ?? null,
         cat3: cats?.cat3 ?? null,
         cat4: cats?.cat4 ?? null,
+        cat1LimitUsdCents: limits?.[1] ?? null,
+        cat2LimitUsdCents: limits?.[2] ?? null,
+        cat3LimitUsdCents: limits?.[3] ?? null,
+        cat4LimitUsdCents: limits?.[4] ?? null,
         categoryCount: counts?.categoryCount ?? 0,
         blockCount: counts?.blockCount ?? 0,
       };
@@ -658,33 +699,81 @@ export async function HomePage({
                                 <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                                   Cat1
                                 </dt>
-                                <dd className="mt-0.5 font-bold tabular-nums text-[color:var(--ticketing-accent)]">
-                                  {cellUsdFromCentsString(event.cat1)}
-                                </dd>
+                                {(() => {
+                                  const { label, withinLimit } = cellUsdWithLimitFromCentsString(
+                                    event.cat1,
+                                    event.cat1LimitUsdCents,
+                                  );
+                                  return (
+                                    <dd
+                                      className={`mt-0.5 font-bold tabular-nums ${
+                                        withinLimit ? "font-extrabold text-emerald-400" : "text-[color:var(--ticketing-accent)]"
+                                      }`}
+                                    >
+                                      {label}
+                                    </dd>
+                                  );
+                                })()}
                               </div>
                               <div>
                                 <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                                   Cat2
                                 </dt>
-                                <dd className="mt-0.5 font-bold tabular-nums text-[color:var(--ticketing-accent)]">
-                                  {cellUsdFromCentsString(event.cat2)}
-                                </dd>
+                                {(() => {
+                                  const { label, withinLimit } = cellUsdWithLimitFromCentsString(
+                                    event.cat2,
+                                    event.cat2LimitUsdCents,
+                                  );
+                                  return (
+                                    <dd
+                                      className={`mt-0.5 font-bold tabular-nums ${
+                                        withinLimit ? "font-extrabold text-emerald-400" : "text-[color:var(--ticketing-accent)]"
+                                      }`}
+                                    >
+                                      {label}
+                                    </dd>
+                                  );
+                                })()}
                               </div>
                               <div>
                                 <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                                   Cat3
                                 </dt>
-                                <dd className="mt-0.5 font-bold tabular-nums text-[color:var(--ticketing-accent)]">
-                                  {cellUsdFromCentsString(event.cat3)}
-                                </dd>
+                                {(() => {
+                                  const { label, withinLimit } = cellUsdWithLimitFromCentsString(
+                                    event.cat3,
+                                    event.cat3LimitUsdCents,
+                                  );
+                                  return (
+                                    <dd
+                                      className={`mt-0.5 font-bold tabular-nums ${
+                                        withinLimit ? "font-extrabold text-emerald-400" : "text-[color:var(--ticketing-accent)]"
+                                      }`}
+                                    >
+                                      {label}
+                                    </dd>
+                                  );
+                                })()}
                               </div>
                               <div className="col-span-2 sm:col-span-1">
                                 <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                                   Cat4
                                 </dt>
-                                <dd className="mt-0.5 font-bold tabular-nums text-[color:var(--ticketing-accent)]">
-                                  {cellUsdFromCentsString(event.cat4)}
-                                </dd>
+                                {(() => {
+                                  const { label, withinLimit } = cellUsdWithLimitFromCentsString(
+                                    event.cat4,
+                                    event.cat4LimitUsdCents,
+                                  );
+                                  return (
+                                    <dd
+                                      className={`mt-0.5 font-bold tabular-nums ${
+                                        withinLimit ? "font-extrabold text-emerald-400" : "text-[color:var(--ticketing-accent)]"
+                                      }`}
+                                    >
+                                      {label}
+                                    </dd>
+                                  );
+                                })()}
                               </div>
                             </dl>
 
@@ -808,18 +897,66 @@ export async function HomePage({
                                 <td className="max-w-[10rem] px-3 py-3 align-middle text-zinc-300 sm:px-4">
                                   {cellText(event.country)}
                                 </td>
-                                <td className="max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums text-[color:var(--ticketing-accent)] sm:px-4">
-                                  {cellUsdFromCentsString(event.cat1)}
-                                </td>
-                                <td className="max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums text-[color:var(--ticketing-accent)] sm:px-4">
-                                  {cellUsdFromCentsString(event.cat2)}
-                                </td>
-                                <td className="max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums text-[color:var(--ticketing-accent)] sm:px-4">
-                                  {cellUsdFromCentsString(event.cat3)}
-                                </td>
-                                <td className="max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums text-[color:var(--ticketing-accent)] sm:px-4">
-                                  {cellUsdFromCentsString(event.cat4)}
-                                </td>
+                                {(() => {
+                                  const { label, withinLimit } = cellUsdWithLimitFromCentsString(
+                                    event.cat1,
+                                    event.cat1LimitUsdCents,
+                                  );
+                                  return (
+                                    <td
+                                      className={`max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums sm:px-4 ${
+                                        withinLimit ? "font-extrabold text-emerald-400" : "text-[color:var(--ticketing-accent)]"
+                                      }`}
+                                    >
+                                      {label}
+                                    </td>
+                                  );
+                                })()}
+                                {(() => {
+                                  const { label, withinLimit } = cellUsdWithLimitFromCentsString(
+                                    event.cat2,
+                                    event.cat2LimitUsdCents,
+                                  );
+                                  return (
+                                    <td
+                                      className={`max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums sm:px-4 ${
+                                        withinLimit ? "font-extrabold text-emerald-400" : "text-[color:var(--ticketing-accent)]"
+                                      }`}
+                                    >
+                                      {label}
+                                    </td>
+                                  );
+                                })()}
+                                {(() => {
+                                  const { label, withinLimit } = cellUsdWithLimitFromCentsString(
+                                    event.cat3,
+                                    event.cat3LimitUsdCents,
+                                  );
+                                  return (
+                                    <td
+                                      className={`max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums sm:px-4 ${
+                                        withinLimit ? "font-extrabold text-emerald-400" : "text-[color:var(--ticketing-accent)]"
+                                      }`}
+                                    >
+                                      {label}
+                                    </td>
+                                  );
+                                })()}
+                                {(() => {
+                                  const { label, withinLimit } = cellUsdWithLimitFromCentsString(
+                                    event.cat4,
+                                    event.cat4LimitUsdCents,
+                                  );
+                                  return (
+                                    <td
+                                      className={`max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums sm:px-4 ${
+                                        withinLimit ? "font-extrabold text-emerald-400" : "text-[color:var(--ticketing-accent)]"
+                                      }`}
+                                    >
+                                      {label}
+                                    </td>
+                                  );
+                                })()}
                                 <HomeEventCategoryBlockCells
                                   eventId={event.id}
                                   eventName={event.name}
