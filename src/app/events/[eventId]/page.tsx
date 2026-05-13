@@ -133,10 +133,13 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
     redirect(`/events/${event.id}?${sp.toString()}`);
   }
 
-  const [seatListingsCount, sockAvailableCount, eventCategoryCount] = await Promise.all([
+  const [seatListingsCount, sockAvailableCount, eventCategoryCounts] = await Promise.all([
     prisma.eventSeatListing.count({ where: { eventId: event.id } }),
     prisma.sockAvailable.count({ where: { eventId: event.id } }),
-    prisma.eventCategory.count({ where: { eventId: event.id } }),
+    Promise.all([
+      prisma.eventCategory.groupBy({ by: ["categoryId"], where: { eventId: event.id } }),
+      prisma.eventCategory.count({ where: { eventId: event.id } }),
+    ]).then(([cats, rows]) => ({ distinctCategories: cats.length, catalogueRows: rows })),
   ]);
 
   const hasSeatListings = seatListingsCount > 0;
@@ -393,15 +396,18 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                       <p className="mt-0.5 text-[11px] text-zinc-500">rows loaded</p>
                     </div>
                   ) : null}
-                  <div className="rounded-xl border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3.5 py-3 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)]">
+                  <div
+                    className="rounded-xl border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3.5 py-3 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)]"
+                    title={`${eventCategoryCounts.catalogueRows.toLocaleString("en-US")} catalogue rows (category×block)`}
+                  >
                     <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,white_25%)]">
                       Categories
                     </p>
                     <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-50 sm:text-xl">
-                      {eventCategoryCount.toLocaleString("en-US")}
+                      {eventCategoryCounts.distinctCategories.toLocaleString("en-US")}
                     </p>
                     <p className="mt-0.5 text-[11px] text-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,white_25%)]">
-                      catalogue rows
+                      distinct categories
                     </p>
                   </div>
                   <div className="rounded-xl border border-white/[0.07] bg-black/25 px-3.5 py-3 ring-1 ring-white/[0.04]">
