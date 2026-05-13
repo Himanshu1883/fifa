@@ -12,7 +12,6 @@ import { EventPrefsEditCell } from "@/app/event-prefs-edit-cell";
 import { BoxofficeControlsClient } from "@/app/boxoffice-controls-client";
 import type { HomeImportantFilter, HomeSortKey } from "@/app/home-event-sort-controls";
 import { HomeEventSortControls } from "@/app/home-event-sort-controls";
-import { HomeEventCategoryBlockCells } from "@/app/home-event-category-block-cells";
 
 export type HomeSockKind = "RESALE" | "LAST_MINUTE";
 
@@ -771,14 +770,6 @@ export async function HomePage({
                               </div>
                             </dl>
 
-                            <HomeEventCategoryBlockCells
-                              eventId={event.id}
-                              eventName={event.name}
-                              categoryCount={event.categoryCount}
-                              blockCount={event.blockCount}
-                              layout="card"
-                            />
-
                             <div className="mt-4 border-t border-white/[0.06] pt-3">
                               <p className="sr-only">Preference IDs</p>
                               <EventPrefsEditCell
@@ -832,14 +823,6 @@ export async function HomePage({
                             </th>
                             <th scope="col" className="px-3 py-3.5 sm:px-4">
                               Cat4
-                            </th>
-                            <th
-                              scope="colgroup"
-                              colSpan={2}
-                              className="whitespace-nowrap px-3 py-3.5 text-right sm:px-4"
-                              title="Distinct category and block IDs from EventCategory catalogue rows — click the counts on each row to open the hierarchy dialog"
-                            >
-                              Categories · blocks
                             </th>
                             <th scope="col" className="whitespace-nowrap px-3 py-3.5 text-right sm:px-4">
                               Lowest price
@@ -954,12 +937,6 @@ export async function HomePage({
                                     </td>
                                   );
                                 })()}
-                                <HomeEventCategoryBlockCells
-                                  eventId={event.id}
-                                  eventName={event.name}
-                                  categoryCount={event.categoryCount}
-                                  blockCount={event.blockCount}
-                                />
                                 <td
                                   className="whitespace-nowrap px-3 py-3 text-right align-middle font-bold tabular-nums text-[color:var(--ticketing-accent)] sm:px-4"
                                   title={priceTitle}
@@ -988,8 +965,7 @@ export async function HomePage({
                     </div>
                     <footer className="border-t border-white/[0.06] px-4 py-3 text-xs leading-relaxed text-zinc-500 sm:px-5">
                       Lowest price uses the minimum sock_available amount (USD, amount/1000). Ticket counts are rows in
-                      sock_available. Categories and blocks are distinct IDs from catalogue rows — tap counts in each row
-                      for the hierarchy dialog.
+                      sock_available.
                     </footer>
                   </div>
                 </>
