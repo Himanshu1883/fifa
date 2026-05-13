@@ -136,10 +136,6 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
     const next: Record<number, boolean> = {};
     for (const e of events) next[e.id] = false;
 
-    for (const e of events) {
-      if (cat3FrontRowByEventId[e.id]) next[e.id] = true;
-    }
-
     for (const [eventIdRaw, perCat] of Object.entries(rulesByEventId)) {
       const eventId = Number(eventIdRaw);
       if (!Number.isFinite(eventId)) continue;
@@ -155,7 +151,7 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
     }
 
     return next;
-  }, [events, cat3FrontRowByEventId, rulesByEventId]);
+  }, [events, rulesByEventId]);
 
   const visibleEvents = useMemo(() => {
     const set = new Set(visibleEventIds);
@@ -217,7 +213,6 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
 
       const seededHas: Record<number, boolean> = {};
       for (const id of eventIds) seededHas[id] = false;
-      if (frontRes.ok) for (const row of frontRes.rows) if (row.cat3FrontRow) seededHas[row.eventId] = true;
       if (rulesRes.ok) for (const rule of rulesRes.rules) if (rule.maxPriceUsdCents != null) seededHas[rule.eventId] = true;
       // eslint-disable-next-line react-hooks/set-state-in-effect -- seed visible events based on fetched buying criteria
       setVisibleEventIds(events.filter((e) => seededHas[e.id]).map((e) => e.id));

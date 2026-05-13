@@ -55,10 +55,12 @@ export async function proxy(request: NextRequest) {
     return redirectToLogin(request, "signin_required");
   }
 
+  const adminOnly = path.startsWith("/admin") || path.startsWith("/settings");
+
   // If the session claims say "not approved/admin", do a secure DB check so
   // a newly-approved user doesn't have to log out/in just to refresh claims.
   // (We avoid DB hits on the common, already-approved path.)
-  if (!session.approved || (path.startsWith("/admin") && !session.admin)) {
+  if (!session.approved || (adminOnly && !session.admin)) {
     const userId = Number(session.sub);
     if (!Number.isInteger(userId) || userId <= 0) {
       return redirectToLogin(request, "signin_required");
@@ -81,7 +83,7 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    if (path.startsWith("/admin") && !isAdmin) {
+    if (adminOnly && !isAdmin) {
       const url = request.nextUrl.clone();
       url.pathname = "/";
       return NextResponse.redirect(url);

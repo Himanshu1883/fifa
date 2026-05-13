@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { headers } from "next/headers";
+import { requireAdminViewer } from "@/lib/auth/require-viewer";
 
 export const runtime = "nodejs";
 
@@ -54,6 +55,7 @@ function renderQueryParams(params: EndpointParam[]) {
 }
 
 export default async function SettingsPage() {
+  await requireAdminViewer();
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const proto = h.get("x-forwarded-proto") ?? "http";

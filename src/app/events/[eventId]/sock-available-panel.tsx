@@ -62,11 +62,45 @@ function amountRawToUsdNumber(amount: string | null): number {
   return n / 1000;
 }
 
+function compareAmountUsdNullsLast(
+  aAmount: string | null,
+  bAmount: string | null,
+  dir: "asc" | "desc",
+): number {
+  const av = amountRawToUsdNumber(aAmount);
+  const bv = amountRawToUsdNumber(bAmount);
+  const aOk = Number.isFinite(av);
+  const bOk = Number.isFinite(bv);
+  if (!aOk && !bOk) return 0;
+  if (!aOk) return 1;
+  if (!bOk) return -1;
+  if (av === bv) return 0;
+  return dir === "asc" ? (av < bv ? -1 : 1) : av < bv ? 1 : -1;
+}
+
 function formatTsCompact(ts: string): string {
   // "2026-05-11T18:22:33.123Z" -> "2026-05-11 18:22:33"
   if (!ts) return "—";
   const s = String(ts);
   return s.length >= 19 ? s.slice(0, 19).replace("T", " ") : s;
+}
+
+function formatAgeFromMs(ms: number, nowMs = Date.now()): string {
+  if (!Number.isFinite(ms)) return "—";
+  const diff = nowMs - ms;
+  if (!Number.isFinite(diff)) return "—";
+  if (diff < 60_000) return "just now";
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(diff / (60 * 60_000));
+  if (hrs < 24) return `${hrs} hr${hrs === 1 ? "" : "s"} ago`;
+  const days = Math.floor(diff / (24 * 60 * 60_000));
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+function formatAgeFromIso(iso: string): string {
+  const ms = Date.parse(iso);
+  return formatAgeFromMs(ms);
 }
 
 function parseStrictInt(s: string): number | null {
@@ -271,7 +305,7 @@ export function SockAvailablePanel(props: {
   const [maxUsd, setMaxUsd] = useState<string>("");
   const [createdFrom, setCreatedFrom] = useState<string>("");
   const [createdTo, setCreatedTo] = useState<string>("");
-  const [sortKey, setSortKey] = useState<SortKey>("created_desc");
+  const [sortKey, setSortKey] = useState<SortKey>("amount_asc");
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
 
@@ -428,10 +462,10 @@ export function SockAvailablePanel(props: {
           break;
         }
         case "amount_desc":
-          cmp = amountRawToUsdNumber(b.amount) - amountRawToUsdNumber(a.amount);
+          cmp = compareAmountUsdNullsLast(a.amount, b.amount, "desc");
           break;
         case "amount_asc":
-          cmp = amountRawToUsdNumber(a.amount) - amountRawToUsdNumber(b.amount);
+          cmp = compareAmountUsdNullsLast(a.amount, b.amount, "asc");
           break;
         case "area_asc":
           cmp = norm(a.areaName).localeCompare(norm(b.areaName));
@@ -478,10 +512,10 @@ export function SockAvailablePanel(props: {
           cmp = Date.parse(a.updatedAt) - Date.parse(b.updatedAt);
           break;
         case "amount_desc":
-          cmp = amountRawToUsdNumber(b.amount) - amountRawToUsdNumber(a.amount);
+          cmp = compareAmountUsdNullsLast(a.amount, b.amount, "desc");
           break;
         case "amount_asc":
-          cmp = amountRawToUsdNumber(a.amount) - amountRawToUsdNumber(b.amount);
+          cmp = compareAmountUsdNullsLast(a.amount, b.amount, "asc");
           break;
         case "area_asc":
           cmp = norm(a.areaName).localeCompare(norm(b.areaName));
@@ -534,7 +568,7 @@ export function SockAvailablePanel(props: {
       maxUsd ||
       createdFrom ||
       createdTo ||
-      sortKey !== "created_desc",
+      sortKey !== "amount_asc",
   );
 
   return (
@@ -750,7 +784,7 @@ export function SockAvailablePanel(props: {
                     setMaxUsd("");
                     setCreatedFrom("");
                     setCreatedTo("");
-                    setSortKey("created_desc");
+                    setSortKey("amount_asc");
                     setShowMoreFilters(false);
                     setFiltersExpanded(false);
                   }}
@@ -1159,7 +1193,7 @@ export function SockAvailablePanel(props: {
                           setMaxUsd("");
                           setCreatedFrom("");
                           setCreatedTo("");
-                          setSortKey("created_desc");
+                          setSortKey("amount_asc");
                           setShowMoreFilters(false);
                           setFiltersExpanded(false);
                           setMobileFiltersOpen(false);
@@ -1204,7 +1238,6 @@ export function SockAvailablePanel(props: {
                         <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Category ID</th>
                         <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Area ID</th>
                         <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Block ID</th>
-                        <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Created</th>
                         <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Updated</th>
                         <th scope="col" className="px-4 py-3 pr-5 text-right font-medium text-zinc-400 sm:pr-6">Info</th>
                       </tr>
@@ -1237,11 +1270,8 @@ export function SockAvailablePanel(props: {
                           <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.categoryId}</td>
                           <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.areaId}</td>
                           <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums text-zinc-400">{r.blockId}</td>
-                          <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500" title={r.createdAt}>
-                            {formatTsCompact(r.createdAt)}
-                          </td>
                           <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500" title={r.updatedAt}>
-                            {formatTsCompact(r.updatedAt)}
+                            {formatAgeFromIso(r.updatedAt)}
                           </td>
                           <td className="whitespace-nowrap px-4 py-3 pr-5 text-right sm:pr-6">
                             <button
@@ -1281,9 +1311,6 @@ export function SockAvailablePanel(props: {
                       </th>
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
                         Amount
-                      </th>
-                      <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
-                        Created
                       </th>
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
                         Updated
@@ -1329,15 +1356,9 @@ export function SockAvailablePanel(props: {
                         </td>
                         <td
                           className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500"
-                          title={Number.isFinite(g.createdAtMaxMs) ? new Date(g.createdAtMaxMs).toISOString() : undefined}
-                        >
-                          {Number.isFinite(g.createdAtMaxMs) ? formatTsCompact(new Date(g.createdAtMaxMs).toISOString()) : "—"}
-                        </td>
-                        <td
-                          className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500"
                           title={Number.isFinite(g.updatedAtMaxMs) ? new Date(g.updatedAtMaxMs).toISOString() : undefined}
                         >
-                          {Number.isFinite(g.updatedAtMaxMs) ? formatTsCompact(new Date(g.updatedAtMaxMs).toISOString()) : "—"}
+                          {Number.isFinite(g.updatedAtMaxMs) ? formatAgeFromMs(g.updatedAtMaxMs) : "—"}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 pr-5 text-right sm:pr-6">
                           <button
@@ -1471,13 +1492,9 @@ export function SockAvailablePanel(props: {
               </div>
 
               <div className="text-[11px] text-zinc-500">
-                Created{" "}
-                <span className="font-mono text-zinc-300" title={openGroup.seats[0]?.createdAt}>
-                  {formatTsCompact(openGroup.seats[0]?.createdAt ?? "")}
-                </span>{" "}
-                · Updated{" "}
+                Updated{" "}
                 <span className="font-mono text-zinc-300" title={openGroup.seats[0]?.updatedAt}>
-                  {formatTsCompact(openGroup.seats[0]?.updatedAt ?? "")}
+                  {formatAgeFromIso(openGroup.seats[0]?.updatedAt ?? "")}
                 </span>
               </div>
             </div>

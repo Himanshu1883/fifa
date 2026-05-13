@@ -489,12 +489,6 @@ export async function HomePage({
                 >
                   Gmail
                 </Link>
-                <Link
-                  href="/settings"
-                  className="rounded-md bg-white/[0.08] px-3 py-1.5 text-xs font-medium text-zinc-200 ring-1 ring-white/10 hover:bg-white/[0.12]"
-                >
-                  Settings
-                </Link>
               </div>
               {showBoxofficeControls ? <BoxofficeControlsClient port={boxofficePort} /> : null}
             </div>
