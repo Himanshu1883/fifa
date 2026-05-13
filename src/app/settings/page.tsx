@@ -40,7 +40,7 @@ function renderQueryParams(params: EndpointParam[]) {
           </code>
           <span
             className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${
-              p.required ? "text-amber-200/90" : "text-zinc-500"
+              p.required ? "text-[color:color-mix(in_oklab,var(--ticketing-accent)_78%,white_18%)]" : "text-zinc-500"
             }`}
           >
             {p.required ? "required" : "optional"}

@@ -42,24 +42,30 @@ export function LoginForm({
         </p>
       ) : null}
       {showAuthSecretMissing ? (
-        <p className="rounded-lg border border-amber-500/30 bg-amber-950/40 px-4 py-3 text-sm text-amber-200" role="alert">
+        <p
+          className="rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_12%,transparent)] px-4 py-3 text-sm text-[color:color-mix(in_oklab,var(--ticketing-accent)_78%,white_18%)]"
+          role="alert"
+        >
           Set <span className="font-mono">AUTH_SECRET</span> to a random string (32+ characters), then
           redeploy (Vercel) or restart <span className="font-mono">npm run dev</span> (local).{" "}
           <Link
             href={AUTH_SECRET_SETUP_ROUTE}
-            className="font-medium text-amber-100 underline decoration-amber-500/50 underline-offset-2 hover:text-white"
+            className="font-medium text-[color:color-mix(in_oklab,var(--ticketing-accent)_86%,white_14%)] underline decoration-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] underline-offset-2 hover:text-white"
           >
             Open setup steps
           </Link>
-          <span className="text-amber-200/80"> — also </span>
-          <span className="font-mono text-amber-100/90">DEPLOY.md</span>
-          <span className="text-amber-200/80"> in the repo.</span>
+          <span className="text-[color:color-mix(in_oklab,var(--ticketing-accent)_62%,transparent)]"> — also </span>
+          <span className="font-mono text-[color:color-mix(in_oklab,var(--ticketing-accent)_86%,white_14%)]">DEPLOY.md</span>
+          <span className="text-[color:color-mix(in_oklab,var(--ticketing-accent)_62%,transparent)]"> in the repo.</span>
           {showDevInsecureAuthHint ? (
             <>
               {" "}
-              <span className="block pt-2 text-amber-200/90">
+              <span className="block pt-2 text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_18%)]">
                 Local-only fallback: set{" "}
-                <span className="font-mono text-amber-100/90">ALLOW_INSECURE_DEV_AUTH=1</span> to use a
+                <span className="font-mono text-[color:color-mix(in_oklab,var(--ticketing-accent)_86%,white_14%)]">
+                  ALLOW_INSECURE_DEV_AUTH=1
+                </span>{" "}
+                to use a
                 dev placeholder secret (never in production).
               </span>
             </>

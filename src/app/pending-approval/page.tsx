@@ -31,7 +31,7 @@ export default async function PendingApprovalPage() {
           <p className="text-sm text-zinc-300">
             Signed in as <span className="font-medium text-zinc-100">{session.name}</span>
           </p>
-          <p className="mt-3 rounded-lg border border-amber-500/25 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
+          <p className="mt-3 rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_32%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_12%,transparent)] px-4 py-3 text-sm text-[color:color-mix(in_oklab,var(--ticketing-accent)_78%,white_18%)]">
             If you believe this is a mistake, contact an administrator.
           </p>
 

@@ -691,14 +691,14 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
                   loading
                     ? "border-white/10 bg-black/20 text-zinc-500"
                     : dirtyCount
-                      ? "border-amber-500/30 bg-amber-950/20 text-amber-200"
+                      ? "border-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_12%,transparent)] text-[color:color-mix(in_oklab,var(--ticketing-accent)_78%,white_18%)]"
                       : "border-emerald-500/25 bg-emerald-950/15 text-emerald-200"
                 }`}
                 aria-live="polite"
               >
                 <span
                   className={`h-1.5 w-1.5 rounded-full ${
-                    loading ? "bg-zinc-500" : dirtyCount ? "bg-amber-400" : "bg-emerald-400"
+                    loading ? "bg-zinc-500" : dirtyCount ? "bg-[color:var(--ticketing-accent)]" : "bg-emerald-400"
                   }`}
                   aria-hidden
                 />

@@ -175,7 +175,7 @@ export default async function AdminUsersPage({ searchParams }: Props) {
                             className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${
                               u.isApproved
                                 ? "bg-emerald-500/10 text-emerald-200 ring-emerald-500/25"
-                                : "bg-amber-500/10 text-amber-200 ring-amber-500/25"
+                                : "bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] text-[color:color-mix(in_oklab,var(--ticketing-accent)_78%,white_18%)] ring-[color:color-mix(in_oklab,var(--ticketing-accent)_32%,transparent)]"
                             }`}
                           >
                             {u.isApproved ? "Approved" : "Pending"}
