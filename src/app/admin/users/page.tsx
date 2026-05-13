@@ -54,7 +54,7 @@ export default async function AdminUsersPage({ searchParams }: Props) {
       loginAudits: {
         take: 1,
         orderBy: { createdAt: "desc" },
-        select: { ip: true, userAgent: true, createdAt: true, method: true },
+        select: { ip: true, country: true, region: true, city: true, userAgent: true, createdAt: true, method: true },
       },
     },
   });
@@ -154,6 +154,9 @@ export default async function AdminUsersPage({ searchParams }: Props) {
                 {users.map((u) => {
                   const last = u.loginAudits[0] ?? null;
                   const self = u.id === viewer.id;
+                  const lastLoc = last
+                    ? [last.city, last.region, last.country].filter((x) => (x ?? "").trim()).join(", ")
+                    : "";
                   return (
                     <tr key={u.id} className="hover:bg-white/[0.03]">
                       <td className="px-6 py-4 align-top">
@@ -200,6 +203,7 @@ export default async function AdminUsersPage({ searchParams }: Props) {
                               {last.method}
                               {last.ip ? <> · {last.ip}</> : null}
                             </div>
+                            {lastLoc ? <div className="text-xs text-zinc-600">{lastLoc}</div> : null}
                             {last.userAgent ? (
                               <div className="max-w-[42ch] truncate text-xs text-zinc-600" title={last.userAgent}>
                                 {last.userAgent}

@@ -58,7 +58,7 @@ export async function loginAction(
   }
 
   const h = await headers();
-  const { ip, userAgent } = clientInfoFromHeaders(h);
+  const { ip, userAgent, country, region, city } = clientInfoFromHeaders(h);
 
   let token: string;
   try {
@@ -77,6 +77,9 @@ export async function loginAction(
     data: {
       userId: user.id,
       ip,
+      country,
+      region,
+      city,
       userAgent,
       method: "PASSWORD",
     },

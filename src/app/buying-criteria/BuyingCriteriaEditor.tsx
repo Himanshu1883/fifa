@@ -219,7 +219,7 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
       const seededHas: Record<number, boolean> = {};
       for (const id of eventIds) seededHas[id] = false;
       if (frontRes.ok) for (const row of frontRes.rows) if (row.cat3FrontRow) seededHas[row.eventId] = true;
-      if (rulesRes.ok) for (const rule of rulesRes.rules) seededHas[rule.eventId] = true;
+      if (rulesRes.ok) for (const rule of rulesRes.rules) if (rule.maxPriceUsdCents != null) seededHas[rule.eventId] = true;
       // eslint-disable-next-line react-hooks/set-state-in-effect -- seed visible events based on fetched buying criteria
       setVisibleEventIds(events.filter((e) => seededHas[e.id]).map((e) => e.id));
 
@@ -237,6 +237,8 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
         setRulesByEventId((prev) => {
           const next = { ...prev };
           for (const rule of rulesRes.rules) {
+            // Treat rules without a max price as "not set" (ignore for visibility + summaries).
+            if (rule.maxPriceUsdCents == null) continue;
             const cat = clampCategory(rule.categoryNum);
             if (cat === null) continue;
             const perEvent = (next[rule.eventId] ??= { 1: [], 2: [], 3: [], 4: [] });
@@ -250,6 +252,7 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
           const next = { ...prev };
           for (const rule of rulesRes.rules) {
             if (rule.kind !== "QTY_UNDER_PRICE") continue;
+            if (rule.maxPriceUsdCents == null) continue;
             const cat = clampCategory(rule.categoryNum);
             if (cat === null) continue;
             const key = `${rule.eventId}-${cat}`;

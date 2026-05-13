@@ -1,5 +1,8 @@
 export type ClientInfo = {
   ip: string | null;
+  country: string | null;
+  region: string | null;
+  city: string | null;
   userAgent: string | null;
 };
 
@@ -26,6 +29,19 @@ export function clientInfoFromHeaders(h: Headers): ClientInfo {
     null;
 
   const userAgent = h.get("user-agent")?.trim() || null;
-  return { ip: ip || null, userAgent };
+
+  // Vercel geolocation headers (best-effort).
+  const vercelCountry = h.get("x-vercel-ip-country")?.trim() || null;
+  const vercelRegion = h.get("x-vercel-ip-country-region")?.trim() || null;
+  const vercelCity = h.get("x-vercel-ip-city")?.trim() || null;
+
+  // Cloudflare country header (ISO code) if present.
+  const cfCountry = h.get("cf-ipcountry")?.trim() || null;
+
+  const country = vercelCountry || cfCountry || null;
+  const region = vercelRegion || null;
+  const city = vercelCity || null;
+
+  return { ip: ip || null, country, region, city, userAgent };
 }
 

@@ -40,6 +40,9 @@ model UserLoginAudit {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   ip        String?   @db.VarChar(64)
+  country   String?   @db.VarChar(16)
+  region    String?   @db.VarChar(96)
+  city      String?   @db.VarChar(128)
   userAgent String?   @map("user_agent") @db.Text
   method    AuthMethod
 

@@ -165,7 +165,7 @@ export async function GET(req: Request) {
     });
   }
 
-  const { ip, userAgent } = clientInfoFromHeaders(req.headers);
+  const { ip, userAgent, country, region, city } = clientInfoFromHeaders(req.headers);
 
   let token: string;
   try {
@@ -182,6 +182,9 @@ export async function GET(req: Request) {
     data: {
       userId: user.id,
       ip,
+      country,
+      region,
+      city,
       userAgent,
       method: "GOOGLE",
     },

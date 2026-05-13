@@ -41,7 +41,7 @@ export default async function AdminUserDetailPage({ params }: Props) {
     where: { userId },
     orderBy: { createdAt: "desc" },
     take: 25,
-    select: { id: true, createdAt: true, ip: true, userAgent: true, method: true },
+    select: { id: true, createdAt: true, ip: true, country: true, region: true, city: true, userAgent: true, method: true },
   });
 
   return (
@@ -93,6 +93,7 @@ export default async function AdminUserDetailPage({ params }: Props) {
                   <th className="px-6 py-3">When</th>
                   <th className="px-6 py-3">Method</th>
                   <th className="px-6 py-3">IP</th>
+                  <th className="px-6 py-3">Location</th>
                   <th className="px-6 py-3">User-Agent</th>
                 </tr>
               </thead>
@@ -103,6 +104,9 @@ export default async function AdminUserDetailPage({ params }: Props) {
                     <td className="px-6 py-4 text-xs text-zinc-300">{a.method}</td>
                     <td className="px-6 py-4 text-xs text-zinc-400">{a.ip ?? "—"}</td>
                     <td className="px-6 py-4 text-xs text-zinc-500">
+                      {[a.city, a.region, a.country].filter((x) => (x ?? "").trim()).join(", ") || "—"}
+                    </td>
+                    <td className="px-6 py-4 text-xs text-zinc-500">
                       <span className="block max-w-[80ch] truncate" title={a.userAgent ?? ""}>
                         {a.userAgent ?? "—"}
                       </span>
@@ -111,7 +115,7 @@ export default async function AdminUserDetailPage({ params }: Props) {
                 ))}
                 {audits.length === 0 ? (
                   <tr>
-                    <td className="px-6 py-5 text-sm text-zinc-500" colSpan={4}>
+                    <td className="px-6 py-5 text-sm text-zinc-500" colSpan={5}>
                       No login events recorded yet.
                     </td>
                   </tr>
