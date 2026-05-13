@@ -78,21 +78,20 @@ function renderTogetherSummary(rules: BuyingCriteriaRuleRow[]): ReactNode {
       const t = r.togetherCount ?? 0;
       const price = formatUsdFromCents(r.maxPriceUsdCents ?? 0);
       return (
-        <span key={`together-${r.id}`} className="whitespace-nowrap">
-          {t} together ≤
+        <span
+          key={`together-${r.id}`}
+          className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-black/25 px-2 py-0.5 text-[11px] font-medium text-zinc-300"
+        >
+          <span className="tabular-nums text-zinc-100">{t}</span>
+          <span className="text-zinc-500">together ≤</span>
           <span className="font-bold tabular-nums text-[color:var(--ticketing-accent)]">{price}</span>
         </span>
       );
     });
 
-  if (parts.length === 0) return "No together rules";
+  if (parts.length === 0) return <span className="text-zinc-600">No together rules</span>;
 
-  const interleaved: ReactNode[] = [];
-  for (let i = 0; i < parts.length; i += 1) {
-    if (i) interleaved.push(" · ");
-    interleaved.push(parts[i]);
-  }
-  return <>{interleaved}</>;
+  return <span className="inline-flex flex-wrap gap-x-2 gap-y-1">{parts}</span>;
 }
 
 function clampCategory(n: number): 1 | 2 | 3 | 4 | null {
@@ -564,33 +563,40 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
     const rules = rulesByEventId[eventId]?.[cat] ?? [];
     const togetherSummary = renderTogetherSummary(rules);
     return (
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          <input
-            value={qtyDraftByKey[key]?.minQty ?? ""}
-            onChange={(e) => updateQtyDraft(eventId, cat, { minQty: e.target.value })}
-            inputMode="numeric"
-            placeholder="Qty"
-            aria-label={`${matchLabel} cat ${cat} qty`}
-            disabled={disabled}
-            className={`${inp} ${inpAccent} w-[5.1rem]`}
-          />
-          <input
-            value={qtyDraftByKey[key]?.maxPriceUsd ?? ""}
-            onChange={(e) => updateQtyDraft(eventId, cat, { maxPriceUsd: e.target.value })}
-            inputMode="decimal"
-            placeholder="Max $"
-            aria-label={`${matchLabel} cat ${cat} max price`}
-            disabled={disabled}
-            className={`${inp} ${inpAccent} w-[6.2rem]`}
-          />
+      <div className="space-y-2">
+        <div className="grid grid-cols-[5.1rem_6.2rem] gap-2">
+          <div className="space-y-1">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">Qty</div>
+            <input
+              value={qtyDraftByKey[key]?.minQty ?? ""}
+              onChange={(e) => updateQtyDraft(eventId, cat, { minQty: e.target.value })}
+              inputMode="numeric"
+              placeholder="e.g. 2"
+              aria-label={`${matchLabel} cat ${cat} qty`}
+              disabled={disabled}
+              className={`${inp} ${inpAccent} w-full`}
+            />
+          </div>
+          <div className="space-y-1">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">Max $</div>
+            <input
+              value={qtyDraftByKey[key]?.maxPriceUsd ?? ""}
+              onChange={(e) => updateQtyDraft(eventId, cat, { maxPriceUsd: e.target.value })}
+              inputMode="decimal"
+              placeholder="e.g. 600"
+              aria-label={`${matchLabel} cat ${cat} max price`}
+              disabled={disabled}
+              className={`${inp} ${inpAccent} w-full`}
+            />
+          </div>
         </div>
+
         <div className="flex items-center justify-between gap-2">
           <button
             type="button"
             onClick={() => openTogetherEditor(eventId, cat)}
             disabled={disabled}
-            className="inline-flex items-center gap-2 rounded-md border border-white/12 bg-black/35 px-2 py-1 text-[11px] font-semibold text-zinc-200 transition-colors hover:bg-white/[0.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_48%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] disabled:opacity-55"
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-white/12 bg-black/35 px-2 py-1 text-[11px] font-semibold text-zinc-200 transition-colors hover:bg-white/[0.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_48%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] disabled:opacity-55"
           >
             Together rules
           </button>
@@ -611,6 +617,7 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
             </button>
           ) : null}
         </div>
+
         <p className="text-[11px] leading-snug text-zinc-500">{togetherSummary}</p>
       </div>
     );
@@ -628,6 +635,40 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
             Set simple per-match limits. Fill <span className="font-medium text-zinc-200">Qty</span> and{" "}
             <span className="font-medium text-zinc-200">Max $</span> (USD). Leave blank to ignore. Together rules are optional.
           </p>
+
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
+            <span className="rounded-md border border-white/10 bg-black/20 px-2 py-1">
+              Showing <span className="font-semibold text-zinc-200">{filteredEvents.length}</span>{" "}
+              {query.trim() ? (
+                <>
+                  of <span className="font-semibold text-zinc-200">{visibleEvents.length}</span>
+                </>
+              ) : (
+                <>
+                  of <span className="font-semibold text-zinc-200">{visibleEvents.length}</span>
+                </>
+              )}{" "}
+              matches with criteria
+            </span>
+            <span className="rounded-md border border-white/10 bg-black/20 px-2 py-1">
+              Total events <span className="font-semibold text-zinc-200">{events.length}</span>
+            </span>
+            {missingEvents.length ? (
+              <button
+                type="button"
+                onClick={() => openAddModal()}
+                disabled={addOpen || loading || saving || !!editor || editorSaving}
+                className="rounded-md border border-white/10 bg-black/20 px-2 py-1 text-left transition-colors hover:bg-white/[0.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_48%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] disabled:opacity-55"
+              >
+                <span className="text-zinc-500">Missing</span>{" "}
+                <span className="font-semibold text-zinc-200">{missingEvents.length}</span>
+              </button>
+            ) : (
+              <span className="rounded-md border border-white/10 bg-black/20 px-2 py-1">
+                All events have criteria
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
@@ -636,7 +677,7 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
             type="button"
             onClick={() => openAddModal()}
             disabled={addOpen || loading || saving || !!editor || editorSaving || missingEvents.length === 0}
-            className="inline-flex min-h-10 items-center justify-center rounded-lg border border-white/12 bg-white/[0.06] px-4 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/25 transition-colors hover:bg-white/[0.10] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] disabled:opacity-55"
+            className="inline-flex min-h-10 items-center justify-center rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_12%,transparent)] px-4 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/25 transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] disabled:opacity-55"
           >
             Add buying criteria
           </button>
@@ -648,9 +689,28 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
           >
             {saving ? "Saving…" : dirtyCount ? `Save (${dirtyCount})` : "Save"}
           </button>
-          <div className="min-w-[11rem] text-right text-[11px] leading-tight text-zinc-500">
-            <div>{loading ? "Loading…" : dirtyCount ? "Unsaved changes" : "Up to date"}</div>
-            <div>{lastSavedAt ? `Last saved ${formatTime(lastSavedAt)}` : "\u00A0"}</div>
+          <div className="min-w-[12rem] text-right text-[11px] leading-tight text-zinc-500">
+            <div className="flex items-center justify-end gap-2">
+              <span
+                className={`inline-flex items-center gap-2 rounded-md border px-2 py-1 ${
+                  loading
+                    ? "border-white/10 bg-black/20 text-zinc-500"
+                    : dirtyCount
+                      ? "border-amber-500/30 bg-amber-950/20 text-amber-200"
+                      : "border-emerald-500/25 bg-emerald-950/15 text-emerald-200"
+                }`}
+                aria-live="polite"
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    loading ? "bg-zinc-500" : dirtyCount ? "bg-amber-400" : "bg-emerald-400"
+                  }`}
+                  aria-hidden
+                />
+                {loading ? "Loading…" : dirtyCount ? "Unsaved changes" : "Up to date"}
+              </span>
+            </div>
+            <div className="mt-1">{lastSavedAt ? `Last saved ${formatTime(lastSavedAt)}` : "\u00A0"}</div>
           </div>
           <button
             type="button"
@@ -662,6 +722,10 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
           </button>
         </div>
       </div>
+
+      <p className="text-xs leading-relaxed text-zinc-500 sm:hidden">
+        Tip: <span className="font-medium text-zinc-200">Save</span> applies to Qty/Max $ cells. Together rules save per category.
+      </p>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -688,8 +752,17 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
           ) : null}
         </div>
         <p className="text-[11px] text-zinc-500">
-          Showing <span className="font-semibold text-zinc-200">{filteredEvents.length}</span> /{" "}
-          <span className="font-semibold text-zinc-200">{events.length}</span>
+          {query.trim() ? (
+            <>
+              Filtered <span className="font-semibold text-zinc-200">{filteredEvents.length}</span> /{" "}
+              <span className="font-semibold text-zinc-200">{visibleEvents.length}</span>
+            </>
+          ) : (
+            <>
+              Showing <span className="font-semibold text-zinc-200">{visibleEvents.length}</span> /{" "}
+              <span className="font-semibold text-zinc-200">{events.length}</span>
+            </>
+          )}
         </p>
       </div>
 
@@ -760,28 +833,55 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
       <div className="hidden sm:block">
         <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-black/20 ring-1 ring-white/[0.04]">
           <div className="max-h-[min(70vh,52rem)] overflow-auto overscroll-contain">
-            <table className="min-w-[78rem] w-full border-collapse text-left text-sm">
+            <table className="w-full min-w-[78rem] table-fixed border-collapse text-left text-sm">
+              <colgroup>
+                <col className="w-[8.5rem]" />
+                <col className="w-[20rem]" />
+                <col className="w-[16rem]" />
+                <col className="w-[16rem]" />
+                <col className="w-[16rem]" />
+                <col className="w-[16rem]" />
+                <col className="w-[10rem]" />
+              </colgroup>
               <thead className="sticky top-0 z-20 border-b border-white/[0.10] bg-[color:color-mix(in_oklab,var(--ticketing-surface)_94%,white_3%)] text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 shadow-[0_1px_0_0_rgba(255,255,255,0.06)] backdrop-blur-md supports-[backdrop-filter]:bg-[color:color-mix(in_oklab,var(--ticketing-surface)_88%,transparent)]">
                 <tr>
-                  <th scope="col" className="whitespace-nowrap px-3 py-3 pl-4 font-mono sm:px-4 sm:pl-5">
+                  <th
+                    scope="col"
+                    className="sticky left-0 z-30 whitespace-nowrap border-r border-white/[0.08] px-3 py-3 pl-4 font-mono sm:px-4 sm:pl-5"
+                  >
                     Match
                   </th>
-                  <th scope="col" className="min-w-[16rem] px-3 py-3 sm:px-4">
+                  <th
+                    scope="col"
+                    className="sticky left-[8.5rem] z-30 border-r border-white/[0.08] px-3 py-3 sm:px-4"
+                  >
                     Event
                   </th>
-                  <th scope="col" className="min-w-[15rem] px-3 py-3 sm:px-4">
-                    Cat 1
+                  <th scope="col" className="border-l border-white/[0.06] px-3 py-3 sm:px-4">
+                    <span>Cat 1</span>
+                    <span className="mt-0.5 block text-[9px] font-medium normal-case tracking-normal text-zinc-500">
+                      Qty · Max $ · Together
+                    </span>
                   </th>
-                  <th scope="col" className="min-w-[15rem] px-3 py-3 sm:px-4">
-                    Cat 2
+                  <th scope="col" className="border-l border-white/[0.06] px-3 py-3 sm:px-4">
+                    <span>Cat 2</span>
+                    <span className="mt-0.5 block text-[9px] font-medium normal-case tracking-normal text-zinc-500">
+                      Qty · Max $ · Together
+                    </span>
                   </th>
-                  <th scope="col" className="min-w-[15rem] px-3 py-3 sm:px-4">
-                    Cat 3
+                  <th scope="col" className="border-l border-white/[0.06] px-3 py-3 sm:px-4">
+                    <span>Cat 3</span>
+                    <span className="mt-0.5 block text-[9px] font-medium normal-case tracking-normal text-zinc-500">
+                      Qty · Max $ · Together · Front row
+                    </span>
                   </th>
-                  <th scope="col" className="min-w-[15rem] px-3 py-3 sm:px-4">
-                    Cat 4
+                  <th scope="col" className="border-l border-white/[0.06] px-3 py-3 sm:px-4">
+                    <span>Cat 4</span>
+                    <span className="mt-0.5 block text-[9px] font-medium normal-case tracking-normal text-zinc-500">
+                      Qty · Max $ · Together
+                    </span>
                   </th>
-                  <th scope="col" className="min-w-[9rem] px-3 py-3 pr-4 text-right sm:px-4 sm:pr-5">
+                  <th scope="col" className="border-l border-white/[0.06] px-3 py-3 pr-4 text-right sm:px-4 sm:pr-5">
                     Actions
                   </th>
                 </tr>
@@ -789,22 +889,35 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
               <tbody className="text-zinc-200">
                 {filteredEvents.map((event, idx) => {
                   const zebra = idx % 2 === 1 ? "bg-[color:var(--ticketing-elevated)]" : "bg-transparent";
+                  const cellBg = `${zebra} group-hover:bg-[color:color-mix(in_oklab,white_9%,transparent)]`;
                   return (
                     <tr
                       key={event.id}
-                      className={`border-t border-white/[0.06] align-top transition-colors hover:bg-[color:color-mix(in_oklab,white_9%,transparent)] ${zebra}`}
+                      className="group border-t border-white/[0.06] align-top"
                     >
-                      <td className="whitespace-nowrap px-3 py-3 pl-4 font-mono text-[11px] font-semibold text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)] sm:px-4 sm:pl-5">
+                      <td
+                        className={`sticky left-0 z-10 whitespace-nowrap border-r border-white/[0.08] px-3 py-3 pl-4 font-mono text-[11px] font-semibold text-[color:color-mix(in_oklab,var(--ticketing-accent)_72%,white_12%)] sm:px-4 sm:pl-5 ${cellBg}`}
+                      >
                         {event.matchLabel}
                       </td>
-                      <td className="px-3 py-3 text-xs text-zinc-200 sm:px-4">
-                        <span className="line-clamp-2">{event.name}</span>
+                      <td
+                        className={`sticky left-[8.5rem] z-10 border-r border-white/[0.08] px-3 py-3 text-xs text-zinc-200 sm:px-4 ${cellBg}`}
+                      >
+                        <span className="line-clamp-2 leading-snug">{event.name}</span>
                       </td>
-                      <td className="px-3 py-3 sm:px-4">{renderCatCell(event.id, event.matchLabel, 1)}</td>
-                      <td className="px-3 py-3 sm:px-4">{renderCatCell(event.id, event.matchLabel, 2)}</td>
-                      <td className="px-3 py-3 sm:px-4">{renderCatCell(event.id, event.matchLabel, 3)}</td>
-                      <td className="px-3 py-3 sm:px-4">{renderCatCell(event.id, event.matchLabel, 4)}</td>
-                      <td className="px-3 py-3 pr-4 text-right sm:px-4 sm:pr-5">
+                      <td className={`border-l border-white/[0.06] px-3 py-3 sm:px-4 ${cellBg}`}>
+                        {renderCatCell(event.id, event.matchLabel, 1)}
+                      </td>
+                      <td className={`border-l border-white/[0.06] px-3 py-3 sm:px-4 ${cellBg}`}>
+                        {renderCatCell(event.id, event.matchLabel, 2)}
+                      </td>
+                      <td className={`border-l border-white/[0.06] px-3 py-3 sm:px-4 ${cellBg}`}>
+                        {renderCatCell(event.id, event.matchLabel, 3)}
+                      </td>
+                      <td className={`border-l border-white/[0.06] px-3 py-3 sm:px-4 ${cellBg}`}>
+                        {renderCatCell(event.id, event.matchLabel, 4)}
+                      </td>
+                      <td className={`border-l border-white/[0.06] px-3 py-3 pr-4 text-right sm:px-4 sm:pr-5 ${cellBg}`}>
                         <button
                           type="button"
                           onClick={() => clearRow(event.id)}
@@ -1061,8 +1174,8 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
                           </div>
                           <div className="mt-1 text-sm font-medium text-zinc-100">{e.name}</div>
                         </div>
-                        <span className="shrink-0 rounded-md border border-white/12 bg-black/25 px-2.5 py-1.5 text-xs font-semibold text-zinc-200">
-                          Select
+                        <span className="shrink-0 rounded-md border border-[color:color-mix(in_oklab,var(--ticketing-accent)_32%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-2.5 py-1.5 text-xs font-semibold text-zinc-100">
+                          Add
                         </span>
                       </button>
                     </li>
