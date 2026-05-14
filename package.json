@@ -10,6 +10,7 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc",
     "db:migrate": "prisma migrate deploy",
     "db:copy:railway": "node --import tsx scripts/copy-app-data-postgres.ts",
     "db:push:railway": "TRUNCATE_TARGET=1 node --import tsx scripts/copy-app-data-postgres.ts",

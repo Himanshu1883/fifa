@@ -153,7 +153,7 @@ export default async function SettingsPage() {
         { name: "resalePrefId", required: false, notes: "Alias for prefId (same id value)" },
       ],
       notes:
-        "Same payload as sock-available, but always stores kind=LAST_MINUTE (Shop). Replace semantics are scoped to Shop rows only.",
+        "Same payload as sock-available, but always stores kind=LAST_MINUTE (Shop). Replace semantics are scoped to Shop rows only. Optional WhatsApp notification (UltraMsg) is sent when the incoming snapshot differs from DB (new seats / field changes / price changes): ULTRAMSG_INSTANCE_ID, ULTRAMSG_TOKEN, ULTRAMSG_TO (defaults to 919870529711).",
       sampleCurl: [
         `curl -sS "${baseUrl}/api/webhooks/sock-available-shop"`,
         `curl -sS -X POST "${baseUrl}/api/webhooks/sock-available-shop?prefId=CATALOGUE_PREF_ID" \\`,
@@ -282,6 +282,23 @@ export default async function SettingsPage() {
         `curl -sS "${baseUrl}/api/resale-pref/next"`,
         `curl -sS "${baseUrl}/api/resale-pref/next?secret=YOUR_SECRET"`,
         `curl -sS "${baseUrl}/api/resale-pref/next" -H "Authorization: Bearer YOUR_SECRET"`,
+      ],
+    },
+    {
+      title: "Next pref id (rotation cursor by match range)",
+      path: "/api/pref/next",
+      methods: ["GET"],
+      queryParams: [
+        { name: "from", required: true, notes: "Integer match number (inclusive)" },
+        { name: "to", required: true, notes: "Integer match number (inclusive)" },
+        { name: "matchFrom", required: false, notes: "Alias for from" },
+        { name: "matchTo", required: false, notes: "Alias for to" },
+      ],
+      notes:
+        'Returns the next Event.prefId for events whose match number is in the inclusive range. Match numbers are parsed from whole-string "MatchN" labels (Event.matchLabel preferred, then Event.name). Cursor state is persisted per range scope (e.g. match:1-11).',
+      sampleCurl: [
+        `curl -sS "${baseUrl}/api/pref/next?from=1&to=11"`,
+        `curl -sS "${baseUrl}/api/pref/next?matchFrom=1&matchTo=11"`,
       ],
     },
     {

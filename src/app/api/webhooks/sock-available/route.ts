@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { CataloguePayloadError } from "@/lib/price-range-catalogue";
 import { parseSockAvailableGeojsonBody } from "@/lib/parse-sock-available-geojson-webhook";
+import { computeSockAvailableDiffInTx, maybeNotifySockAvailableDiff } from "@/lib/notify-sock-available-diff";
 import { syncSockAvailableForEvent } from "@/lib/sync-sock-available";
 
 export const runtime = "nodejs";
@@ -116,13 +117,23 @@ export async function POST(req: NextRequest) {
         ? "LAST_MINUTE"
         : "RESALE";
 
-    const result = await prisma.$transaction(
-      async (tx) => syncSockAvailableForEvent(tx, prefId, kind, rows),
+    const txn = await prisma.$transaction(
+      async (tx) => {
+        const { event, diff } = await computeSockAvailableDiffInTx({
+          tx,
+          prefId,
+          kind,
+          rows,
+          sampleLimit: 10,
+        });
+        const result = await syncSockAvailableForEvent(tx, prefId, kind, rows);
+        return { event, diff, result };
+      },
       // Large payloads can take longer than Prisma's default interactive transaction timeout.
       { maxWait: 20_000, timeout: 120_000 },
     );
 
-    if (!result) {
+    if (!txn.result) {
       return NextResponse.json(
         {
           error: `No event for pref "${prefId}" (match prefId or resalePrefId) — seed the event first.`,
@@ -131,21 +142,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const notify = await maybeNotifySockAvailableDiff({
+      prefId,
+      event: txn.event,
+      diff: txn.diff,
+    });
+
     return NextResponse.json({
       ok: true,
       partial: skippedCount > 0,
       lookup: "pref-or-resale",
       prefId,
-      eventId: result.eventId,
+      eventId: txn.result.eventId,
       featureCount,
       rowCount: rows.length,
       acceptedCount: rows.length,
-      deletedCount: result.deletedCount,
-      insertedCount: result.insertedCount,
+      deletedCount: txn.result.deletedCount,
+      insertedCount: txn.result.insertedCount,
       skippedCount,
       skippedMissingSeatIdCount,
       skippedMissingCategoryIdCount,
       kind,
+      diff: {
+        newCount: txn.diff.newCount,
+        changedCount: txn.diff.changedCount,
+        priceChangedCount: txn.diff.priceChangedCount,
+        sample: txn.diff.sample,
+      },
+      notify,
     });
   } catch (err) {
     if (err instanceof CataloguePayloadError) {

@@ -23,6 +23,8 @@ export type HomeSearchParams = {
   important?: string | string[];
   venue?: string | string[];
   country?: string | string[];
+  bc?: string | string[];
+  deal?: string | string[];
 };
 
 type HomeEventRow = {
@@ -58,11 +60,6 @@ const eventNameLinkClass =
 function cellText(value: string | null | undefined): string {
   const t = value?.trim();
   return t ? t : "—";
-}
-
-function cellUsdFromCentsString(value: string | null | undefined): string {
-  const t = value?.trim();
-  return t ? formatUsd(t) : "—";
 }
 
 function cellUsdWithLimitFromCentsString(
@@ -168,9 +165,13 @@ export function homeQueryStringFrom(q: HomeSearchParams): string {
   const countryFilter = parseHomeCountryFilter(q);
   const importantFilter = parseImportantFilter(q);
   const { sort: listSort, order: listOrder } = parseHomeListSort(q);
+  const bc = firstQs(q.bc);
+  const deal = firstQs(q.deal);
 
   const sp = new URLSearchParams();
   if (prefsErr) sp.set("prefsErr", prefsErr);
+  if (bc === "1") sp.set("bc", "1");
+  if (deal === "1") sp.set("deal", "1");
   if (venueFilter.trim()) sp.set("venue", venueFilter.trim());
   if (countryFilter.trim()) sp.set("country", countryFilter.trim());
   if (importantFilter === "important") sp.set("important", "1");
@@ -278,15 +279,21 @@ const getHomeEventCategoryCounts = unstable_cache(
 export async function HomePage({
   searchParams,
   kind,
+  onlyBuyingCriteriaMeet,
+  onlyDeals,
 }: {
   searchParams: Promise<HomeSearchParams>;
   kind: HomeSockKind;
+  onlyBuyingCriteriaMeet: boolean;
+  onlyDeals: boolean;
 }) {
   const q = await searchParams;
   const prefsRaw = firstQs(q.prefsErr);
   const prefsErr = prefsRaw ?? undefined;
   const { sort: listSort, order: listOrder } = parseHomeListSort(q);
   const sockKind = kind;
+  const buyingCriteriaMeetActive = onlyBuyingCriteriaMeet;
+  const dealsActive = onlyDeals;
   const importantFilter = parseImportantFilter(q);
   const venueFilter = parseHomeVenueFilter(q);
   const countryFilter = parseHomeCountryFilter(q);
@@ -298,6 +305,8 @@ export async function HomePage({
   let dbErr: string | undefined;
   let eventsAll: HomeEventRow[];
   let events: HomeEventRow[];
+  let buyingCriteriaFilteredOutAll = false;
+  let dealsFilteredOutAll = false;
   try {
     const rows = await prisma.event.findMany({
       orderBy: { sortOrder: "asc" },
@@ -411,10 +420,64 @@ export async function HomePage({
           ? filteredByVenueCountry.filter((e) => !e.isImportant)
           : filteredByVenueCountry;
 
-    sortHomeEvents(events, listSort, listOrder);
+    const bestDealDeltaCents = (e: HomeEventRow): number | null => {
+      const checks: Array<[priceCentsString: string | null, limitUsdCents: number | null]> = [
+        [e.cat1, e.cat1LimitUsdCents],
+        [e.cat2, e.cat2LimitUsdCents],
+        [e.cat3, e.cat3LimitUsdCents],
+        [e.cat4, e.cat4LimitUsdCents],
+      ];
+      let best: number | null = null;
+      for (const [priceStr, limit] of checks) {
+        if (!priceStr || limit == null) continue;
+        const priceCents = priceToNumber(priceStr);
+        if (!Number.isFinite(priceCents)) continue;
+        const delta = limit - priceCents;
+        if (delta < 0) continue;
+        best = best == null ? delta : Math.max(best, delta);
+      }
+      return best;
+    };
+
+    const meetsBuyingCriteria = (e: HomeEventRow): boolean => {
+      const checks: Array<[priceCentsString: string | null, limitUsdCents: number | null]> = [
+        [e.cat1, e.cat1LimitUsdCents],
+        [e.cat2, e.cat2LimitUsdCents],
+        [e.cat3, e.cat3LimitUsdCents],
+        [e.cat4, e.cat4LimitUsdCents],
+      ];
+      for (const [priceStr, limit] of checks) {
+        if (!priceStr || limit == null) continue;
+        const priceCents = priceToNumber(priceStr);
+        if (Number.isFinite(priceCents) && priceCents <= limit) return true;
+      }
+      return false;
+    };
+
+    const beforeBuyingCriteriaFilter = events;
+    if (buyingCriteriaMeetActive) {
+      events = beforeBuyingCriteriaFilter.filter(meetsBuyingCriteria);
+      buyingCriteriaFilteredOutAll = beforeBuyingCriteriaFilter.length > 0 && events.length === 0;
+    }
+
+    const beforeDealsFilter = events;
+    if (dealsActive) {
+      events = beforeDealsFilter.filter((e) => bestDealDeltaCents(e) != null);
+      dealsFilteredOutAll = beforeDealsFilter.length > 0 && events.length === 0;
+      events.sort((a, b) => {
+        const da = bestDealDeltaCents(a) ?? -1;
+        const db = bestDealDeltaCents(b) ?? -1;
+        if (da !== db) return db - da;
+        return compareMatchNumberOrder(a.matchNum, b.matchNum, "asc");
+      });
+    } else {
+      sortHomeEvents(events, listSort, listOrder);
+    }
   } catch (err) {
     eventsAll = [];
     events = [];
+    buyingCriteriaFilteredOutAll = false;
+    dealsFilteredOutAll = false;
     const msg = err instanceof Error ? err.message : String(err);
     dbErr =
       "Could not load events from the database. Check DATABASE_URL, that Postgres is running, and run migrations if needed. " +
@@ -433,6 +496,24 @@ export async function HomePage({
   const homeKindHref = (nextKind: HomeSockKind): string => {
     const base = homeBasePathForKind(nextKind);
     const qs = homeQueryStringFrom(q);
+    return `${base}${qs ? `?${qs}` : ""}#home-events-heading`;
+  };
+
+  const homeBuyingCriteriaMeetHref = (nextActive: boolean): string => {
+    const base = homeBasePathForKind(sockKind);
+    const sp = new URLSearchParams(homeQueryStringFrom(q));
+    if (nextActive) sp.set("bc", "1");
+    else sp.delete("bc");
+    const qs = sp.toString();
+    return `${base}${qs ? `?${qs}` : ""}#home-events-heading`;
+  };
+
+  const homeDealsHref = (nextActive: boolean): string => {
+    const base = homeBasePathForKind(sockKind);
+    const sp = new URLSearchParams(homeQueryStringFrom(q));
+    if (nextActive) sp.set("deal", "1");
+    else sp.delete("deal");
+    const qs = sp.toString();
     return `${base}${qs ? `?${qs}` : ""}#home-events-heading`;
   };
 
@@ -564,6 +645,26 @@ export async function HomePage({
                 >
                   Browse Resale Marketplace
                 </Link>
+                <Link
+                  href={homeBuyingCriteriaMeetHref(!buyingCriteriaMeetActive)}
+                  className={
+                    buyingCriteriaMeetActive
+                      ? "inline-flex min-h-11 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:var(--ticketing-accent)] px-6 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter,transform] hover:brightness-[1.06] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                      : "inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                  }
+                >
+                  Buying Criteria meet
+                </Link>
+                <Link
+                  href={homeDealsHref(!dealsActive)}
+                  className={
+                    dealsActive
+                      ? "inline-flex min-h-11 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:var(--ticketing-accent)] px-6 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter,transform] hover:brightness-[1.06] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                      : "inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                  }
+                >
+                  Deal
+                </Link>
               </div>
             </div>
           </header>
@@ -606,13 +707,64 @@ export async function HomePage({
                 >
                   <div className="px-4 py-14 text-center sm:px-6 sm:py-16">
                     <div className="mx-auto max-w-md rounded-2xl border border-white/[0.08] bg-black/25 px-5 py-8 ring-1 ring-white/[0.04]">
-                      <p className="text-base font-semibold tracking-tight text-zinc-100">No matches yet</p>
-                      <p className="mt-2 text-sm leading-relaxed text-zinc-500">
-                        Create an event to start building your schedule. Sock availability and catalogue categories will
-                        populate after webhook or import.
-                      </p>
+                      {eventsAll.length === 0 ? (
+                        <>
+                          <p className="text-base font-semibold tracking-tight text-zinc-100">No matches yet</p>
+                          <p className="mt-2 text-sm leading-relaxed text-zinc-500">
+                            Create an event to start building your schedule. Sock availability and catalogue categories
+                            will populate after webhook or import.
+                          </p>
+                        </>
+                      ) : buyingCriteriaFilteredOutAll ? (
+                        <>
+                          <p className="text-base font-semibold tracking-tight text-zinc-100">
+                            No events meet Buying Criteria
+                          </p>
+                          <p className="mt-2 text-sm leading-relaxed text-zinc-500">
+                            Try turning off the filter, or increasing your max prices on the Buying Criteria page.
+                          </p>
+                        </>
+                      ) : dealsFilteredOutAll ? (
+                        <>
+                          <p className="text-base font-semibold tracking-tight text-zinc-100">No deals right now</p>
+                          <p className="mt-2 text-sm leading-relaxed text-zinc-500">
+                            Try turning off Deal, or increasing your max prices on the Buying Criteria page.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-base font-semibold tracking-tight text-zinc-100">No results</p>
+                          <p className="mt-2 text-sm leading-relaxed text-zinc-500">
+                            No events match your current filters. Try clearing filters or adjusting sort/venue/country.
+                          </p>
+                        </>
+                      )}
                       <div className="mt-6 flex flex-wrap justify-center gap-3">
-                        <AddEventDialog suggestedSortOrder={suggestedSortOrder} />
+                        {eventsAll.length === 0 ? <AddEventDialog suggestedSortOrder={suggestedSortOrder} /> : null}
+                        {buyingCriteriaMeetActive ? (
+                          <Link
+                            href={homeBuyingCriteriaMeetHref(false)}
+                            className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                          >
+                            Show all events
+                          </Link>
+                        ) : null}
+                        {dealsActive ? (
+                          <Link
+                            href={homeDealsHref(false)}
+                            className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                          >
+                            Show all events
+                          </Link>
+                        ) : null}
+                        {eventsAll.length > 0 && !buyingCriteriaMeetActive && !dealsActive ? (
+                          <Link
+                            href={`${homeBasePathForKind(sockKind)}#home-events-heading`}
+                            className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                          >
+                            Clear filters
+                          </Link>
+                        ) : null}
                       </div>
                     </div>
                   </div>

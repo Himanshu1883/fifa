@@ -3,7 +3,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { CataloguePayloadError } from "@/lib/price-range-catalogue";
 import { parseSockAvailableGeojsonBody } from "@/lib/parse-sock-available-geojson-webhook";
+import { computeSockAvailableDiff } from "@/lib/sock-available-diff";
 import { syncSockAvailableForEvent } from "@/lib/sync-sock-available";
+import { sendUltraMsgWhatsAppMessage } from "@/lib/whatsapp-ultramsg";
 
 export const runtime = "nodejs";
 
@@ -63,6 +65,30 @@ function classifyWebhookError(code: string | undefined, message: string): Webhoo
   return "unknown";
 }
 
+function amountRawToUsdString(raw: number | null): string {
+  if (raw === null) return "—";
+  const usd = raw / 1000;
+  if (!Number.isFinite(usd)) return "—";
+  return `$${usd.toFixed(2)}`;
+}
+
+function buildWhatsAppText(input: {
+  eventLabel: string;
+  eventId: number;
+  prefId: string;
+  diff: { newCount: number; changedCount: number; priceChangedCount: number; sample: Array<{ line: string }> };
+}): string {
+  const { eventLabel, eventId, prefId, diff } = input;
+  const header = `Sock Shop diff: ${eventLabel}\n(eventId ${eventId}, prefId ${prefId})`;
+  const counts = `New ${diff.newCount} · Changed ${diff.changedCount} · Price ${diff.priceChangedCount}`;
+  const lines = diff.sample.map((s) => s.line).filter(Boolean);
+  const body = lines.length ? `\n\nSamples:\n${lines.join("\n")}` : "";
+  const text = `${header}\n${counts}${body}`;
+
+  // Keep messages compact to avoid WhatsApp/UI truncation.
+  return text.length > 1400 ? `${text.slice(0, 1400)}…` : text;
+}
+
 /**
  * Shop (Last Minute) sock_available ingest.
  *
@@ -92,12 +118,51 @@ export async function POST(req: NextRequest) {
 
     const kind = "LAST_MINUTE" as const;
 
-    const result = await prisma.$transaction(
-      async (tx) => syncSockAvailableForEvent(tx, prefId, kind, rows),
+    const txnResult = await prisma.$transaction(
+      async (tx) => {
+        const ev = await tx.event.findFirst({
+          where: {
+            OR: [{ prefId }, { resalePrefId: prefId }],
+          },
+          select: { id: true, matchLabel: true, name: true },
+        });
+
+        if (!ev) return { ev: null, result: null, diff: null };
+
+        const diff =
+          rows.length > 0
+            ? computeSockAvailableDiff({
+                kind,
+                incoming: rows,
+                existing: await tx.sockAvailable.findMany({
+                  where: { eventId: ev.id, kind },
+                  select: {
+                    areaId: true,
+                    areaName: true,
+                    blockId: true,
+                    blockName: true,
+                    seatId: true,
+                    seatNumber: true,
+                    resaleMovementId: true,
+                    row: true,
+                    categoryName: true,
+                    categoryId: true,
+                    amount: true,
+                  },
+                }),
+                sampleLimit: 10,
+              })
+            : computeSockAvailableDiff({ kind, incoming: [], existing: [], sampleLimit: 10 });
+
+        // IMPORTANT: diff is computed BEFORE snapshot deletion inside syncSockAvailableForEvent.
+        const result = await syncSockAvailableForEvent(tx, prefId, kind, rows);
+
+        return { ev, result, diff };
+      },
       { maxWait: 20_000, timeout: 120_000 },
     );
 
-    if (!result) {
+    if (!txnResult.result || !txnResult.ev) {
       return NextResponse.json(
         {
           error: `No event for pref "${prefId}" (match prefId or resalePrefId) — seed the event first.`,
@@ -106,21 +171,67 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const diff = txnResult.diff;
+
+    const hasDiff =
+      Boolean(diff) && (diff.newCount > 0 || diff.changedCount > 0 || diff.priceChangedCount > 0);
+
+    const notify =
+      hasDiff && diff
+        ? await sendUltraMsgWhatsAppMessage(
+            buildWhatsAppText({
+              eventLabel: txnResult.ev.matchLabel || txnResult.ev.name,
+              eventId: txnResult.ev.id,
+              prefId,
+              diff: {
+                newCount: diff.newCount,
+                changedCount: diff.changedCount,
+                priceChangedCount: diff.priceChangedCount,
+                sample: diff.sample.map((s) => {
+                  if (s.change === "new") {
+                    return {
+                      line: `+ ${s.blockName} Row ${s.row} Seat ${s.seatNumber} Cat ${s.categoryId} ${amountRawToUsdString(s.amountRaw)}`,
+                    };
+                  }
+                  const changed = (s.changedFields ?? []).filter((f) => f !== "amount");
+                  const changeLabel = changed.length ? ` (${changed.join(",")})` : "";
+                  const priceLabel =
+                    s.prev && s.amountRaw !== s.prev.amountRaw
+                      ? ` ${amountRawToUsdString(s.prev.amountRaw)}→${amountRawToUsdString(s.amountRaw)}`
+                      : ` ${amountRawToUsdString(s.amountRaw)}`;
+                  return {
+                    line: `~ ${s.blockName} Row ${s.row} Seat ${s.seatNumber} Cat ${s.categoryId}${changeLabel}${priceLabel}`,
+                  };
+                }),
+              },
+            }),
+          )
+        : { attempted: false, ok: false, provider: "ultramsg" as const };
+
     return NextResponse.json({
       ok: true,
       partial: skippedCount > 0,
       lookup: "pref-or-resale",
       prefId,
-      eventId: result.eventId,
+      eventId: txnResult.result.eventId,
       featureCount,
       rowCount: rows.length,
       acceptedCount: rows.length,
-      deletedCount: result.deletedCount,
-      insertedCount: result.insertedCount,
+      deletedCount: txnResult.result.deletedCount,
+      insertedCount: txnResult.result.insertedCount,
       skippedCount,
       skippedMissingSeatIdCount,
       skippedMissingCategoryIdCount,
       kind,
+      diff: diff
+        ? {
+            newCount: diff.newCount,
+            changedCount: diff.changedCount,
+            priceChangedCount: diff.priceChangedCount,
+            sample: diff.sample,
+          }
+        : { newCount: 0, changedCount: 0, priceChangedCount: 0, sample: [] },
+      notify,
     });
   } catch (err) {
     if (err instanceof CataloguePayloadError) {

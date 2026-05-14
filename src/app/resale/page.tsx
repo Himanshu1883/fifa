@@ -22,6 +22,15 @@ export default async function ResalePage({ searchParams }: Props) {
     const qs = homeQueryStringFrom(q);
     redirect(`${homeBasePathForKind("LAST_MINUTE")}${qs ? `?${qs}` : ""}`);
   }
-  return <HomePage searchParams={Promise.resolve(q)} kind="RESALE" />;
+  const onlyBuyingCriteriaMeet = firstQs(q.bc) === "1";
+  const onlyDeals = firstQs(q.deal) === "1";
+  return (
+    <HomePage
+      searchParams={Promise.resolve(q)}
+      kind="RESALE"
+      onlyBuyingCriteriaMeet={onlyBuyingCriteriaMeet}
+      onlyDeals={onlyDeals}
+    />
+  );
 }
 

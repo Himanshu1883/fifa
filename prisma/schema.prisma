@@ -264,6 +264,14 @@ model ResalePrefRotationState {
   @@map("resale_pref_rotation_state")
 }
 
+/// Round-robin cursor for `GET /api/pref/next` scoped by match range (e.g. "match:1-11").
+model PrefRotationState {
+  scope     String @id @db.Text
+  nextIndex Int    @default(0) @map("next_index")
+
+  @@map("pref_rotation_state")
+}
+
 model SockAvailable {
   id               Int      @id @default(autoincrement())
   eventId           Int      @map("event_id")
