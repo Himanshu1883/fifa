@@ -80,7 +80,7 @@ function cellText(value: string | null | undefined): string {
 }
 
 function diffPillClass(): string {
-  return "inline-flex items-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_26%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-2 py-0.5 text-[10px] font-semibold tabular-nums text-zinc-100 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)]";
+  return "inline-flex items-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,black_82%)] px-2 py-0.5 text-[10px] font-semibold tabular-nums text-zinc-100 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)]";
 }
 
 function formatDiffWhen(d: Date | null | undefined): string | null {
@@ -1256,11 +1256,11 @@ export async function HomePage({
                                     {event.latestDiff ? (
                                       <div className="flex min-w-0 flex-col gap-0.5">
                                         <span className={diffPillClass()}>
-                                          New{" "}
+                                          New-
                                           <span className="font-extrabold tabular-nums text-[color:var(--ticketing-accent)]">
                                             {event.latestDiff.newCount}
                                           </span>{" "}
-                                          · Price{" "}
+                                          <span className="text-zinc-400">&amp;</span> Price-
                                           <span className="font-extrabold tabular-nums text-[color:var(--ticketing-accent)]">
                                             {event.latestDiff.priceChangedCount}
                                           </span>
