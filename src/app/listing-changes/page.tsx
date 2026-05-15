@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { ListingChangesClient, type ListingChangesEventRow } from "@/app/listing-changes/listing-changes-client";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 
 export default async function Page() {
   const events = await prisma.event.findMany({
