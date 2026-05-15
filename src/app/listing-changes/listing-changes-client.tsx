@@ -83,7 +83,13 @@ export function ListingChangesClient({ events }: { events: ListingChangesEventRo
   const [query, setQuery] = useState("");
   const [onlyWithChanges, setOnlyWithChanges] = useState(false);
 
-  const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
+  const [expandedEventId, setExpandedEventId] = useState<number | null>(() => {
+    const firstActive =
+      events.find((e) => (e.latestShop?.newCount ?? 0) > 0 || (e.latestResale?.newCount ?? 0) > 0) ??
+      events.find((e) => (e.latestShop?.priceChangedCount ?? 0) > 0 || (e.latestResale?.priceChangedCount ?? 0) > 0) ??
+      null;
+    return firstActive ? firstActive.id : null;
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<LogRow[] | null>(null);
@@ -115,16 +121,6 @@ export function ListingChangesClient({ events }: { events: ListingChangesEventRo
     });
   }, [events, onlyWithChanges, qNorm]);
 
-  // Reduce clicks: auto-open the first event with activity.
-  useEffect(() => {
-    if (expandedEventId != null) return;
-    const firstActive =
-      events.find((e) => (e.latestShop?.newCount ?? 0) > 0 || (e.latestResale?.newCount ?? 0) > 0) ??
-      events.find((e) => (e.latestShop?.priceChangedCount ?? 0) > 0 || (e.latestResale?.priceChangedCount ?? 0) > 0) ??
-      null;
-    if (firstActive) setExpandedEventId(firstActive.id);
-  }, [events, expandedEventId]);
-
   const toggleExpanded = (e: ListingChangesEventRow) => {
     setError(null);
     if (expandedEventId === e.id) {
@@ -136,6 +132,7 @@ export function ListingChangesClient({ events }: { events: ListingChangesEventRo
     setExpandedEventId(e.id);
     setRows(null);
     setLoading(true);
+    setShowNewLimit({ LAST_MINUTE: 12, RESALE: 12 });
   };
 
   useEffect(() => {
@@ -160,10 +157,6 @@ export function ListingChangesClient({ events }: { events: ListingChangesEventRo
   }, [expandedEventId]);
 
   const [showNewLimit, setShowNewLimit] = useState<Record<Kind, number>>({ LAST_MINUTE: 12, RESALE: 12 });
-  useEffect(() => {
-    // Reset per-kind expanded lists when switching event.
-    setShowNewLimit({ LAST_MINUTE: 12, RESALE: 12 });
-  }, [expandedEventId]);
 
   function renderLog(kind: Kind, log: LogRow | null) {
     const newItems = Array.isArray(log?.newSeatIds) ? log!.newSeatIds : [];

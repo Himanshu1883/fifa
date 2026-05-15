@@ -60,6 +60,13 @@ type HomeEventRow = {
   cat4LimitUsdCents: number | null;
   categoryCount: number;
   blockCount: number;
+  latestDiff:
+    | {
+        createdAt: Date | null;
+        newCount: number;
+        priceChangedCount: number;
+      }
+    | null;
   missingPriceSeatCount?: number;
   missingPriceSeatSamples?: MissingPriceSeatSample[];
 };
@@ -70,6 +77,23 @@ const eventNameLinkClass =
 function cellText(value: string | null | undefined): string {
   const t = value?.trim();
   return t ? t : "—";
+}
+
+function diffPillClass(): string {
+  return "inline-flex items-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_26%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-2 py-0.5 text-[10px] font-semibold tabular-nums text-zinc-100 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)]";
+}
+
+function formatDiffWhen(d: Date | null | undefined): string | null {
+  if (!d) return null;
+  const when = d instanceof Date ? d : new Date(d);
+  if (!Number.isFinite(when.getTime())) return null;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(when);
 }
 
 function cellUsdWithLimitFromCentsString(
@@ -286,6 +310,30 @@ const getHomeEventCategoryCounts = unstable_cache(
   { revalidate: 60 },
 );
 
+const getHomeLatestDiffLogs = unstable_cache(
+  async (
+    eventIds: number[],
+    kind: HomeSockKind,
+  ): Promise<Array<{ eventId: number; createdAt: Date; newCount: number; priceChangedCount: number }>> => {
+    if (eventIds.length === 0) return [];
+    return prisma.$queryRaw<Array<{ eventId: number; createdAt: Date; newCount: number; priceChangedCount: number }>>(
+      Prisma.sql`
+        SELECT DISTINCT ON ("event_id")
+          "event_id" as "eventId",
+          "created_at" as "createdAt",
+          "new_count" as "newCount",
+          "price_changed_count" as "priceChangedCount"
+        FROM "sock_available_webhook_diff_logs"
+        WHERE "event_id" IN (${Prisma.join(eventIds)})
+          AND kind::text = ${kind}
+        ORDER BY "event_id" ASC, "created_at" DESC
+      `,
+    );
+  },
+  ["home-latest-diff-logs-v1"],
+  { revalidate: 5 },
+);
+
 const getHomeMissingPriceSeatSummary = unstable_cache(
   async (
     eventIds: number[],
@@ -471,6 +519,7 @@ export async function HomePage({
         cat4LimitUsdCents: limits?.[4] ?? null,
         categoryCount: counts?.categoryCount ?? 0,
         blockCount: counts?.blockCount ?? 0,
+        latestDiff: null,
       };
     });
 
@@ -599,6 +648,16 @@ export async function HomePage({
       missingPriceSeatCount: countByEventId.get(e.id) ?? 0,
       missingPriceSeatSamples: samplesByEventId.get(e.id) ?? [],
     }));
+  }
+
+  if (!dbErr && events.length > 0) {
+    const listedEventIds = events.map((e) => e.id);
+    const latest = await getHomeLatestDiffLogs(listedEventIds, sockKind);
+    const byEventId = new Map<number, { createdAt: Date; newCount: number; priceChangedCount: number }>();
+    for (const r of latest) {
+      byEventId.set(r.eventId, { createdAt: r.createdAt, newCount: r.newCount, priceChangedCount: r.priceChangedCount });
+    }
+    events = events.map((e) => ({ ...e, latestDiff: byEventId.get(e.id) ?? null }));
   }
 
   const alertShell =
@@ -1187,11 +1246,28 @@ export async function HomePage({
                                   </div>
                                 </td>
                                 <td className="whitespace-nowrap px-3 py-3 align-middle sm:px-4">
-                                  <EventImportantToggle
-                                    eventId={event.id}
-                                    eventName={event.name}
-                                    isImportant={event.isImportant}
-                                  />
+                                  <div className="flex items-center gap-3">
+                                    <EventImportantToggle
+                                      eventId={event.id}
+                                      eventName={event.name}
+                                      isImportant={event.isImportant}
+                                    />
+                                    {event.latestDiff ? (
+                                      <div className="flex min-w-0 flex-col gap-0.5">
+                                        <span className={diffPillClass()}>
+                                          New {event.latestDiff.newCount} · Price {event.latestDiff.priceChangedCount}
+                                        </span>
+                                        {(() => {
+                                          const when = formatDiffWhen(event.latestDiff.createdAt);
+                                          return when ? (
+                                            <span className="text-[10px] tabular-nums text-zinc-500">{when}</span>
+                                          ) : null;
+                                        })()}
+                                      </div>
+                                    ) : (
+                                      <span className="text-xs text-zinc-500">—</span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="max-w-[11rem] px-3 py-3 align-middle text-zinc-300 sm:px-4">
                                   {cellText(event.stage)}
