@@ -154,10 +154,30 @@ export async function POST(req: NextRequest) {
               })
             : computeSockAvailableDiff({ kind, incoming: [], existing: [], sampleLimit: 10 });
 
+        let diffLogId: number | null = null;
+        try {
+          const created = await tx.sockAvailableWebhookDiffLog.create({
+            data: {
+              eventId: ev.id,
+              kind,
+              prefId,
+              newCount: diff.newCount,
+              changedCount: diff.changedCount,
+              priceChangedCount: diff.priceChangedCount,
+              newSeatIds: diff.newSeatIds.slice(0, 500),
+              sample: diff.sample.slice(0, 10),
+            },
+            select: { id: true },
+          });
+          diffLogId = created.id;
+        } catch (err) {
+          console.warn("[sock-available-shop webhook] diff log write failed", err);
+        }
+
         // IMPORTANT: diff is computed BEFORE snapshot deletion inside syncSockAvailableForEvent.
         const result = await syncSockAvailableForEvent(tx, prefId, kind, rows);
 
-        return { ev, result, diff };
+        return { ev, result, diff, diffLogId };
       },
       { maxWait: 20_000, timeout: 120_000 },
     );
@@ -207,6 +227,24 @@ export async function POST(req: NextRequest) {
             }),
           )
         : { attempted: false, ok: false, provider: "ultramsg" as const };
+
+    if (txnResult.diffLogId != null) {
+      try {
+        await prisma.sockAvailableWebhookDiffLog.update({
+          where: { id: txnResult.diffLogId },
+          data: {
+            notifyAttempted: notify.attempted,
+            notifyOk: notify.ok,
+            notifyProvider: notify.provider,
+            notifyStatus: notify.status != null ? String(notify.status) : null,
+            notifyError: notify.error ?? null,
+            notifyRaw: notify,
+          },
+        });
+      } catch (err) {
+        console.warn("[sock-available-shop webhook] diff log notify update failed", err);
+      }
+    }
 
     return NextResponse.json({
       ok: true,

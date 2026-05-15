@@ -39,6 +39,12 @@ export type SockAvailableDiffSample = {
   >;
 };
 
+export type SockAvailableNewListingKey = {
+  key: string;
+  seatId: string;
+  resaleMovementId: string | null;
+};
+
 export type SockAvailableDiffSummary = {
   kind: SockAvailableKind;
   incomingUniqueCount: number;
@@ -46,6 +52,11 @@ export type SockAvailableDiffSummary = {
   newCount: number;
   changedCount: number;
   priceChangedCount: number;
+  /**
+   * Capped set of identifiers for *new* listings in this diff.
+   * Stored for UI/debugging without pulling full snapshots.
+   */
+  newSeatIds: SockAvailableNewListingKey[];
   sample: SockAvailableDiffSample[];
 };
 
@@ -130,8 +141,9 @@ export function computeSockAvailableDiff(params: {
   incoming: SockAvailableRowInput[];
   existing: SockAvailableComparableDbRow[];
   sampleLimit?: number;
+  newSeatIdsLimit?: number;
 }): SockAvailableDiffSummary {
-  const { kind, incoming, existing, sampleLimit = 10 } = params;
+  const { kind, incoming, existing, sampleLimit = 10, newSeatIdsLimit = 500 } = params;
 
   const incomingMap = new Map<string, SockAvailableRowInput>();
   for (const r of incoming) {
@@ -148,12 +160,16 @@ export function computeSockAvailableDiff(params: {
   let newCount = 0;
   let changedCount = 0;
   let priceChangedCount = 0;
+  const newSeatIds: SockAvailableNewListingKey[] = [];
   const sample: SockAvailableDiffSample[] = [];
 
   for (const [k, inRow] of incomingMap.entries()) {
     const exRow = existingMap.get(k);
     if (!exRow) {
       newCount += 1;
+      if (newSeatIds.length < newSeatIdsLimit) {
+        newSeatIds.push({ key: k, seatId: inRow.seatId, resaleMovementId: inRow.resaleMovementId });
+      }
       if (sample.length < sampleLimit) {
         sample.push({
           change: "new",
@@ -202,6 +218,7 @@ export function computeSockAvailableDiff(params: {
     newCount,
     changedCount,
     priceChangedCount,
+    newSeatIds,
     sample,
   };
 }

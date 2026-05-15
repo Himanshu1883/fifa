@@ -126,8 +126,29 @@ export async function POST(req: NextRequest) {
           rows,
           sampleLimit: 10,
         });
+        let diffLogId: number | null = null;
+        if (event) {
+          try {
+            const created = await tx.sockAvailableWebhookDiffLog.create({
+              data: {
+                eventId: event.id,
+                kind,
+                prefId,
+                newCount: diff.newCount,
+                changedCount: diff.changedCount,
+                priceChangedCount: diff.priceChangedCount,
+                newSeatIds: diff.newSeatIds.slice(0, 500),
+                sample: diff.sample.slice(0, 10),
+              },
+              select: { id: true },
+            });
+            diffLogId = created.id;
+          } catch (err) {
+            console.warn("[sock-available webhook] diff log write failed", err);
+          }
+        }
         const result = await syncSockAvailableForEvent(tx, prefId, kind, rows);
-        return { event, diff, result };
+        return { event, diff, result, diffLogId };
       },
       // Large payloads can take longer than Prisma's default interactive transaction timeout.
       { maxWait: 20_000, timeout: 120_000 },
@@ -147,6 +168,24 @@ export async function POST(req: NextRequest) {
       event: txn.event,
       diff: txn.diff,
     });
+
+    if (txn.diffLogId != null) {
+      try {
+        await prisma.sockAvailableWebhookDiffLog.update({
+          where: { id: txn.diffLogId },
+          data: {
+            notifyAttempted: notify.attempted,
+            notifyOk: notify.ok,
+            notifyProvider: notify.provider,
+            notifyStatus: notify.status != null ? String(notify.status) : null,
+            notifyError: notify.error ?? null,
+            notifyRaw: notify,
+          },
+        });
+      } catch (err) {
+        console.warn("[sock-available webhook] diff log notify update failed", err);
+      }
+    }
 
     return NextResponse.json({
       ok: true,

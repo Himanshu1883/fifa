@@ -88,6 +88,7 @@ model Event {
   sockAvailable SockAvailable[]
   buyingCriteria EventBuyingCriteria?
   buyingCriteriaRules EventBuyingCriteriaRule[]
+  sockAvailableWebhookDiffLogs SockAvailableWebhookDiffLog[]
 
   @@index([sortOrder])
   @@index([prefId])
@@ -298,6 +299,37 @@ model SockAvailable {
   @@index([eventId])
   @@index([eventId, kind])
   @@map("sock_available")
+}
+
+model SockAvailableWebhookDiffLog {
+  id               Int              @id @default(autoincrement())
+  createdAt         DateTime         @default(now()) @map("created_at")
+
+  eventId           Int              @map("event_id")
+  event             Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  kind              SockAvailableKind @map("kind")
+  prefId            String           @map("pref_id") @db.Text
+
+  newCount          Int              @map("new_count")
+  changedCount      Int              @map("changed_count")
+  priceChangedCount Int              @map("price_changed_count")
+
+  /// Capped JSON payloads to keep log rows bounded.
+  newSeatIds        Json?            @map("new_seat_ids")
+  sample            Json?            @map("sample")
+
+  /// Optional notification metadata (best-effort).
+  notifyAttempted   Boolean?         @map("notify_attempted")
+  notifyOk          Boolean?         @map("notify_ok")
+  notifyProvider    String?          @map("notify_provider") @db.VarChar(64)
+  notifyStatus      String?          @map("notify_status") @db.VarChar(64)
+  notifyError       String?          @map("notify_error") @db.Text
+  notifyRaw         Json?            @map("notify_raw")
+
+  @@index([eventId, kind, createdAt])
+  @@index([eventId, createdAt])
+  @@map("sock_available_webhook_diff_logs")
 }
 
 model GmailAccount {

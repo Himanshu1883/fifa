@@ -11,6 +11,7 @@ export type SockAvailableWebhookDiffResponse = {
   newCount: number;
   changedCount: number;
   priceChangedCount: number;
+  newSeatIds: ReturnType<typeof computeSockAvailableDiff>["newSeatIds"];
   sample: ReturnType<typeof computeSockAvailableDiff>["sample"];
 };
 
@@ -62,7 +63,7 @@ export async function computeSockAvailableDiffInTx(params: {
   if (!ev) {
     return {
       event: null,
-      diff: { kind, newCount: 0, changedCount: 0, priceChangedCount: 0, sample: [] },
+      diff: { kind, newCount: 0, changedCount: 0, priceChangedCount: 0, newSeatIds: [], sample: [] },
     };
   }
 
@@ -97,6 +98,7 @@ export async function computeSockAvailableDiffInTx(params: {
       newCount: summary.newCount,
       changedCount: summary.changedCount,
       priceChangedCount: summary.priceChangedCount,
+      newSeatIds: summary.newSeatIds,
       sample: summary.sample,
     },
   };
