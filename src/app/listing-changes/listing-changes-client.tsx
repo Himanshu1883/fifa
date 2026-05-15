@@ -86,6 +86,15 @@ function amountRawToUsdLabel(raw: unknown): string {
   return `$${usd.toFixed(2)}`;
 }
 
+function displayBlockName(raw: string | null | undefined): string | null {
+  const s = typeof raw === "string" ? raw.trim() : "";
+  if (!s) return null;
+  // Some historical log samples stored raw ids here (e.g. "m:123 · 456" or "s:789").
+  if (/^[ms]:\d+/i.test(s)) return null;
+  if (/\bseatId\b|\bmovement\b/i.test(s)) return null;
+  return s;
+}
+
 export function ListingChangesClient({ events }: { events: ListingChangesEventRow[] }) {
   const [query, setQuery] = useState("");
   const [onlyWithChanges, setOnlyWithChanges] = useState(false);
@@ -217,29 +226,32 @@ export function ListingChangesClient({ events }: { events: ListingChangesEventRo
           <div className="px-4 py-3">
             <p className="text-[11px] font-semibold text-zinc-200">New listings</p>
             <div className="mt-2 grid gap-2 md:grid-cols-2">
-              {shown.map((x) => (
-                <div key={x.key} className="rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2">
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-[11px]">
-                    <span className="font-semibold text-zinc-100">
-                      {x.categoryName?.trim()
-                        ? x.categoryName
-                        : x.categoryId
-                          ? `Cat ${x.categoryId}`
-                          : "Category —"}
-                    </span>
-                    <span className="font-bold tabular-nums text-[color:var(--ticketing-accent)]">
-                      {amountRawToUsdLabel(x.amountRaw)}
-                    </span>
+              {shown.map((x) => {
+                const blockLabel = displayBlockName(x.blockName);
+                return (
+                  <div key={x.key} className="rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-[11px]">
+                      <span className="font-semibold text-zinc-100">
+                        {x.categoryName?.trim()
+                          ? x.categoryName
+                          : x.categoryId
+                            ? `Cat ${x.categoryId}`
+                            : "Category —"}
+                      </span>
+                      <span className="font-bold tabular-nums text-[color:var(--ticketing-accent)]">
+                        {amountRawToUsdLabel(x.amountRaw)}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-zinc-400">
+                      <span className="font-medium text-zinc-300">{blockLabel ?? "Block —"}</span>
+                      <span className="text-zinc-600"> · </span>
+                      <span>row {x.row ?? "—"}</span>
+                      <span className="text-zinc-600"> · </span>
+                      <span>seat {x.seatNumber ?? "—"}</span>
+                    </div>
                   </div>
-                  <div className="mt-0.5 text-[11px] text-zinc-400">
-                    <span className="font-medium text-zinc-300">{x.blockName ?? "Block —"}</span>
-                    <span className="text-zinc-600"> · </span>
-                    <span>row {x.row ?? "—"}</span>
-                    <span className="text-zinc-600"> · </span>
-                    <span>seat {x.seatNumber ?? "—"}</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
               <p className="text-[11px] text-zinc-500">
