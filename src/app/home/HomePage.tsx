@@ -1251,11 +1251,19 @@ export async function HomePage({
                                       eventId={event.id}
                                       eventName={event.name}
                                       isImportant={event.isImportant}
+                                      hideLabel
                                     />
                                     {event.latestDiff ? (
                                       <div className="flex min-w-0 flex-col gap-0.5">
                                         <span className={diffPillClass()}>
-                                          New {event.latestDiff.newCount} · Price {event.latestDiff.priceChangedCount}
+                                          New{" "}
+                                          <span className="font-extrabold tabular-nums text-[color:var(--ticketing-accent)]">
+                                            {event.latestDiff.newCount}
+                                          </span>{" "}
+                                          · Price{" "}
+                                          <span className="font-extrabold tabular-nums text-[color:var(--ticketing-accent)]">
+                                            {event.latestDiff.priceChangedCount}
+                                          </span>
                                         </span>
                                         {(() => {
                                           const when = formatDiffWhen(event.latestDiff.createdAt);

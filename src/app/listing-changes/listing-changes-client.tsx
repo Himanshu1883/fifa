@@ -238,11 +238,6 @@ export function ListingChangesClient({ events }: { events: ListingChangesEventRo
                     <span className="text-zinc-600"> · </span>
                     <span>seat {x.seatNumber ?? "—"}</span>
                   </div>
-                  <div className="mt-1 text-[10px] text-zinc-500">
-                    <span className="font-mono text-zinc-400">{x.key}</span>
-                    <span className="text-zinc-700"> · </span>
-                    <span className="font-mono">{x.seatId}</span>
-                  </div>
                 </div>
               ))}
             </div>
