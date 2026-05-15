@@ -26,6 +26,12 @@ type NewSeatId = {
   key: string;
   seatId: string;
   resaleMovementId: string | null;
+  categoryId?: string;
+  categoryName?: string;
+  blockName?: string;
+  row?: string;
+  seatNumber?: string;
+  amountRaw?: unknown;
 };
 
 type LogRow = {
@@ -62,6 +68,15 @@ function pillClass(active: boolean): string {
 function countsLabel(v: { newCount: number; priceChangedCount: number } | null): string {
   if (!v) return "—";
   return `New ${v.newCount} · Price ${v.priceChangedCount}`;
+}
+
+function amountRawToUsdLabel(raw: unknown): string {
+  if (raw === null || raw === undefined) return "—";
+  const n = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+  if (!Number.isFinite(n)) return "—";
+  const usd = n / 1000;
+  if (!Number.isFinite(usd)) return "—";
+  return `$${usd.toFixed(2)}`;
 }
 
 export function ListingChangesClient({ events }: { events: ListingChangesEventRow[] }) {
@@ -291,15 +306,32 @@ export function ListingChangesClient({ events }: { events: ListingChangesEventRo
                                   {shown.length ? (
                                     <details className="mt-2 rounded-lg border border-white/[0.08] bg-black/25 px-3 py-2 ring-1 ring-white/[0.04]">
                                       <summary className="cursor-pointer select-none text-[11px] font-semibold text-zinc-200 hover:text-white">
-                                        New listing keys ({items.length.toLocaleString("en-US")})
+                                        New listings ({items.length.toLocaleString("en-US")})
                                       </summary>
                                       <div className="mt-2">
                                         <ul className="grid gap-1.5 md:grid-cols-2">
                                           {shown.map((x) => (
-                                            <li key={x.key} className="text-[11px] text-zinc-300">
-                                              <span className="font-mono text-zinc-200">{x.key}</span>
-                                              <span className="text-zinc-600"> · </span>
-                                              <span className="font-mono text-zinc-300">{x.seatId}</span>
+                                            <li key={x.key} className="rounded-md border border-white/[0.06] bg-black/20 px-2 py-1.5">
+                                              <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-[11px]">
+                                                <span className="font-semibold text-zinc-200">
+                                                  {x.categoryName?.trim() ? x.categoryName : x.categoryId ? `Cat ${x.categoryId}` : "Category —"}
+                                                </span>
+                                                <span className="font-bold tabular-nums text-[color:var(--ticketing-accent)]">
+                                                  {amountRawToUsdLabel(x.amountRaw)}
+                                                </span>
+                                              </div>
+                                              <div className="mt-0.5 text-[11px] text-zinc-400">
+                                                <span className="font-medium text-zinc-300">{x.blockName ?? "Block —"}</span>
+                                                <span className="text-zinc-600"> · </span>
+                                                <span>row {x.row ?? "—"}</span>
+                                                <span className="text-zinc-600"> · </span>
+                                                <span>seat {x.seatNumber ?? "—"}</span>
+                                              </div>
+                                              <div className="mt-0.5 text-[10px] text-zinc-500">
+                                                <span className="font-mono text-zinc-400">{x.key}</span>
+                                                <span className="text-zinc-700"> · </span>
+                                                <span className="font-mono">{x.seatId}</span>
+                                              </div>
                                             </li>
                                           ))}
                                         </ul>

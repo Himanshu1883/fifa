@@ -43,6 +43,12 @@ export type SockAvailableNewListingKey = {
   key: string;
   seatId: string;
   resaleMovementId: string | null;
+  categoryId: string;
+  categoryName: string;
+  blockName: string;
+  row: string;
+  seatNumber: string;
+  amountRaw: number | null;
 };
 
 export type SockAvailableDiffSummary = {
@@ -168,7 +174,17 @@ export function computeSockAvailableDiff(params: {
     if (!exRow) {
       newCount += 1;
       if (newSeatIds.length < newSeatIdsLimit) {
-        newSeatIds.push({ key: k, seatId: inRow.seatId, resaleMovementId: inRow.resaleMovementId });
+        newSeatIds.push({
+          key: k,
+          seatId: inRow.seatId,
+          resaleMovementId: inRow.resaleMovementId,
+          categoryId: inRow.categoryId,
+          categoryName: inRow.categoryName,
+          blockName: inRow.blockName,
+          row: inRow.row,
+          seatNumber: inRow.seatNumber,
+          amountRaw: inRow.amount,
+        });
       }
       if (sample.length < sampleLimit) {
         sample.push({
