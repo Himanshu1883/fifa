@@ -24,8 +24,15 @@ export type HomeSearchParams = {
   venue?: string | string[];
   country?: string | string[];
   bc?: string | string[];
-  deal?: string | string[];
   mp?: string | string[];
+};
+
+type MissingPriceSeatSample = {
+  seatId: string;
+  seatNumber: string;
+  row: string;
+  blockName: string;
+  categoryId: string;
 };
 
 type HomeEventRow = {
@@ -53,6 +60,8 @@ type HomeEventRow = {
   cat4LimitUsdCents: number | null;
   categoryCount: number;
   blockCount: number;
+  missingPriceSeatCount?: number;
+  missingPriceSeatSamples?: MissingPriceSeatSample[];
 };
 
 const eventNameLinkClass =
@@ -167,13 +176,11 @@ export function homeQueryStringFrom(q: HomeSearchParams): string {
   const importantFilter = parseImportantFilter(q);
   const { sort: listSort, order: listOrder } = parseHomeListSort(q);
   const bc = firstQs(q.bc);
-  const deal = firstQs(q.deal);
   const mp = firstQs(q.mp);
 
   const sp = new URLSearchParams();
   if (prefsErr) sp.set("prefsErr", prefsErr);
   if (bc === "1") sp.set("bc", "1");
-  if (deal === "1") sp.set("deal", "1");
   if (mp === "1") sp.set("mp", "1");
   if (venueFilter.trim()) sp.set("venue", venueFilter.trim());
   if (countryFilter.trim()) sp.set("country", countryFilter.trim());
@@ -279,17 +286,75 @@ const getHomeEventCategoryCounts = unstable_cache(
   { revalidate: 60 },
 );
 
+const getHomeMissingPriceSeatSummary = unstable_cache(
+  async (
+    eventIds: number[],
+    kind: HomeSockKind,
+    perEventSampleLimit: number,
+  ): Promise<{
+    counts: Array<{ eventId: number; count: number }>;
+    samples: Array<{ eventId: number } & MissingPriceSeatSample>;
+  }> => {
+    if (eventIds.length === 0) return { counts: [], samples: [] };
+    const where = {
+      eventId: { in: eventIds },
+      kind,
+      amount: null,
+    } satisfies Prisma.SockAvailableWhereInput;
+
+    const countsRaw = await prisma.sockAvailable.groupBy({
+      by: ["eventId"],
+      where,
+      _count: { _all: true },
+    });
+
+    const samples = await prisma.$queryRaw<Array<{ eventId: number } & MissingPriceSeatSample>>(
+      Prisma.sql`
+        SELECT
+          t.event_id as "eventId",
+          t.seatid as "seatId",
+          t.seat_number as "seatNumber",
+          t.row as "row",
+          t.block_name as "blockName",
+          t.category_id as "categoryId"
+        FROM (
+          SELECT
+            event_id,
+            seatid,
+            seat_number,
+            row,
+            block_name,
+            category_id,
+            updated_at,
+            ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY updated_at DESC) as rn
+          FROM sock_available
+          WHERE event_id IN (${Prisma.join(eventIds)})
+            AND kind::text = ${kind}
+            AND amount IS NULL
+        ) t
+        WHERE t.rn <= ${perEventSampleLimit}
+        ORDER BY t.event_id ASC, t.updated_at DESC
+      `,
+    );
+
+    return {
+      counts: countsRaw.map((r) => ({ eventId: r.eventId, count: r._count._all })),
+      samples,
+    };
+  },
+  ["home-missing-price-seat-summary-v1"],
+  { revalidate: 5 },
+);
+
 export async function HomePage({
   searchParams,
   kind,
   onlyBuyingCriteriaMeet,
-  onlyDeals,
   onlyMissingPrice,
 }: {
   searchParams: Promise<HomeSearchParams>;
   kind: HomeSockKind;
   onlyBuyingCriteriaMeet: boolean;
-  onlyDeals: boolean;
   onlyMissingPrice: boolean;
 }) {
   const q = await searchParams;
@@ -298,7 +363,6 @@ export async function HomePage({
   const { sort: listSort, order: listOrder } = parseHomeListSort(q);
   const sockKind = kind;
   const buyingCriteriaMeetActive = onlyBuyingCriteriaMeet;
-  const dealsActive = onlyDeals;
   const missingPriceActive = onlyMissingPrice;
   const importantFilter = parseImportantFilter(q);
   const venueFilter = parseHomeVenueFilter(q);
@@ -312,7 +376,6 @@ export async function HomePage({
   let eventsAll: HomeEventRow[];
   let events: HomeEventRow[];
   let buyingCriteriaFilteredOutAll = false;
-  let dealsFilteredOutAll = false;
   let missingPriceFilteredOutAll = false;
   try {
     const rows = await prisma.event.findMany({
@@ -436,25 +499,6 @@ export async function HomePage({
       missingPriceFilteredOutAll = beforeMissingPriceFilter.length > 0 && events.length === 0;
     }
 
-    const bestDealDeltaCents = (e: HomeEventRow): number | null => {
-      const checks: Array<[priceCentsString: string | null, limitUsdCents: number | null]> = [
-        [e.cat1, e.cat1LimitUsdCents],
-        [e.cat2, e.cat2LimitUsdCents],
-        [e.cat3, e.cat3LimitUsdCents],
-        [e.cat4, e.cat4LimitUsdCents],
-      ];
-      let best: number | null = null;
-      for (const [priceStr, limit] of checks) {
-        if (!priceStr || limit == null) continue;
-        const priceCents = priceToNumber(priceStr);
-        if (!Number.isFinite(priceCents)) continue;
-        const delta = limit - priceCents;
-        if (delta < 0) continue;
-        best = best == null ? delta : Math.max(best, delta);
-      }
-      return best;
-    };
-
     const meetsBuyingCriteria = (e: HomeEventRow): boolean => {
       const checks: Array<[priceCentsString: string | null, limitUsdCents: number | null]> = [
         [e.cat1, e.cat1LimitUsdCents],
@@ -475,25 +519,11 @@ export async function HomePage({
       events = beforeBuyingCriteriaFilter.filter(meetsBuyingCriteria);
       buyingCriteriaFilteredOutAll = beforeBuyingCriteriaFilter.length > 0 && events.length === 0;
     }
-
-    const beforeDealsFilter = events;
-    if (dealsActive) {
-      events = beforeDealsFilter.filter((e) => bestDealDeltaCents(e) != null);
-      dealsFilteredOutAll = beforeDealsFilter.length > 0 && events.length === 0;
-      events.sort((a, b) => {
-        const da = bestDealDeltaCents(a) ?? -1;
-        const db = bestDealDeltaCents(b) ?? -1;
-        if (da !== db) return db - da;
-        return compareMatchNumberOrder(a.matchNum, b.matchNum, "asc");
-      });
-    } else {
-      sortHomeEvents(events, listSort, listOrder);
-    }
+    sortHomeEvents(events, listSort, listOrder);
   } catch (err) {
     eventsAll = [];
     events = [];
     buyingCriteriaFilteredOutAll = false;
-    dealsFilteredOutAll = false;
     missingPriceFilteredOutAll = false;
     const msg = err instanceof Error ? err.message : String(err);
     dbErr =
@@ -525,15 +555,6 @@ export async function HomePage({
     return `${base}${qs ? `?${qs}` : ""}#home-events-heading`;
   };
 
-  const homeDealsHref = (nextActive: boolean): string => {
-    const base = homeBasePathForKind(sockKind);
-    const sp = new URLSearchParams(homeQueryStringFrom(q));
-    if (nextActive) sp.set("deal", "1");
-    else sp.delete("deal");
-    const qs = sp.toString();
-    return `${base}${qs ? `?${qs}` : ""}#home-events-heading`;
-  };
-
   const homeMissingPriceHref = (nextActive: boolean): string => {
     const base = homeBasePathForKind(sockKind);
     const sp = new URLSearchParams(homeQueryStringFrom(q));
@@ -545,6 +566,40 @@ export async function HomePage({
 
   const noTicketsTitle = "No sock_available rows synced for this event yet";
   const noPriceTitle = "No sock_available amounts available";
+
+  const missingPriceSeatSampleLimit = 25;
+
+  if (missingPriceActive && !dbErr && events.length > 0) {
+    const listedEventIds = events.map((e) => e.id);
+    const { counts, samples } = await getHomeMissingPriceSeatSummary(
+      listedEventIds,
+      sockKind,
+      missingPriceSeatSampleLimit,
+    );
+
+    const countByEventId = new Map<number, number>();
+    for (const c of counts) countByEventId.set(c.eventId, c.count);
+
+    const samplesByEventId = new Map<number, MissingPriceSeatSample[]>();
+    for (const s of samples) {
+      const bucket = samplesByEventId.get(s.eventId);
+      const item: MissingPriceSeatSample = {
+        seatId: s.seatId,
+        seatNumber: s.seatNumber,
+        row: s.row,
+        blockName: s.blockName,
+        categoryId: s.categoryId,
+      };
+      if (bucket) bucket.push(item);
+      else samplesByEventId.set(s.eventId, [item]);
+    }
+
+    events = events.map((e) => ({
+      ...e,
+      missingPriceSeatCount: countByEventId.get(e.id) ?? 0,
+      missingPriceSeatSamples: samplesByEventId.get(e.id) ?? [],
+    }));
+  }
 
   const alertShell =
     "rounded-xl border border-red-400/30 bg-[color:color-mix(in_oklab,red_12%,transparent)] px-4 py-3 text-sm text-red-200 shadow-sm shadow-black/30 ring-1 ring-red-500/15";
@@ -679,17 +734,7 @@ export async function HomePage({
                       : "inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
                   }
                 >
-                  Buying Criteria meet
-                </Link>
-                <Link
-                  href={homeDealsHref(!dealsActive)}
-                  className={
-                    dealsActive
-                      ? "inline-flex min-h-11 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:var(--ticketing-accent)] px-6 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter,transform] hover:brightness-[1.06] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
-                      : "inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
-                  }
-                >
-                  Deal
+                  Buying Criteria
                 </Link>
                 <Link
                   href={homeMissingPriceHref(!missingPriceActive)}
@@ -767,13 +812,6 @@ export async function HomePage({
                             Try turning off the filter, or increasing your max prices on the Buying Criteria page.
                           </p>
                         </>
-                      ) : dealsFilteredOutAll ? (
-                        <>
-                          <p className="text-base font-semibold tracking-tight text-zinc-100">No deals right now</p>
-                          <p className="mt-2 text-sm leading-relaxed text-zinc-500">
-                            Try turning off Deal, or increasing your max prices on the Buying Criteria page.
-                          </p>
-                        </>
                       ) : (
                         <>
                           <p className="text-base font-semibold tracking-tight text-zinc-100">No results</p>
@@ -792,14 +830,6 @@ export async function HomePage({
                             Show all events
                           </Link>
                         ) : null}
-                        {dealsActive ? (
-                          <Link
-                            href={homeDealsHref(false)}
-                            className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
-                          >
-                            Show all events
-                          </Link>
-                        ) : null}
                         {missingPriceActive ? (
                           <Link
                             href={homeMissingPriceHref(false)}
@@ -808,7 +838,7 @@ export async function HomePage({
                             Show all events
                           </Link>
                         ) : null}
-                        {eventsAll.length > 0 && !buyingCriteriaMeetActive && !dealsActive && !missingPriceActive ? (
+                        {eventsAll.length > 0 && !buyingCriteriaMeetActive && !missingPriceActive ? (
                           <Link
                             href={`${homeBasePathForKind(sockKind)}#home-events-heading`}
                             className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
@@ -833,6 +863,8 @@ export async function HomePage({
                         .map((v) => v?.trim())
                         .filter(Boolean)
                         .join(" · ");
+                      const missingSeatCount = event.missingPriceSeatCount ?? 0;
+                      const missingSeatSamples = event.missingPriceSeatSamples ?? [];
                       return (
                         <li key={event.id}>
                           <article
@@ -851,6 +883,46 @@ export async function HomePage({
                                   </h3>
                                 </div>
                                 {location ? <p className="text-xs leading-relaxed text-zinc-500">{location}</p> : null}
+                                {missingPriceActive ? (
+                                  <div className="space-y-2">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="inline-flex items-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_26%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-2.5 py-1 text-[11px] font-semibold tabular-nums text-zinc-100 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)]">
+                                        Missing price seats: {missingSeatCount.toLocaleString("en-US")}
+                                      </span>
+                                      {!hasTickets ? (
+                                        <span className="text-[11px] font-medium text-zinc-500">No sock rows</span>
+                                      ) : null}
+                                    </div>
+                                    {missingSeatCount > 0 ? (
+                                      <details className="group rounded-xl border border-white/[0.08] bg-black/20 px-3 py-2 ring-1 ring-white/[0.04]">
+                                        <summary className="cursor-pointer select-none text-[11px] font-semibold text-zinc-200 hover:text-white">
+                                          View seatIds
+                                        </summary>
+                                        <div className="mt-2 space-y-1.5">
+                                          <ul className="space-y-1">
+                                            {missingSeatSamples.map((s) => (
+                                              <li
+                                                key={`${s.seatId}|${s.blockName}|${s.row}|${s.seatNumber}|${s.categoryId}`}
+                                                className="text-[11px] text-zinc-300"
+                                              >
+                                                <span className="font-mono text-zinc-200">{s.seatId}</span>
+                                                <span className="text-zinc-600"> · </span>
+                                                <span className="text-zinc-400">
+                                                  {s.blockName} · row {s.row} · seat {s.seatNumber} · cat {s.categoryId}
+                                                </span>
+                                              </li>
+                                            ))}
+                                          </ul>
+                                          {missingSeatCount > missingSeatSamples.length ? (
+                                            <p className="text-[11px] text-zinc-500">
+                                              …and {(missingSeatCount - missingSeatSamples.length).toLocaleString("en-US")} more
+                                            </p>
+                                          ) : null}
+                                        </div>
+                                      </details>
+                                    ) : null}
+                                  </div>
+                                ) : null}
                               </div>
                               <div className="flex shrink-0 items-center gap-2 pt-0.5">
                                 <EditEventDialog event={event} venueOptions={venueOptions} />
@@ -1045,6 +1117,8 @@ export async function HomePage({
                             const hasPrice = Boolean(event.lowestPriceCents);
                             const priceLabel = hasPrice && event.lowestPriceCents ? formatUsd(event.lowestPriceCents) : "—";
                             const priceTitle = hasTickets ? (hasPrice ? undefined : noPriceTitle) : noTicketsTitle;
+                            const missingSeatCount = event.missingPriceSeatCount ?? 0;
+                            const missingSeatSamples = event.missingPriceSeatSamples ?? [];
                             return (
                               <tr
                                 key={event.id}
@@ -1054,14 +1128,56 @@ export async function HomePage({
                                   {event.matchLabel}
                                 </td>
                                 <td className="max-w-[16rem] px-3 py-3 align-middle sm:max-w-none sm:px-4">
-                                  <div className="flex min-w-0 items-center gap-2">
-                                    <Link
-                                      href={`/events/${event.id}?kind=LAST_MINUTE`}
-                                      className={`${eventNameLinkClass} min-w-0 truncate`}
-                                    >
-                                      {event.name}
-                                    </Link>
-                                    <EditEventDialog event={event} venueOptions={venueOptions} />
+                                  <div className="min-w-0 space-y-2">
+                                    <div className="flex min-w-0 items-center gap-2">
+                                      <Link
+                                        href={`/events/${event.id}?kind=LAST_MINUTE`}
+                                        className={`${eventNameLinkClass} min-w-0 truncate`}
+                                      >
+                                        {event.name}
+                                      </Link>
+                                      <EditEventDialog event={event} venueOptions={venueOptions} />
+                                    </div>
+                                    {missingPriceActive ? (
+                                      <div className="space-y-1.5">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <span className="inline-flex items-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_26%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-2 py-0.5 text-[10px] font-semibold tabular-nums text-zinc-100 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)]">
+                                            Missing price seats: {missingSeatCount.toLocaleString("en-US")}
+                                          </span>
+                                          {!hasTickets ? (
+                                            <span className="text-[10px] font-medium text-zinc-500">No sock rows</span>
+                                          ) : null}
+                                        </div>
+                                        {missingSeatCount > 0 ? (
+                                          <details className="group max-w-[22rem] rounded-lg border border-white/[0.08] bg-black/20 px-2.5 py-2 ring-1 ring-white/[0.04]">
+                                            <summary className="cursor-pointer select-none text-[10px] font-semibold text-zinc-200 hover:text-white">
+                                              View seatIds
+                                            </summary>
+                                            <div className="mt-2 space-y-1">
+                                              <ul className="space-y-1">
+                                                {missingSeatSamples.map((s) => (
+                                                  <li
+                                                    key={`${s.seatId}|${s.blockName}|${s.row}|${s.seatNumber}|${s.categoryId}`}
+                                                    className="text-[10px] text-zinc-300"
+                                                  >
+                                                    <span className="font-mono text-zinc-200">{s.seatId}</span>
+                                                    <span className="text-zinc-600"> · </span>
+                                                    <span className="text-zinc-400">
+                                                      {s.blockName} · row {s.row} · seat {s.seatNumber} · cat {s.categoryId}
+                                                    </span>
+                                                  </li>
+                                                ))}
+                                              </ul>
+                                              {missingSeatCount > missingSeatSamples.length ? (
+                                                <p className="text-[10px] text-zinc-500">
+                                                  …and {(missingSeatCount - missingSeatSamples.length).toLocaleString("en-US")} more
+                                                </p>
+                                              ) : null}
+                                            </div>
+                                          </details>
+                                        ) : null}
+                                      </div>
+                                    ) : null}
                                   </div>
                                 </td>
                                 <td className="whitespace-nowrap px-3 py-3 align-middle sm:px-4">

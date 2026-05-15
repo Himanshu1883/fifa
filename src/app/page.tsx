@@ -22,14 +22,12 @@ export default async function Home({ searchParams }: Props) {
     redirect(`${homeBasePathForKind("RESALE")}${qs ? `?${qs}` : ""}`);
   }
   const onlyBuyingCriteriaMeet = firstQs(q.bc) === "1";
-  const onlyDeals = firstQs(q.deal) === "1";
   const onlyMissingPrice = firstQs(q.mp) === "1";
   return (
     <HomePage
       searchParams={Promise.resolve(q)}
       kind="LAST_MINUTE"
       onlyBuyingCriteriaMeet={onlyBuyingCriteriaMeet}
-      onlyDeals={onlyDeals}
       onlyMissingPrice={onlyMissingPrice}
     />
   );
