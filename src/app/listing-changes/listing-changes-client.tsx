@@ -72,7 +72,14 @@ function countsLabel(v: { newCount: number; priceChangedCount: number } | null):
 
 function amountRawToUsdLabel(raw: unknown): string {
   if (raw === null || raw === undefined) return "—";
-  const n = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+  const n =
+    typeof raw === "number"
+      ? raw
+      : typeof raw === "string"
+        ? Number(raw)
+        : typeof raw === "object" && raw && typeof (raw as { toString?: unknown }).toString === "function"
+          ? Number(String((raw as { toString: () => unknown }).toString()))
+          : NaN;
   if (!Number.isFinite(n)) return "—";
   const usd = n / 1000;
   if (!Number.isFinite(usd)) return "—";

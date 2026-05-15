@@ -68,7 +68,10 @@ function parseKind(raw: string | null): "RESALE" | "LAST_MINUTE" | null {
   return null;
 }
 
-async function enrichNewSeatIdsForRows(args: { eventId: number; rows: Array<{ kind: Kind; newSeatIds: unknown }> }) {
+async function enrichNewSeatIdsForRows(args: {
+  eventId: number;
+  rows: Array<{ kind: Kind; newSeatIds: unknown; sample?: unknown }>;
+}) {
   const neededByKind: Record<Kind, { seatIds: Set<string>; movementIds: Set<string> }> = {
     LAST_MINUTE: { seatIds: new Set<string>(), movementIds: new Set<string>() },
     RESALE: { seatIds: new Set<string>(), movementIds: new Set<string>() },
@@ -90,11 +93,11 @@ async function enrichNewSeatIdsForRows(args: { eventId: number; rows: Array<{ ki
       const key = keyString(x.key);
       const seatId = keyString(x.seatId);
       const movementId = keyString(x.resaleMovementId);
+      // Always collect seatId if present as a fallback (movement IDs can be missing in DB).
+      if (seatId) neededByKind[r.kind].seatIds.add(seatId);
       if (key?.startsWith("m:") || movementId) {
         const id = movementId ?? (key ? key.slice(2) : null);
         if (id) neededByKind[r.kind].movementIds.add(id);
-      } else if (seatId) {
-        neededByKind[r.kind].seatIds.add(seatId);
       } else if (key?.startsWith("s:")) {
         const id = key.slice(2).trim();
         if (id) neededByKind[r.kind].seatIds.add(id);
@@ -143,7 +146,8 @@ async function enrichNewSeatIdsForRows(args: { eventId: number; rows: Array<{ ki
           blockName: s.blockName,
           row: s.row,
           seatNumber: s.seatNumber,
-          amountRaw: s.amount,
+          // Prisma Decimal serializes, but keep it JSON-safe.
+          amountRaw: s.amount ? s.amount.toString() : null,
         };
         map.set(`s:${s.seatId}`, data);
         if (s.resaleMovementId) map.set(`m:${s.resaleMovementId}`, data);
@@ -154,13 +158,39 @@ async function enrichNewSeatIdsForRows(args: { eventId: number; rows: Array<{ ki
   return args.rows.map((r) => {
     if (!Array.isArray(r.newSeatIds) || r.newSeatIds.length === 0) return r;
     const map = seatMapByKind[r.kind];
+
+    // Fallback: try to enrich from stored `sample` entries when DB no longer has the row.
+    const sampleByKey = new Map<string, NewSeatIdLike>();
+    if (Array.isArray(r.sample)) {
+      for (const raw of r.sample) {
+        if (!raw || typeof raw !== "object") continue;
+        const anyRaw = raw as Record<string, unknown>;
+        if (anyRaw.change !== "new") continue;
+        const k = keyString(anyRaw.key);
+        if (!k) continue;
+        sampleByKey.set(k, {
+          blockName: keyString(anyRaw.blockName),
+          row: keyString(anyRaw.row),
+          seatNumber: keyString(anyRaw.seatNumber),
+          categoryId: keyString(anyRaw.categoryId),
+          amountRaw: anyRaw.amountRaw ?? null,
+        });
+      }
+    }
+
     const next = r.newSeatIds.map((raw) => {
       if (!raw || typeof raw !== "object") return raw;
       const x = raw as NewSeatIdLike;
       if (!shouldEnrichItem(x)) return raw;
       const lk = lookupKeyForItem(x);
       if (!lk) return raw;
-      const data = map.get(lk);
+      const seatId = keyString(x.seatId);
+
+      const data =
+        map.get(lk) ??
+        (seatId ? map.get(`s:${seatId}`) : undefined) ??
+        sampleByKey.get(lk) ??
+        (seatId ? sampleByKey.get(`s:${seatId}`) : undefined);
       if (!data) return raw;
 
       return {
