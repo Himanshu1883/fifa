@@ -25,6 +25,7 @@ export type HomeSearchParams = {
   country?: string | string[];
   bc?: string | string[];
   deal?: string | string[];
+  mp?: string | string[];
 };
 
 type HomeEventRow = {
@@ -167,11 +168,13 @@ export function homeQueryStringFrom(q: HomeSearchParams): string {
   const { sort: listSort, order: listOrder } = parseHomeListSort(q);
   const bc = firstQs(q.bc);
   const deal = firstQs(q.deal);
+  const mp = firstQs(q.mp);
 
   const sp = new URLSearchParams();
   if (prefsErr) sp.set("prefsErr", prefsErr);
   if (bc === "1") sp.set("bc", "1");
   if (deal === "1") sp.set("deal", "1");
+  if (mp === "1") sp.set("mp", "1");
   if (venueFilter.trim()) sp.set("venue", venueFilter.trim());
   if (countryFilter.trim()) sp.set("country", countryFilter.trim());
   if (importantFilter === "important") sp.set("important", "1");
@@ -281,11 +284,13 @@ export async function HomePage({
   kind,
   onlyBuyingCriteriaMeet,
   onlyDeals,
+  onlyMissingPrice,
 }: {
   searchParams: Promise<HomeSearchParams>;
   kind: HomeSockKind;
   onlyBuyingCriteriaMeet: boolean;
   onlyDeals: boolean;
+  onlyMissingPrice: boolean;
 }) {
   const q = await searchParams;
   const prefsRaw = firstQs(q.prefsErr);
@@ -294,6 +299,7 @@ export async function HomePage({
   const sockKind = kind;
   const buyingCriteriaMeetActive = onlyBuyingCriteriaMeet;
   const dealsActive = onlyDeals;
+  const missingPriceActive = onlyMissingPrice;
   const importantFilter = parseImportantFilter(q);
   const venueFilter = parseHomeVenueFilter(q);
   const countryFilter = parseHomeCountryFilter(q);
@@ -307,6 +313,7 @@ export async function HomePage({
   let events: HomeEventRow[];
   let buyingCriteriaFilteredOutAll = false;
   let dealsFilteredOutAll = false;
+  let missingPriceFilteredOutAll = false;
   try {
     const rows = await prisma.event.findMany({
       orderBy: { sortOrder: "asc" },
@@ -420,6 +427,15 @@ export async function HomePage({
           ? filteredByVenueCountry.filter((e) => !e.isImportant)
           : filteredByVenueCountry;
 
+    const beforeMissingPriceFilter = events;
+    if (missingPriceActive) {
+      events = beforeMissingPriceFilter.filter((e) => {
+        const t = e.lowestPriceCents?.trim();
+        return !t;
+      });
+      missingPriceFilteredOutAll = beforeMissingPriceFilter.length > 0 && events.length === 0;
+    }
+
     const bestDealDeltaCents = (e: HomeEventRow): number | null => {
       const checks: Array<[priceCentsString: string | null, limitUsdCents: number | null]> = [
         [e.cat1, e.cat1LimitUsdCents],
@@ -478,6 +494,7 @@ export async function HomePage({
     events = [];
     buyingCriteriaFilteredOutAll = false;
     dealsFilteredOutAll = false;
+    missingPriceFilteredOutAll = false;
     const msg = err instanceof Error ? err.message : String(err);
     dbErr =
       "Could not load events from the database. Check DATABASE_URL, that Postgres is running, and run migrations if needed. " +
@@ -513,6 +530,15 @@ export async function HomePage({
     const sp = new URLSearchParams(homeQueryStringFrom(q));
     if (nextActive) sp.set("deal", "1");
     else sp.delete("deal");
+    const qs = sp.toString();
+    return `${base}${qs ? `?${qs}` : ""}#home-events-heading`;
+  };
+
+  const homeMissingPriceHref = (nextActive: boolean): string => {
+    const base = homeBasePathForKind(sockKind);
+    const sp = new URLSearchParams(homeQueryStringFrom(q));
+    if (nextActive) sp.set("mp", "1");
+    else sp.delete("mp");
     const qs = sp.toString();
     return `${base}${qs ? `?${qs}` : ""}#home-events-heading`;
   };
@@ -665,6 +691,16 @@ export async function HomePage({
                 >
                   Deal
                 </Link>
+                <Link
+                  href={homeMissingPriceHref(!missingPriceActive)}
+                  className={
+                    missingPriceActive
+                      ? "inline-flex min-h-11 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:var(--ticketing-accent)] px-6 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter,transform] hover:brightness-[1.06] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                      : "inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                  }
+                >
+                  Missing price
+                </Link>
               </div>
             </div>
           </header>
@@ -715,6 +751,13 @@ export async function HomePage({
                             will populate after webhook or import.
                           </p>
                         </>
+                      ) : missingPriceFilteredOutAll ? (
+                        <>
+                          <p className="text-base font-semibold tracking-tight text-zinc-100">No events missing price</p>
+                          <p className="mt-2 text-sm leading-relaxed text-zinc-500">
+                            Try turning off Missing price to see all events.
+                          </p>
+                        </>
                       ) : buyingCriteriaFilteredOutAll ? (
                         <>
                           <p className="text-base font-semibold tracking-tight text-zinc-100">
@@ -757,7 +800,15 @@ export async function HomePage({
                             Show all events
                           </Link>
                         ) : null}
-                        {eventsAll.length > 0 && !buyingCriteriaMeetActive && !dealsActive ? (
+                        {missingPriceActive ? (
+                          <Link
+                            href={homeMissingPriceHref(false)}
+                            className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                          >
+                            Show all events
+                          </Link>
+                        ) : null}
+                        {eventsAll.length > 0 && !buyingCriteriaMeetActive && !dealsActive && !missingPriceActive ? (
                           <Link
                             href={`${homeBasePathForKind(sockKind)}#home-events-heading`}
                             className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"

@@ -42,7 +42,7 @@ function buildQuery(
   const params = new URLSearchParams(base.toString());
   const next = new URLSearchParams();
 
-  for (const key of ["prefsErr", "bc", "deal"]) {
+  for (const key of ["prefsErr", "bc", "deal", "mp"]) {
     const v = params.get(key);
     if (v != null && v !== "") next.set(key, v);
   }

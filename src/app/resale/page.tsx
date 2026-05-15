@@ -24,12 +24,14 @@ export default async function ResalePage({ searchParams }: Props) {
   }
   const onlyBuyingCriteriaMeet = firstQs(q.bc) === "1";
   const onlyDeals = firstQs(q.deal) === "1";
+  const onlyMissingPrice = firstQs(q.mp) === "1";
   return (
     <HomePage
       searchParams={Promise.resolve(q)}
       kind="RESALE"
       onlyBuyingCriteriaMeet={onlyBuyingCriteriaMeet}
       onlyDeals={onlyDeals}
+      onlyMissingPrice={onlyMissingPrice}
     />
   );
 }
