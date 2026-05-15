@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 type Kind = "RESALE" | "LAST_MINUTE";
 
@@ -61,13 +61,20 @@ function formatWhen(iso: string | null | undefined): string {
 
 function pillClass(active: boolean): string {
   return active
-    ? "inline-flex items-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_26%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-2 py-0.5 text-[10px] font-semibold tabular-nums text-zinc-100 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)]"
+    ? "inline-flex items-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,black_82%)] px-2 py-0.5 text-[10px] font-semibold tabular-nums text-zinc-100 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)]"
     : "inline-flex items-center rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-zinc-500 ring-1 ring-white/[0.04]";
 }
 
-function countsLabel(v: { newCount: number; priceChangedCount: number } | null): string {
+function countsLabel(v: { newCount: number; priceChangedCount: number } | null): ReactNode {
   if (!v) return "—";
-  return `New ${v.newCount} · Price ${v.priceChangedCount}`;
+  return (
+    <>
+      New-
+      <span className="font-extrabold tabular-nums text-[color:var(--ticketing-accent)]">{v.newCount}</span>{" "}
+      <span className="text-zinc-400">&amp;</span> Price-
+      <span className="font-extrabold tabular-nums text-[color:var(--ticketing-accent)]">{v.priceChangedCount}</span>
+    </>
+  );
 }
 
 function amountRawToUsdLabel(raw: unknown): string {
@@ -198,7 +205,14 @@ export function ListingChangesClient({ events }: { events: ListingChangesEventRo
               {log ? (
                 <>
                   <span className="font-semibold text-zinc-200">
-                    New {log.newCount} · Changed {log.changedCount} · Price {log.priceChangedCount}
+                    New-
+                    <span className="font-extrabold tabular-nums text-[color:var(--ticketing-accent)]">
+                      {log.newCount}
+                    </span>{" "}
+                    · Changed <span className="font-semibold tabular-nums text-zinc-100">{log.changedCount}</span> · Price-
+                    <span className="font-extrabold tabular-nums text-[color:var(--ticketing-accent)]">
+                      {log.priceChangedCount}
+                    </span>
                   </span>{" "}
                   <span className="text-zinc-600">·</span> {formatWhen(log.createdAt)}
                 </>
