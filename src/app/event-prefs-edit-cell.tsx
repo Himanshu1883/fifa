@@ -50,17 +50,24 @@ export function EventPrefsEditCell({ eventId, prefId, resalePrefId }: Props) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
-  const resaleDisplay = cellText(resalePrefId);
+  const prefTrim = prefId.trim();
+  const resaleTrim = (resalePrefId ?? "").trim();
+  const showResale = Boolean(resaleTrim) && resaleTrim !== prefTrim;
+  const resaleDisplay = cellText(showResale ? resaleTrim : null);
 
   return (
     <>
       <div className="flex max-w-[min(22rem,100%)] flex-wrap items-center gap-2 sm:max-w-[22rem]">
         <div className="min-w-0 flex-1 rounded-lg border border-white/[0.06] bg-black/20 px-2 py-1.5 font-mono text-[12px] leading-snug text-zinc-200 ring-1 ring-white/[0.03]">
           <span className="text-zinc-500">Pref:</span>{" "}
-          <span className="break-all text-zinc-100">{prefId}</span>
-          <span className="mx-1.5 text-zinc-600">·</span>
-          <span className="text-zinc-500">Resale:</span>{" "}
-          <span className="break-all text-zinc-300">{resaleDisplay}</span>
+          <span className="break-all text-zinc-100">{prefTrim}</span>
+          {showResale ? (
+            <>
+              <span className="mx-1.5 text-zinc-600">·</span>
+              <span className="text-zinc-500">Resale:</span>{" "}
+              <span className="break-all text-zinc-300">{resaleDisplay}</span>
+            </>
+          ) : null}
         </div>
         <button
           type="button"
