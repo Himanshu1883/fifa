@@ -40,8 +40,14 @@ export type SockAvailableDTO = {
   updatedAt: string;
 };
 
+type SockAvailableKind = SockAvailableDTO["kind"];
+
 function norm(s: unknown): string {
   return String(s ?? "").trim();
+}
+
+function listingKeyForSockAvailableRow(r: Pick<SockAvailableDTO, "resaleMovementId" | "seatId">): string {
+  return r.resaleMovementId ? `m:${r.resaleMovementId}` : `s:${r.seatId}`;
 }
 
 function formatSockUsd(amount: string | null): string {
@@ -284,8 +290,9 @@ export function SockAvailablePanel(props: {
   rows: SockAvailableDTO[];
   embedInParentCard?: boolean;
   initialKind?: "" | "RESALE" | "LAST_MINUTE";
+  latestDiffNewKeysByKind?: Partial<Record<SockAvailableKind, string[]>>;
 }) {
-  const { rows, embedInParentCard = false, initialKind = "" } = props;
+  const { rows, embedInParentCard = false, initialKind = "", latestDiffNewKeysByKind } = props;
   const smUp = useMediaQuery("(min-width: 640px)");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -308,6 +315,17 @@ export function SockAvailablePanel(props: {
   const [sortKey, setSortKey] = useState<SortKey>("amount_asc");
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
+
+  const newKeySetByKind = useMemo(() => {
+    return {
+      RESALE: new Set(latestDiffNewKeysByKind?.RESALE ?? []),
+      LAST_MINUTE: new Set(latestDiffNewKeysByKind?.LAST_MINUTE ?? []),
+    } satisfies Record<SockAvailableKind, Set<string>>;
+  }, [latestDiffNewKeysByKind?.LAST_MINUTE, latestDiffNewKeysByKind?.RESALE]);
+
+  const isRowNew = useMemo(() => {
+    return (r: SockAvailableDTO) => newKeySetByKind[r.kind].has(listingKeyForSockAvailableRow(r));
+  }, [newKeySetByKind]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- keep internal filter state in sync with prop changes
@@ -1231,6 +1249,7 @@ export function SockAvailablePanel(props: {
                         <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Row</th>
                         <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Seat</th>
                         <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Source</th>
+                        <th scope="col" className="w-[3.5rem] px-4 py-3 text-center font-medium text-zinc-400">New</th>
                         <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Amount</th>
                         <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Contingent</th>
                         <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Seat ID</th>
@@ -1260,6 +1279,19 @@ export function SockAvailablePanel(props: {
                             >
                               {r.kind === "LAST_MINUTE" ? "Shop" : "Resale"}
                             </span>
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 text-center">
+                            {isRowNew(r) ? (
+                              <span
+                                className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)] text-[11px] font-black text-[color:color-mix(in_oklab,var(--ticketing-accent)_85%,white_10%)]"
+                                title="New in latest diff"
+                                aria-label="New in latest diff"
+                              >
+                                ✓
+                              </span>
+                            ) : (
+                              <span className="text-xs text-zinc-600">—</span>
+                            )}
                           </td>
                           <td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-bold tabular-nums text-[color:var(--ticketing-accent)]">
                             {formatSockUsd(r.amount)}
@@ -1309,6 +1341,9 @@ export function SockAvailablePanel(props: {
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
                         Source
                       </th>
+                      <th scope="col" className="w-[3.5rem] px-4 py-3 text-center font-medium text-zinc-400">
+                        New
+                      </th>
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
                         Amount
                       </th>
@@ -1350,6 +1385,19 @@ export function SockAvailablePanel(props: {
                           >
                             {g.kind === "LAST_MINUTE" ? "Shop" : "Resale"}
                           </span>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-center">
+                          {g.seats.some(isRowNew) ? (
+                            <span
+                              className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_16%,transparent)] text-[11px] font-black text-[color:color-mix(in_oklab,var(--ticketing-accent)_85%,white_10%)]"
+                              title="New in latest diff"
+                              aria-label="New in latest diff"
+                            >
+                              ✓
+                            </span>
+                          ) : (
+                            <span className="text-xs text-zinc-600">—</span>
+                          )}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-bold tabular-nums text-[color:var(--ticketing-accent)]">
                           {formatSockUsd(g.amount)}

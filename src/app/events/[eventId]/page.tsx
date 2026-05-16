@@ -11,6 +11,20 @@ type Props = {
   searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
 };
 
+function extractNewKeysFromDiffJson(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  const out: string[] = [];
+  for (const raw of v) {
+    if (!raw || typeof raw !== "object") continue;
+    const key = (raw as { key?: unknown }).key;
+    if (typeof key !== "string") continue;
+    const trimmed = key.trim();
+    if (!trimmed) continue;
+    out.push(trimmed);
+  }
+  return Array.from(new Set(out));
+}
+
 const eventDetailSelect = {
   id: true,
   prefId: true,
@@ -269,6 +283,25 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
         }))
       : [];
 
+  const latestSockDiffNewKeysByKind =
+    effectivePanel === "sock"
+      ? await prisma.sockAvailableWebhookDiffLog.findMany({
+          where: {
+            eventId: event.id,
+            kind: { in: ["RESALE", "LAST_MINUTE"] as const },
+          },
+          distinct: ["kind"],
+          orderBy: [{ kind: "asc" }, { createdAt: "desc" }],
+          select: { kind: true, newSeatIds: true },
+        })
+      : [];
+
+  const latestDiffNewKeysByKind: { RESALE: string[]; LAST_MINUTE: string[] } = { RESALE: [], LAST_MINUTE: [] };
+  for (const row of latestSockDiffNewKeysByKind) {
+    if (row.kind === "RESALE") latestDiffNewKeysByKind.RESALE = extractNewKeysFromDiffJson(row.newSeatIds);
+    else latestDiffNewKeysByKind.LAST_MINUTE = extractNewKeysFromDiffJson(row.newSeatIds);
+  }
+
   return (
     <div className="min-h-screen bg-[color:var(--ticketing-surface)] font-sans text-zinc-100">
       <div
@@ -488,7 +521,12 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
 
             <div className="border-t border-white/[0.06] px-0 pb-6 pt-4 sm:pb-7">
               {effectivePanel === "sock" ? (
-                <SockAvailablePanel rows={sockAvailablePayload} embedInParentCard initialKind={initialSockKind} />
+                <SockAvailablePanel
+                  rows={sockAvailablePayload}
+                  embedInParentCard
+                  initialKind={initialSockKind}
+                  latestDiffNewKeysByKind={latestDiffNewKeysByKind}
+                />
               ) : (
                 <SeatListingsPanel
                   listings={listingsPayload}
