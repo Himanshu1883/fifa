@@ -83,10 +83,15 @@ function diffPillClass(): string {
   return "inline-flex items-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,black_82%)] px-2 py-0.5 text-[10px] font-semibold tabular-nums text-zinc-100 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)]";
 }
 
-function formatDiffWhen(d: Date | null | undefined): string | null {
+function parseValidWhen(d: Date | null | undefined): Date | null {
   if (!d) return null;
   const when = d instanceof Date ? d : new Date(d);
-  if (!Number.isFinite(when.getTime())) return null;
+  return Number.isFinite(when.getTime()) ? when : null;
+}
+
+function formatDiffWhenAbsolute(d: Date | null | undefined): string | null {
+  const when = parseValidWhen(d);
+  if (!when) return null;
   return new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
     month: "short",
@@ -94,6 +99,27 @@ function formatDiffWhen(d: Date | null | undefined): string | null {
     minute: "2-digit",
     hour12: false,
   }).format(when);
+}
+
+function formatDiffWhenRelative(d: Date | null | undefined): string | null {
+  const when = parseValidWhen(d);
+  if (!when) return null;
+
+  const diffMs = Math.max(0, Date.now() - when.getTime());
+  const diffSeconds = Math.floor(diffMs / 1000);
+
+  if (diffSeconds < 60) return "just now";
+
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) return `${diffMinutes} min ago`;
+
+  const diffHours = Math.floor(diffSeconds / 3600);
+  if (diffHours < 24) return `${diffHours} hr ago`;
+
+  const diffDays = Math.floor(diffSeconds / 86400);
+  if (diffDays < 14) return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+
+  return formatDiffWhenAbsolute(when);
 }
 
 function cellUsdWithLimitFromCentsString(
@@ -1266,9 +1292,15 @@ export async function HomePage({
                                           </span>
                                         </span>
                                         {(() => {
-                                          const when = formatDiffWhen(event.latestDiff.createdAt);
-                                          return when ? (
-                                            <span className="text-[10px] tabular-nums text-zinc-500">{when}</span>
+                                          const whenRel = formatDiffWhenRelative(event.latestDiff.createdAt);
+                                          const whenAbs = formatDiffWhenAbsolute(event.latestDiff.createdAt);
+                                          return whenRel ? (
+                                            <span
+                                              className="text-[10px] tabular-nums text-zinc-500"
+                                              title={whenAbs ?? undefined}
+                                            >
+                                              {whenRel}
+                                            </span>
                                           ) : null;
                                         })()}
                                       </div>
