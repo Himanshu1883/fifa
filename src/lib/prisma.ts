@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { config as loadDotenvFile } from "dotenv";
+import type { PoolConfig } from "pg";
 import { PrismaClient } from "@/generated/prisma/client";
 
 /**
@@ -159,13 +160,62 @@ function requireDatabaseUrl(): string {
 /** Fail fast when Postgres is unreachable (default pg timeout is indefinite). */
 const PG_CONNECTION_TIMEOUT_MS = 15_000;
 
+function effectivePgSslRejectUnauthorized(connectionString: string): boolean | undefined {
+  const override = process.env.DATABASE_PG_SSL_REJECT_UNAUTHORIZED?.trim().toLowerCase();
+  if (override === "0" || override === "false") return false;
+  if (override === "1" || override === "true") return true;
+
+  try {
+    const host = new URL(connectionString.replace(/^postgresql:/i, "http:")).hostname.toLowerCase();
+    // Railway public TCP proxy commonly presents certs Node refuses as "self signed in certificate chain".
+    // Set DATABASE_PG_SSL_REJECT_UNAUTHORIZED=1 to enforce verification when your trust store is configured.
+    if (host.endsWith(".proxy.rlwy.net")) return false;
+  } catch {
+    /* fall through — default TLS behavior */
+  }
+  return undefined;
+}
+
+/** `pg` + `pg-connection-string` map sslmode=require to verify-full; strip params when we supply our own ssl. */
+function connectionStringWithoutPgSslQueryParams(connectionString: string): string {
+  try {
+    const httpish = connectionString.replace(/^postgres(ql)?:/i, "http:");
+    const parsed = new URL(httpish);
+    for (const key of [
+      "sslmode",
+      "sslcert",
+      "sslkey",
+      "sslrootcert",
+      "sslaccept",
+      "uselibpqcompat",
+    ]) {
+      parsed.searchParams.delete(key);
+    }
+    const query = parsed.searchParams.toString();
+    const suffix = query ? `?${query}` : "";
+    return `${connectionString.split("?")[0]}${suffix}`;
+  } catch {
+    return connectionString.replace(/[?&](sslmode|uselibpqcompat)=[^&]*/gi, "");
+  }
+}
+
 export function createPrismaClient(): PrismaClient {
-  const adapter = new PrismaPg({
-    connectionString: requireDatabaseUrl(),
+  const connectionString = requireDatabaseUrl();
+  const rejectUnauthorized = effectivePgSslRejectUnauthorized(connectionString);
+  const poolConnectionString =
+    rejectUnauthorized === false
+      ? connectionStringWithoutPgSslQueryParams(connectionString)
+      : connectionString;
+  const poolConfig: PoolConfig = {
+    connectionString: poolConnectionString,
     connectionTimeoutMillis: PG_CONNECTION_TIMEOUT_MS,
     idleTimeoutMillis: 60_000,
     max: 10,
-  });
+  };
+  if (rejectUnauthorized === false) {
+    poolConfig.ssl = { rejectUnauthorized: false };
+  }
+  const adapter = new PrismaPg(poolConfig);
   return new PrismaClient({ adapter });
 }
 

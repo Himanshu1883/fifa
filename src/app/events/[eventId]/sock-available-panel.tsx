@@ -1,5 +1,6 @@
 "use client";
 
+import { ModalPortal } from "@/app/modal-portal";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { formatUsd, priceToNumber } from "@/lib/format-usd";
 
@@ -57,8 +58,7 @@ function formatSockUsd(amount: string | null): string {
 
   // User data uses "amount" in units that should be displayed as USD via /1000.
   // formatUsd expects minor units (cents), so convert: dollars = n/1000 => cents = n/10.
-  const cents = n / 10;
-  return formatUsd(String(cents));
+  return formatUsd(String(n / 10));
 }
 
 function amountRawToUsdNumber(amount: string | null): number {
@@ -1430,17 +1430,18 @@ export function SockAvailablePanel(props: {
       )}
 
       {openGroup ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Sock available row details"
-          onMouseDown={(e) => {
+        <ModalPortal
+          onBackdropMouseDown={(e) => {
             if (e.target === e.currentTarget) setOpenGroup(null);
           }}
         >
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-          <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-white/[0.10] bg-[color:var(--ticketing-surface-elevated)] shadow-[0_28px_80px_-26px_rgba(0,0,0,0.85)] ring-1 ring-white/[0.06]">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Sock available row details"
+            className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-white/[0.10] bg-[color:var(--ticketing-surface-elevated)] shadow-[0_28px_80px_-26px_rgba(0,0,0,0.85)] ring-1 ring-white/[0.06]"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             <div className="border-b border-white/[0.08] px-4 py-4 sm:px-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -1547,7 +1548,7 @@ export function SockAvailablePanel(props: {
               </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       ) : null}
     </section>
   );

@@ -1,5 +1,7 @@
 "use client";
 
+import { AddSbIdDialog } from "@/app/add-sb-id-dialog";
+import { ModalPortal } from "@/app/modal-portal";
 import { useEffect, useId, useState } from "react";
 import { updateEventPrefs } from "@/app/actions/event-prefs";
 
@@ -35,9 +37,11 @@ type Props = {
   eventId: number;
   prefId: string;
   resalePrefId: string | null;
+  sbEventId?: string | null;
+  eventName?: string;
 };
 
-export function EventPrefsEditCell({ eventId, prefId, resalePrefId }: Props) {
+export function EventPrefsEditCell({ eventId, prefId, resalePrefId, sbEventId, eventName }: Props) {
   const [open, setOpen] = useState(false);
   const titleId = useId();
 
@@ -54,36 +58,53 @@ export function EventPrefsEditCell({ eventId, prefId, resalePrefId }: Props) {
   const resaleTrim = (resalePrefId ?? "").trim();
   const showResale = Boolean(resaleTrim) && resaleTrim !== prefTrim;
   const resaleDisplay = cellText(showResale ? resaleTrim : null);
+  const sbTrim = (sbEventId ?? "").trim();
+  const sbDisplay = cellText(sbTrim || null);
+
+  const prefBoxClass =
+    "min-w-0 flex-1 rounded-lg border border-white/[0.06] bg-black/20 px-2 py-1.5 font-mono text-[12px] leading-snug text-zinc-200 ring-1 ring-white/[0.03]";
 
   return (
     <>
-      <div className="flex max-w-[min(22rem,100%)] flex-wrap items-center gap-2 sm:max-w-[22rem]">
-        <div className="min-w-0 flex-1 rounded-lg border border-white/[0.06] bg-black/20 px-2 py-1.5 font-mono text-[12px] leading-snug text-zinc-200 ring-1 ring-white/[0.03]">
-          <span className="text-zinc-500">Pref:</span>{" "}
-          <span className="break-all text-zinc-100">{prefTrim}</span>
-          {showResale ? (
-            <>
-              <span className="mx-1.5 text-zinc-600">·</span>
-              <span className="text-zinc-500">Resale:</span>{" "}
-              <span className="break-all text-zinc-300">{resaleDisplay}</span>
-            </>
-          ) : null}
+      <div className="flex max-w-full flex-wrap items-center gap-2">
+        <div className="flex min-w-0 max-w-[min(22rem,100%)] flex-1 flex-wrap items-center gap-2 sm:max-w-[22rem]">
+          <div className={prefBoxClass}>
+            <span className="text-zinc-500">Pref:</span>{" "}
+            <span className="break-all text-zinc-100">{prefTrim}</span>
+            {showResale ? (
+              <>
+                <span className="mx-1.5 text-zinc-600">·</span>
+                <span className="text-zinc-500">Resale:</span>{" "}
+                <span className="break-all text-zinc-300">{resaleDisplay}</span>
+              </>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="inline-flex shrink-0 items-center justify-center rounded-md p-1.5 text-zinc-400 ring-1 ring-white/10 transition-colors hover:bg-white/[0.08] hover:text-[color:var(--ticketing-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+            aria-label={`Edit pref and resale IDs for event ${eventId}`}
+          >
+            <PencilIcon />
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="inline-flex shrink-0 items-center justify-center rounded-md p-1.5 text-zinc-400 ring-1 ring-white/10 transition-colors hover:bg-white/[0.08] hover:text-[color:var(--ticketing-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
-          aria-label={`Edit pref and resale IDs for event ${eventId}`}
-        >
-          <PencilIcon />
-        </button>
+        <div className="flex min-w-0 max-w-[min(14rem,100%)] flex-wrap items-center gap-2">
+          <div className={prefBoxClass} title={sbTrim ? `SeatsBrokers event id: ${sbTrim}` : undefined}>
+            <span className="text-zinc-500">SB:</span>{" "}
+            <span className="break-all text-zinc-100">{sbDisplay}</span>
+          </div>
+          <AddSbIdDialog
+            eventId={eventId}
+            eventName={eventName}
+            sbEventId={sbEventId ?? null}
+            trigger="inline"
+          />
+        </div>
       </div>
 
       {open ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-b from-black/70 via-black/55 to-black/70 p-4 backdrop-blur-md"
-          role="presentation"
-          onMouseDown={(e) => {
+        <ModalPortal
+          onBackdropMouseDown={(e) => {
             if (e.target === e.currentTarget) setOpen(false);
           }}
         >
@@ -155,7 +176,7 @@ export function EventPrefsEditCell({ eventId, prefId, resalePrefId }: Props) {
               </div>
             </form>
           </div>
-        </div>
+        </ModalPortal>
       ) : null}
     </>
   );

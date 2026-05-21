@@ -79,6 +79,8 @@ model Event {
   country       String?
   prefId        String                   @map("pref_id")
   resalePrefId  String?                  @map("resale_pref_id")
+  /// SeatsBrokers event id mapping (optional).
+  sbEventId     String?                  @map("sb_event_id")
   categories    EventCategory[]
   shopEventCategoryBlocks ShopEventCategoryBlock[]
   blockPrices   EventCategoryBlockPrice[]
@@ -271,6 +273,14 @@ model PrefRotationState {
   nextIndex Int    @default(0) @map("next_index")
 
   @@map("pref_rotation_state")
+}
+
+/// Singleton row `id = 1`: global ticket markup % for seat-offers-transformed API.
+model MarkupSettings {
+  id            Int   @id
+  markupPercent Float @default(0) @map("markup_percent")
+
+  @@map("markup_settings")
 }
 
 model SockAvailable {

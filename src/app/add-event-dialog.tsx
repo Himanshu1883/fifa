@@ -1,6 +1,7 @@
 "use client";
 
 import { createEventAction } from "@/app/actions/create-event";
+import { ModalPortal } from "@/app/modal-portal";
 import { useEffect, useId, useRef, useState } from "react";
 
 const inpModal =
@@ -43,10 +44,8 @@ export function AddEventDialog({ suggestedSortOrder }: Props) {
       </button>
 
       {open ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-b from-black/70 via-black/55 to-black/70 p-4 backdrop-blur-md"
-          role="presentation"
-          onMouseDown={(e) => {
+        <ModalPortal
+          onBackdropMouseDown={(e) => {
             if (e.target === e.currentTarget && !pending) setOpen(false);
           }}
         >
@@ -281,7 +280,7 @@ export function AddEventDialog({ suggestedSortOrder }: Props) {
               </div>
             </form>
           </div>
-        </div>
+        </ModalPortal>
       ) : null}
     </>
   );

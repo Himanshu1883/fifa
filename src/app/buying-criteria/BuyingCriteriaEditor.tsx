@@ -1,6 +1,7 @@
 "use client";
 
 import { fetchBuyingCriteriaAction, setCat3FrontRowAction } from "@/app/actions/buying-criteria";
+import { ModalPortal } from "@/app/modal-portal";
 import {
   fetchBuyingCriteriaRulesAction,
   replaceBuyingCriteriaRulesAction,
@@ -936,10 +937,8 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
       </div>
 
       {editor ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-b from-black/70 via-black/55 to-black/70 p-4 backdrop-blur-md"
-          role="presentation"
-          onMouseDown={(e) => {
+        <ModalPortal
+          onBackdropMouseDown={(e) => {
             if (e.target === e.currentTarget && !editorSaving) setEditor(null);
           }}
         >
@@ -1078,14 +1077,12 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
               </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       ) : null}
 
       {addOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-b from-black/70 via-black/55 to-black/70 p-4 backdrop-blur-md"
-          role="presentation"
-          onMouseDown={(e) => {
+        <ModalPortal
+          onBackdropMouseDown={(e) => {
             if (e.target === e.currentTarget && !editorSaving && !saving) {
               setAddOpen(false);
               queueMicrotask(() => addButtonRef.current?.focus());
@@ -1179,7 +1176,7 @@ export function BuyingCriteriaEditor({ events }: { events: EventStub[] }) {
               )}
             </div>
           </div>
-        </div>
+        </ModalPortal>
       ) : null}
     </div>
   );

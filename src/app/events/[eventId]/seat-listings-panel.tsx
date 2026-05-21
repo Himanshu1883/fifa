@@ -7,6 +7,16 @@ import {
 } from "@/lib/group-consecutive-seats";
 import { formatUsd, formatUsdRangeFromAmounts, priceToNumber } from "@/lib/format-usd";
 
+function formatListingUsd(amount: string): string {
+  const n = priceToNumber(amount);
+  if (!Number.isFinite(n)) return "—";
+  return formatUsd(String(n));
+}
+
+function formatListingUsdRange(amounts: string[]): string {
+  return formatUsdRangeFromAmounts(amounts);
+}
+
 const searchInpClass =
   "min-h-10 w-full rounded-lg border border-white/[0.09] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_92%,white_8%)] px-2.5 py-1.5 text-sm text-zinc-100 shadow-inner shadow-black/35 placeholder:text-zinc-500 transition-[border-color,box-shadow] focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
 
@@ -1376,7 +1386,7 @@ export function SeatListingsPanel(props: {
                                       const showBlockId =
                                         Boolean(normId(listing.categoryBlockId)) &&
                                         blockPrimary !== normId(listing.categoryBlockId);
-                                      const basketAria = `Add to basket: ${blockPrimary}, row ${listing.rowLabel}, seat ${listing.seatNumber}, ${formatUsd(listing.amount)}`;
+                                      const basketAria = `Add to basket: ${blockPrimary}, row ${listing.rowLabel}, seat ${listing.seatNumber}, ${formatListingUsd(listing.amount)}`;
                                       return (
                                         <tr
                                           key={listing.id}
@@ -1399,7 +1409,7 @@ export function SeatListingsPanel(props: {
                                             {listing.seatNumber}
                                           </td>
                                           <td className="whitespace-nowrap px-4 py-3 pr-4 text-right text-sm font-bold tabular-nums text-[color:var(--ticketing-accent)]">
-                                            {formatUsd(listing.amount)}
+                                            {formatListingUsd(listing.amount)}
                                           </td>
                                           <td className="px-4 py-3 pr-5 align-middle sm:pr-6">
                                             <AddToBasketButton
@@ -1424,7 +1434,7 @@ export function SeatListingsPanel(props: {
                                     const seatSpan = lo === hi ? String(lo) : `${lo}-${hi}`;
                                     const n = listings.length;
                                     const rowKey = listings.map((l) => l.id).join("-");
-                                    const mergedPriceLabel = formatUsdRangeFromAmounts(
+                                    const mergedPriceLabel = formatListingUsdRange(
                                       listings.map((l) => l.amount),
                                     );
                                     const basketAria = `Add to basket: ${blockPrimary}, row ${first.rowLabel}, seats ${seatSpan} (${n} together), ${mergedPriceLabel}`;
@@ -1460,7 +1470,7 @@ export function SeatListingsPanel(props: {
                                           </div>
                                         </td>
                                         <td className="whitespace-nowrap px-4 py-3 pr-4 text-right text-sm font-bold tabular-nums text-[color:var(--ticketing-accent)]">
-                                          {formatUsdRangeFromAmounts(listings.map((l) => l.amount))}
+                                          {formatListingUsdRange(listings.map((l) => l.amount))}
                                         </td>
                                         <td className="px-4 py-3 pr-5 align-middle sm:pr-6">
                                           <AddToBasketButton

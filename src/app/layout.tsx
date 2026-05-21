@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import { logoutAction } from "@/app/actions/logout";
+import { MarkupProvider } from "@/app/markup-context";
 import { getSession, type SessionPayload } from "@/lib/auth/session";
+import { getPersistedMarkupPercent } from "@/lib/markup-settings";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -31,6 +33,14 @@ export default async function RootLayout({
   } catch {
     /* cookies / crypto edge cases — render without auth chrome */
   }
+
+  let initialMarkupPercent = 0;
+  try {
+    initialMarkupPercent = await getPersistedMarkupPercent();
+  } catch {
+    /* DB unavailable — UI defaults to 0% */
+  }
+
   return (
     <html
       lang="en"
@@ -77,7 +87,7 @@ export default async function RootLayout({
             </Link>
           )}
         </div>
-        {children}
+        <MarkupProvider initialMarkupPercent={initialMarkupPercent}>{children}</MarkupProvider>
       </body>
     </html>
   );

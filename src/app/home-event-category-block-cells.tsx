@@ -1,7 +1,7 @@
 "use client";
 
+import { ModalPortal } from "@/app/modal-portal";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 
 export type HomeSeatCategoryHierarchyItem = {
   categoryId: string;
@@ -237,16 +237,14 @@ export function HomeEventCategoryBlockCells({
         </div>
       )}
 
-      {open && typeof document !== "undefined"
-        ? createPortal(
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-b from-black/75 via-black/60 to-black/70 p-4 backdrop-blur-md"
-              role="presentation"
-              onMouseDown={(e) => {
-                if (e.target === e.currentTarget) closeDialog();
-              }}
-            >
-              <div
+      {open ? (
+        <ModalPortal
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-gradient-to-b from-black/75 via-black/60 to-black/70 p-4 backdrop-blur-md"
+          onBackdropMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeDialog();
+          }}
+        >
+          <div
                 ref={panelRef}
                 id={dialogId}
                 role="dialog"
@@ -481,10 +479,9 @@ export function HomeEventCategoryBlockCells({
                   )}
                 </div>
               </div>
-            </div>,
-            document.body,
-          )
-        : null}
+            </div>
+        </ModalPortal>
+      ) : null}
     </>
   );
 }

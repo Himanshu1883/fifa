@@ -1,6 +1,7 @@
 "use client";
 
 import { fetchBuyingCriteriaAction, setCat3FrontRowAction } from "@/app/actions/buying-criteria";
+import { ModalPortal } from "@/app/modal-portal";
 import {
   fetchBuyingCriteriaRulesAction,
   replaceBuyingCriteriaRulesAction,
@@ -446,10 +447,8 @@ export function BuyingCriteriaDialog({
       </button>
 
       {open ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-b from-black/70 via-black/55 to-black/70 p-4 backdrop-blur-md"
-          role="presentation"
-          onMouseDown={(e) => {
+        <ModalPortal
+          onBackdropMouseDown={(e) => {
             if (e.target === e.currentTarget && !editorSaving && !bulkSaving) closeDialog();
           }}
         >
@@ -896,7 +895,7 @@ export function BuyingCriteriaDialog({
               </div>
             ) : null}
           </div>
-        </div>
+        </ModalPortal>
       ) : null}
     </>
   );

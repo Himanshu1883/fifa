@@ -7,11 +7,17 @@ import { formatUsd, priceToNumber } from "@/lib/format-usd";
 import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
 import { AddEventDialog } from "@/app/add-event-dialog";
 import { EditEventDialog } from "@/app/edit-event-dialog";
+import { MarkupControls } from "@/app/markup-controls";
 import { EventImportantToggle } from "@/app/event-important-toggle";
 import { EventPrefsEditCell } from "@/app/event-prefs-edit-cell";
 import { BoxofficeControlsClient } from "@/app/boxoffice-controls-client";
 import type { HomeImportantFilter, HomeSortKey } from "@/app/home-event-sort-controls";
 import { HomeEventSortControls } from "@/app/home-event-sort-controls";
+import {
+  HomeSockKindLoadingOverlay,
+  HomeSockKindNavProvider,
+  HomeSockKindSwitcher,
+} from "@/app/home/home-sock-kind-nav";
 
 export type HomeSockKind = "RESALE" | "LAST_MINUTE";
 
@@ -48,6 +54,7 @@ type HomeEventRow = {
   country: string | null;
   prefId: string;
   resalePrefId: string | null;
+  sbEventId: string | null;
   ticketsCount: number;
   lowestPriceCents: string | null;
   cat1: string | null;
@@ -136,6 +143,25 @@ function cellUsdWithLimitFromCentsString(
     label: `${priceLabel}/${limitLabel}`,
     withinLimit: Number.isFinite(priceCents) && priceCents <= limitUsdCents,
   };
+}
+
+function UsdLimitCell({
+  priceCents,
+  limitUsdCents,
+  className = "font-bold tabular-nums",
+}: {
+  priceCents: string | null;
+  limitUsdCents: number | null;
+  className?: string;
+}) {
+  const { label, withinLimit } = cellUsdWithLimitFromCentsString(priceCents, limitUsdCents);
+  const resolvedClass =
+    limitUsdCents != null && withinLimit
+      ? "font-extrabold text-emerald-400 tabular-nums"
+      : limitUsdCents != null
+        ? "text-[color:var(--ticketing-accent)] tabular-nums"
+        : className;
+  return <span className={resolvedClass}>{label}</span>;
 }
 
 function distinctNonEmptyCaseInsensitive(values: Array<string | null | undefined>): string[] {
@@ -465,6 +491,7 @@ export async function HomePage({
         country: true,
         prefId: true,
         resalePrefId: true,
+        sbEventId: true,
       },
     });
 
@@ -612,8 +639,6 @@ export async function HomePage({
   const countryOptions = distinctNonEmptyCaseInsensitive(eventsAll.map((e) => e.country));
 
   const totalTickets = events.reduce((acc, e) => acc + e.ticketsCount, 0);
-  const homeResaleActive = sockKind === "RESALE";
-  const homeShopActive = sockKind === "LAST_MINUTE";
 
   const homeKindHref = (nextKind: HomeSockKind): string => {
     const base = homeBasePathForKind(nextKind);
@@ -696,7 +721,7 @@ export async function HomePage({
         aria-hidden
       />
 
-      <div className="flex min-h-screen w-full flex-col gap-4 px-4 pb-12 pt-6 sm:gap-5 sm:px-6 sm:pb-14 sm:pt-7">
+      <div className="flex min-h-screen w-full max-w-none flex-col gap-3 px-3 pb-12 pt-3 sm:gap-4 sm:px-4 sm:pb-14 sm:pt-4 lg:px-5">
         {prefsErr ? (
           <p className={alertShell} role="alert">
             {prefsErr}
@@ -709,142 +734,123 @@ export async function HomePage({
           </p>
         ) : null}
 
-        <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-zinc-900/35 shadow-[0_24px_80px_-24px_rgba(0,0,0,0.85)] ring-1 ring-white/[0.04] backdrop-blur-md">
+        <HomeSockKindNavProvider>
+        <div className="relative w-full overflow-hidden rounded-2xl border border-white/[0.07] bg-zinc-900/35 shadow-[0_24px_80px_-24px_rgba(0,0,0,0.85)] ring-1 ring-white/[0.04] backdrop-blur-md">
           <div
             className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-[color:color-mix(in_oklab,var(--ticketing-accent)_70%,transparent)] to-transparent"
             aria-hidden
           />
-          <header className="relative px-4 pb-5 pt-6 sm:px-8 sm:pb-6 sm:pt-8">
-            <div className="absolute right-4 top-4 flex flex-col items-end gap-2 sm:right-8 sm:top-6">
-              <div className="flex items-center gap-2">
-                <Link
-                  href="/buying-criteria"
-                  className="rounded-md bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-3 py-1.5 text-xs font-medium text-zinc-100 ring-1 ring-white/10 hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)]"
-                >
-                  Buying criteria
-                </Link>
-                <Link
-                  href="/listing-changes"
-                  className="rounded-md bg-sky-500/15 px-3 py-1.5 text-xs font-medium text-sky-100 ring-1 ring-white/10 hover:bg-sky-500/20"
-                >
-                  Changes
-                </Link>
-                <Link
-                  href="/undetectable"
-                  className="rounded-md bg-sky-500/15 px-3 py-1.5 text-xs font-medium text-sky-100 ring-1 ring-white/10 hover:bg-sky-500/20"
-                >
-                  Undetectable
-                </Link>
-                <Link
-                  href="/gmail"
-                  className="rounded-md bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-3 py-1.5 text-xs font-medium text-zinc-100 ring-1 ring-white/10 hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)]"
-                >
-                  Gmail
-                </Link>
+          <header className="relative w-full border-b border-white/[0.06] px-4 py-4 sm:px-5 sm:py-5 lg:px-6">
+            <div className="flex w-full flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
+              <div className="min-w-0 flex-1 space-y-2">
+                <p className="inline-flex items-center gap-2 rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-100 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)]">
+                  2026 FIFA WORLD CUP{" "}
+                  <span className="text-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,white_40%)]">·</span> Live
+                  ticket tracker
+                </p>
+
+                <h1 className="text-balance text-2xl font-semibold tracking-tight text-white sm:text-3xl lg:text-[2.125rem] lg:leading-[1.12]">
+                  All World Cup tickets, <span className="text-[color:var(--ticketing-accent)]">in one place.</span>
+                </h1>
+
+                <p className="max-w-3xl text-pretty text-sm leading-snug text-zinc-400 sm:leading-relaxed">
+                  Browse resale marketplace listings and official face-value Last Minute Sales drops across every match.
+                  Sort by price and filter by stage, venue, or country.
+                </p>
               </div>
-              {showBoxofficeControls ? <BoxofficeControlsClient port={boxofficePort} /> : null}
-            </div>
-            <div className="mx-auto flex w-full max-w-4xl flex-col items-center text-center">
-              <p className="inline-flex items-center gap-2 rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-100 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)]">
-                2026 FIFA WORLD CUP{" "}
-                <span className="text-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,white_40%)]">·</span> Live
-                ticket tracker
-              </p>
 
-              <h1 className="mt-6 text-balance text-4xl font-semibold tracking-tight text-white sm:text-5xl sm:leading-[1.04] lg:text-6xl">
-                All World Cup tickets, <span className="text-[color:var(--ticketing-accent)]">in one place.</span>
-              </h1>
-
-              <p className="mt-4 max-w-3xl text-pretty text-sm leading-relaxed text-zinc-400 sm:text-base">
-                Browse resale marketplace listings and official face-value Last Minute Sales drops across every match.
-                Sort by price and filter by stage, venue, or country.
-              </p>
-
-              <dl
-                className="mt-10 grid w-full max-w-3xl grid-cols-3 divide-x divide-white/[0.10] overflow-hidden rounded-2xl border border-white/[0.08] bg-black/25 px-2 py-4 shadow-inner shadow-black/35 ring-1 ring-white/[0.05]"
-                aria-label="Schedule totals"
-              >
-                <div className="px-4 text-center">
-                  <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    Tickets{sockKind === "RESALE" ? " (Resale)" : " (Shop)"}
-                  </dt>
-                  <dd className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-[color:color-mix(in_oklab,var(--ticketing-accent)_88%,white_8%)] sm:text-4xl">
-                    {totalTickets.toLocaleString("en-US")}
-                  </dd>
-                </div>
-                <div className="px-4 text-center">
-                  <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Matches</dt>
-                  <dd className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-white sm:text-4xl">
-                    {events.length.toLocaleString("en-US")}
-                  </dd>
-                </div>
-                <div className="px-4 text-center">
-                  <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Sources</dt>
-                  <dd className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-white sm:text-4xl">1</dd>
-                </div>
-              </dl>
-
-              <div className="mt-8 flex w-full flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
-                <Link
-                  href={homeKindHref("LAST_MINUTE")}
-                  className={
-                    homeShopActive
-                      ? "group inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:var(--ticketing-accent)] px-6 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter,transform] hover:brightness-[1.06] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
-                      : "group inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
-                  }
-                >
-                  Browse Last Minute Sales
-                  <span
-                    className={
-                      homeShopActive
-                        ? "rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-950/90"
-                        : "rounded-full bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:color-mix(in_oklab,var(--ticketing-accent)_85%,white_10%)] ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)]"
-                    }
+              <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link
+                    href="/buying-criteria"
+                    className="rounded-md bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-3 py-1.5 text-xs font-medium text-zinc-100 ring-1 ring-white/10 hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)]"
                   >
-                    New
-                  </span>
-                  <span className="text-zinc-950/80 transition-transform group-hover:translate-x-0.5" aria-hidden>
-                    →
-                  </span>
-                </Link>
-                <Link
-                  href={homeKindHref("RESALE")}
-                  className={
-                    homeResaleActive
-                      ? "inline-flex min-h-11 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:var(--ticketing-accent)] px-6 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter,transform] hover:brightness-[1.06] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
-                      : "inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
-                  }
-                >
-                  Browse Resale Marketplace
-                </Link>
-                <Link
-                  href={homeBuyingCriteriaMeetHref(!buyingCriteriaMeetActive)}
-                  className={
-                    buyingCriteriaMeetActive
-                      ? "inline-flex min-h-11 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:var(--ticketing-accent)] px-6 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter,transform] hover:brightness-[1.06] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
-                      : "inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
-                  }
-                >
-                  Buying Criteria
-                </Link>
-                <Link
-                  href={homeMissingPriceHref(!missingPriceActive)}
-                  className={
-                    missingPriceActive
-                      ? "inline-flex min-h-11 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:var(--ticketing-accent)] px-6 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter,transform] hover:brightness-[1.06] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
-                      : "inline-flex min-h-11 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-6 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
-                  }
-                >
-                  Missing price
-                </Link>
+                    Buying criteria
+                  </Link>
+                  <Link
+                    href="/listing-changes"
+                    className="rounded-md bg-sky-500/15 px-3 py-1.5 text-xs font-medium text-sky-100 ring-1 ring-white/10 hover:bg-sky-500/20"
+                  >
+                    Changes
+                  </Link>
+                  <Link
+                    href="/undetectable"
+                    className="rounded-md bg-sky-500/15 px-3 py-1.5 text-xs font-medium text-sky-100 ring-1 ring-white/10 hover:bg-sky-500/20"
+                  >
+                    Undetectable
+                  </Link>
+                  <Link
+                    href="/gmail"
+                    className="rounded-md bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-3 py-1.5 text-xs font-medium text-zinc-100 ring-1 ring-white/10 hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)]"
+                  >
+                    Gmail
+                  </Link>
+                </div>
+                {showBoxofficeControls ? <BoxofficeControlsClient port={boxofficePort} /> : null}
+              </div>
+            </div>
+
+            <dl
+              className="mt-4 grid w-full grid-cols-3 divide-x divide-white/[0.10] overflow-hidden rounded-xl border border-white/[0.08] bg-black/25 py-2.5 shadow-inner shadow-black/35 ring-1 ring-white/[0.05] sm:mt-5 sm:py-3"
+              aria-label="Schedule totals"
+            >
+              <div className="px-3 text-center sm:px-4">
+                <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">
+                  Tickets{sockKind === "RESALE" ? " (Resale)" : " (Shop)"}
+                </dt>
+                <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-[color:color-mix(in_oklab,var(--ticketing-accent)_88%,white_8%)] sm:text-2xl lg:text-3xl">
+                  {totalTickets.toLocaleString("en-US")}
+                </dd>
+              </div>
+              <div className="px-3 text-center sm:px-4">
+                <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">Matches</dt>
+                <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-white sm:text-2xl lg:text-3xl">
+                  {events.length.toLocaleString("en-US")}
+                </dd>
+              </div>
+              <div className="px-3 text-center sm:px-4">
+                <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">Sources</dt>
+                <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-white sm:text-2xl lg:text-3xl">1</dd>
+              </div>
+            </dl>
+
+            <div className="mt-4 flex w-full flex-col gap-3 border-t border-white/[0.06] pt-4 sm:gap-4">
+              <HomeSockKindSwitcher
+                activeKind={sockKind}
+                lastMinuteHref={homeKindHref("LAST_MINUTE")}
+                resaleHref={homeKindHref("RESALE")}
+              />
+              <div className="flex w-full flex-wrap items-center gap-2 sm:gap-2.5">
+              <Link
+                href={homeBuyingCriteriaMeetHref(!buyingCriteriaMeetActive)}
+                className={
+                  buyingCriteriaMeetActive
+                    ? "inline-flex min-h-10 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:var(--ticketing-accent)] px-5 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter,transform] hover:brightness-[1.06] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] sm:min-h-11 sm:px-6"
+                    : "inline-flex min-h-10 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-5 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] sm:min-h-11 sm:px-6"
+                }
+              >
+                Buying Criteria
+              </Link>
+              <Link
+                href={homeMissingPriceHref(!missingPriceActive)}
+                className={
+                  missingPriceActive
+                    ? "inline-flex min-h-10 items-center justify-center rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:var(--ticketing-accent)] px-5 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter,transform] hover:brightness-[1.06] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] sm:min-h-11 sm:px-6"
+                    : "inline-flex min-h-10 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-5 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] sm:min-h-11 sm:px-6"
+                }
+              >
+                Missing price
+              </Link>
+              <MarkupControls />
               </div>
             </div>
           </header>
 
-          <div className="border-t border-white/[0.06] px-4 pb-6 pt-5 sm:px-8 sm:pb-8">
-            <section aria-labelledby="home-events-heading" className="flex flex-col gap-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                <div className="min-w-0 space-y-1">
+          <div className="w-full px-4 pb-6 pt-4 sm:px-5 sm:pb-8 sm:pt-5 lg:px-6">
+            <HomeSockKindLoadingOverlay>
+            <section aria-labelledby="home-events-heading" className="flex w-full flex-col gap-4">
+              <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0 shrink-0 space-y-0.5">
                   <h2 id="home-events-heading" className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
                     Events
                   </h2>
@@ -852,7 +858,7 @@ export async function HomePage({
                     Summaries below; switch to a large screen for the full grid.
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center justify-start gap-2 lg:justify-end lg:gap-3">
                   <AddEventDialog suggestedSortOrder={suggestedSortOrder} />
                   <Suspense
                     fallback={
@@ -947,7 +953,6 @@ export async function HomePage({
                     {events.map((event, idx) => {
                       const hasTickets = event.ticketsCount > 0;
                       const hasPrice = Boolean(event.lowestPriceCents);
-                      const priceLabel = hasPrice && event.lowestPriceCents ? formatUsd(event.lowestPriceCents) : "—";
                       const priceTitle = hasTickets ? (hasPrice ? undefined : noPriceTitle) : noTicketsTitle;
                       const zebra = idx % 2 === 1 ? "bg-[color:var(--ticketing-elevated)]" : "bg-transparent";
                       const location = [event.venue, event.country]
@@ -1015,7 +1020,7 @@ export async function HomePage({
                                   </div>
                                 ) : null}
                               </div>
-                              <div className="flex shrink-0 items-center gap-2 pt-0.5">
+                              <div className="flex shrink-0 flex-wrap items-center gap-2 pt-0.5">
                                 <EditEventDialog event={event} venueOptions={venueOptions} />
                                 <EventImportantToggle
                                   eventId={event.id}
@@ -1040,7 +1045,13 @@ export async function HomePage({
                                   className="mt-0.5 tabular-nums font-bold text-[color:var(--ticketing-accent)]"
                                   title={priceTitle}
                                 >
-                                  {priceLabel}
+                                  {hasPrice && event.lowestPriceCents ? (
+                                    <span className="tabular-nums font-bold text-[color:var(--ticketing-accent)]">
+                                      {formatUsd(event.lowestPriceCents)}
+                                    </span>
+                                  ) : (
+                                    "—"
+                                  )}
                                 </dd>
                               </div>
                               <div className="col-span-2 sm:col-span-1">
@@ -1058,90 +1069,56 @@ export async function HomePage({
                                 <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                                   Cat1
                                 </dt>
-                                {(() => {
-                                  const { label, withinLimit } = cellUsdWithLimitFromCentsString(
-                                    event.cat1,
-                                    event.cat1LimitUsdCents,
-                                  );
-                                  return (
-                                    <dd
-                                      className={`mt-0.5 font-bold tabular-nums ${
-                                        withinLimit ? "font-extrabold text-emerald-400" : "text-[color:var(--ticketing-accent)]"
-                                      }`}
-                                    >
-                                      {label}
-                                    </dd>
-                                  );
-                                })()}
+                                <dd className="mt-0.5 font-bold tabular-nums">
+                                  <UsdLimitCell
+                                    priceCents={event.cat1}
+                                    limitUsdCents={event.cat1LimitUsdCents}
+                                  />
+                                </dd>
                               </div>
                               <div>
                                 <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                                   Cat2
                                 </dt>
-                                {(() => {
-                                  const { label, withinLimit } = cellUsdWithLimitFromCentsString(
-                                    event.cat2,
-                                    event.cat2LimitUsdCents,
-                                  );
-                                  return (
-                                    <dd
-                                      className={`mt-0.5 font-bold tabular-nums ${
-                                        withinLimit ? "font-extrabold text-emerald-400" : "text-[color:var(--ticketing-accent)]"
-                                      }`}
-                                    >
-                                      {label}
-                                    </dd>
-                                  );
-                                })()}
+                                <dd className="mt-0.5 font-bold tabular-nums">
+                                  <UsdLimitCell
+                                    priceCents={event.cat2}
+                                    limitUsdCents={event.cat2LimitUsdCents}
+                                  />
+                                </dd>
                               </div>
                               <div>
                                 <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                                   Cat3
                                 </dt>
-                                {(() => {
-                                  const { label, withinLimit } = cellUsdWithLimitFromCentsString(
-                                    event.cat3,
-                                    event.cat3LimitUsdCents,
-                                  );
-                                  return (
-                                    <dd
-                                      className={`mt-0.5 font-bold tabular-nums ${
-                                        withinLimit ? "font-extrabold text-emerald-400" : "text-[color:var(--ticketing-accent)]"
-                                      }`}
-                                    >
-                                      {label}
-                                    </dd>
-                                  );
-                                })()}
+                                <dd className="mt-0.5 font-bold tabular-nums">
+                                  <UsdLimitCell
+                                    priceCents={event.cat3}
+                                    limitUsdCents={event.cat3LimitUsdCents}
+                                  />
+                                </dd>
                               </div>
                               <div className="col-span-2 sm:col-span-1">
                                 <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                                   Cat4
                                 </dt>
-                                {(() => {
-                                  const { label, withinLimit } = cellUsdWithLimitFromCentsString(
-                                    event.cat4,
-                                    event.cat4LimitUsdCents,
-                                  );
-                                  return (
-                                    <dd
-                                      className={`mt-0.5 font-bold tabular-nums ${
-                                        withinLimit ? "font-extrabold text-emerald-400" : "text-[color:var(--ticketing-accent)]"
-                                      }`}
-                                    >
-                                      {label}
-                                    </dd>
-                                  );
-                                })()}
+                                <dd className="mt-0.5 font-bold tabular-nums">
+                                  <UsdLimitCell
+                                    priceCents={event.cat4}
+                                    limitUsdCents={event.cat4LimitUsdCents}
+                                  />
+                                </dd>
                               </div>
                             </dl>
 
                             <div className="mt-4 border-t border-white/[0.06] pt-3">
-                              <p className="sr-only">Preference IDs</p>
+                              <p className="sr-only">Preference and SB IDs</p>
                               <EventPrefsEditCell
                                 eventId={event.id}
                                 prefId={event.prefId}
                                 resalePrefId={event.resalePrefId}
+                                sbEventId={event.sbEventId}
+                                eventName={event.name}
                               />
                             </div>
                           </article>
@@ -1196,8 +1173,8 @@ export async function HomePage({
                             <th scope="col" className="whitespace-nowrap px-3 py-3.5 text-right sm:px-4">
                               Tickets
                             </th>
-                            <th scope="col" className="min-w-[20rem] px-3 py-3.5 pr-4 sm:px-4 sm:pr-5">
-                              Pref &amp; resale
+                            <th scope="col" className="min-w-[26rem] px-3 py-3.5 pr-4 sm:px-4 sm:pr-5">
+                              Pref, resale &amp; SB
                             </th>
                           </tr>
                         </thead>
@@ -1206,7 +1183,6 @@ export async function HomePage({
                             const zebra = idx % 2 === 1 ? "bg-[color:var(--ticketing-elevated)]" : "bg-transparent";
                             const hasTickets = event.ticketsCount > 0;
                             const hasPrice = Boolean(event.lowestPriceCents);
-                            const priceLabel = hasPrice && event.lowestPriceCents ? formatUsd(event.lowestPriceCents) : "—";
                             const priceTitle = hasTickets ? (hasPrice ? undefined : noPriceTitle) : noTicketsTitle;
                             const missingSeatCount = event.missingPriceSeatCount ?? 0;
                             const missingSeatSamples = event.missingPriceSeatSamples ?? [];
@@ -1220,7 +1196,7 @@ export async function HomePage({
                                 </td>
                                 <td className="max-w-[16rem] px-3 py-3 align-middle sm:max-w-none sm:px-4">
                                   <div className="min-w-0 space-y-2">
-                                    <div className="flex min-w-0 items-center gap-2">
+                                    <div className="flex min-w-0 flex-wrap items-center gap-2">
                                       <Link
                                         href={`/events/${event.id}?kind=LAST_MINUTE`}
                                         className={`${eventNameLinkClass} min-w-0 truncate`}
@@ -1318,71 +1294,41 @@ export async function HomePage({
                                 <td className="max-w-[10rem] px-3 py-3 align-middle text-zinc-300 sm:px-4">
                                   {cellText(event.country)}
                                 </td>
-                                {(() => {
-                                  const { label, withinLimit } = cellUsdWithLimitFromCentsString(
-                                    event.cat1,
-                                    event.cat1LimitUsdCents,
-                                  );
-                                  return (
-                                    <td
-                                      className={`max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums sm:px-4 ${
-                                        withinLimit ? "font-extrabold text-emerald-400" : "text-[color:var(--ticketing-accent)]"
-                                      }`}
-                                    >
-                                      {label}
-                                    </td>
-                                  );
-                                })()}
-                                {(() => {
-                                  const { label, withinLimit } = cellUsdWithLimitFromCentsString(
-                                    event.cat2,
-                                    event.cat2LimitUsdCents,
-                                  );
-                                  return (
-                                    <td
-                                      className={`max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums sm:px-4 ${
-                                        withinLimit ? "font-extrabold text-emerald-400" : "text-[color:var(--ticketing-accent)]"
-                                      }`}
-                                    >
-                                      {label}
-                                    </td>
-                                  );
-                                })()}
-                                {(() => {
-                                  const { label, withinLimit } = cellUsdWithLimitFromCentsString(
-                                    event.cat3,
-                                    event.cat3LimitUsdCents,
-                                  );
-                                  return (
-                                    <td
-                                      className={`max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums sm:px-4 ${
-                                        withinLimit ? "font-extrabold text-emerald-400" : "text-[color:var(--ticketing-accent)]"
-                                      }`}
-                                    >
-                                      {label}
-                                    </td>
-                                  );
-                                })()}
-                                {(() => {
-                                  const { label, withinLimit } = cellUsdWithLimitFromCentsString(
-                                    event.cat4,
-                                    event.cat4LimitUsdCents,
-                                  );
-                                  return (
-                                    <td
-                                      className={`max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums sm:px-4 ${
-                                        withinLimit ? "font-extrabold text-emerald-400" : "text-[color:var(--ticketing-accent)]"
-                                      }`}
-                                    >
-                                      {label}
-                                    </td>
-                                  );
-                                })()}
+                                <td className="max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums sm:px-4">
+                                  <UsdLimitCell
+                                    priceCents={event.cat1}
+                                    limitUsdCents={event.cat1LimitUsdCents}
+                                  />
+                                </td>
+                                <td className="max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums sm:px-4">
+                                  <UsdLimitCell
+                                    priceCents={event.cat2}
+                                    limitUsdCents={event.cat2LimitUsdCents}
+                                  />
+                                </td>
+                                <td className="max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums sm:px-4">
+                                  <UsdLimitCell
+                                    priceCents={event.cat3}
+                                    limitUsdCents={event.cat3LimitUsdCents}
+                                  />
+                                </td>
+                                <td className="max-w-[12rem] px-3 py-3 align-middle font-bold tabular-nums sm:px-4">
+                                  <UsdLimitCell
+                                    priceCents={event.cat4}
+                                    limitUsdCents={event.cat4LimitUsdCents}
+                                  />
+                                </td>
                                 <td
                                   className="whitespace-nowrap px-3 py-3 text-right align-middle font-bold tabular-nums text-[color:var(--ticketing-accent)] sm:px-4"
                                   title={priceTitle}
                                 >
-                                  {priceLabel}
+                                  {hasPrice && event.lowestPriceCents ? (
+                                    <span className="tabular-nums font-bold text-[color:var(--ticketing-accent)]">
+                                      {formatUsd(event.lowestPriceCents)}
+                                    </span>
+                                  ) : (
+                                    "—"
+                                  )}
                                 </td>
                                 <td
                                   className="whitespace-nowrap px-3 py-3 text-right align-middle tabular-nums text-zinc-200 sm:px-4"
@@ -1392,10 +1338,12 @@ export async function HomePage({
                                 </td>
                                 <td className="max-w-[24rem] px-3 py-3 pr-4 align-middle sm:max-w-none sm:px-4 sm:pr-5">
                                   <EventPrefsEditCell
-                                    key={`${event.id}-${event.prefId}-${event.resalePrefId ?? ""}`}
+                                    key={`${event.id}-${event.prefId}-${event.resalePrefId ?? ""}-${event.sbEventId ?? ""}`}
                                     eventId={event.id}
                                     prefId={event.prefId}
                                     resalePrefId={event.resalePrefId}
+                                    sbEventId={event.sbEventId}
+                                    eventName={event.name}
                                   />
                                 </td>
                               </tr>
@@ -1412,8 +1360,10 @@ export async function HomePage({
                 </>
               ) : null}
             </section>
+            </HomeSockKindLoadingOverlay>
           </div>
         </div>
+        </HomeSockKindNavProvider>
       </div>
     </div>
   );

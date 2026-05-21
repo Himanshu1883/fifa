@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { AddSbIdDialog } from "@/app/add-sb-id-dialog";
+import { MarkupControls } from "@/app/markup-controls";
 import { SeatListingsPanel } from "./seat-listings-panel";
 import { SockAvailablePanel } from "./sock-available-panel";
 
@@ -29,6 +31,7 @@ const eventDetailSelect = {
   id: true,
   prefId: true,
   resalePrefId: true,
+  sbEventId: true,
   matchLabel: true,
   name: true,
 } as const;
@@ -356,6 +359,12 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
+                    <MarkupControls />
+                    <AddSbIdDialog
+                      eventId={event.id}
+                      eventName={event.name}
+                      sbEventId={event.sbEventId}
+                    />
                     <Link
                       href={`/events/${event.id}?kind=LAST_MINUTE`}
                       className={
