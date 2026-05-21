@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { AddSbIdDialog } from "@/app/add-sb-id-dialog";
+import { ApiDocumentationControls } from "@/app/api-documentation-controls";
 import { MarkupControls } from "@/app/markup-controls";
 import { SeatListingsPanel } from "./seat-listings-panel";
 import { SockAvailablePanel } from "./sock-available-panel";
@@ -360,6 +361,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
 
                   <div className="flex flex-wrap items-center gap-2">
                     <MarkupControls />
+                    <ApiDocumentationControls sampleEventId={event.id} />
                     <AddSbIdDialog
                       eventId={event.id}
                       eventName={event.name}

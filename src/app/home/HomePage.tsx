@@ -7,6 +7,7 @@ import { formatUsd, priceToNumber } from "@/lib/format-usd";
 import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
 import { AddEventDialog } from "@/app/add-event-dialog";
 import { EditEventDialog } from "@/app/edit-event-dialog";
+import { ApiDocumentationControls } from "@/app/api-documentation-controls";
 import { MarkupControls } from "@/app/markup-controls";
 import { EventImportantToggle } from "@/app/event-important-toggle";
 import { EventPrefsEditCell } from "@/app/event-prefs-edit-cell";
@@ -842,6 +843,7 @@ export async function HomePage({
                 Missing price
               </Link>
               <MarkupControls />
+              <ApiDocumentationControls sampleEventId={events[0]?.id ?? 1} />
               </div>
             </div>
           </header>
