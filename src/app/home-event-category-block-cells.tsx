@@ -479,7 +479,6 @@ export function HomeEventCategoryBlockCells({
                   )}
                 </div>
               </div>
-            </div>
         </ModalPortal>
       ) : null}
     </>
