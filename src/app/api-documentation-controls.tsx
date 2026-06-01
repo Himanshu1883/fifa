@@ -195,7 +195,34 @@ export function ApiDocumentationControls({ className, sampleEventId = 1 }: Props
                     <span className="font-medium text-zinc-300">Add SB ID</span> — maps an event to SeatsBrokers; returned
                     as <code className="text-zinc-300">sbEventId</code> in the API
                   </li>
+                  <li>
+                    <span className="font-medium text-zinc-300">SB API</span> — popup to preview payloads, see SB
+                    responses, and push to <code className="text-zinc-300">ticket/create</code>
+                  </li>
                 </ul>
+              </section>
+
+              <section className="space-y-2">
+                <h3 className={sectionTitle}>Push to SeatsBrokers</h3>
+                <p className="font-mono text-sm text-sky-300/95">
+                  POST <span className="text-zinc-100">/api/events/{eventId}/push-to-seatsbrokers</span>
+                </p>
+                <p className="text-xs text-zinc-500">
+                  Maps each transformed offer to SeatsBrokers seller API <code>ticket/create</code> using{" "}
+                  <code>sbEventId</code> as <code>match_id</code>. Requires{" "}
+                  <code>SEATS_BROKERS_API_KEY</code> in server env.
+                </p>
+                <DocTable
+                  headers={["Query", "Description"]}
+                  rows={[
+                    ["dryRun=1", "Preview mapped payloads without calling SeatsBrokers"],
+                    ["limit=N", "Max offers to push (default: all, max 500)"],
+                    ["kind=RESALE", "Only resale sock rows"],
+                    ["markupPercent=N", "Override markup on prices (omit = UI saved value)"],
+                  ]}
+                />
+                <pre className={codeBlock}>{`curl -sS -X POST "${baseUrl}/api/events/${eventId}/push-to-seatsbrokers?dryRun=1&limit=5"`}</pre>
+                <pre className={codeBlock}>{`curl -sS "${baseUrl}/api/seatsbrokers/status"`}</pre>
               </section>
 
               <section className="space-y-2">

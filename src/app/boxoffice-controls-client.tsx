@@ -40,25 +40,47 @@ export function BoxofficeControlsClient({ port }: { port: string }) {
 
   const wsUrl = useMemo(() => `ws://127.0.0.1:${port}/ws`, [port]);
 
-  const refresh = async () => {
+  const refresh = async (): Promise<boolean> => {
     try {
       const res = await fetch("/api/boxoffice/status", { cache: "no-store" });
       const data = (await res.json()) as unknown as BoxofficeStatusResponse;
       setStatus(data);
+      if (!res.ok) {
+        setLastError(
+          data && typeof data === "object" && "error" in data && typeof data.error === "string"
+            ? data.error
+            : `BoxOffice status HTTP ${res.status}`,
+        );
+        return false;
+      }
       setLastError(null);
+      return true;
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setStatus(null);
       setLastError(message.slice(0, 400));
+      return false;
     }
   };
 
   useEffect(() => {
-    const startId = window.setTimeout(() => void refresh(), 0);
-    const id = window.setInterval(() => void refresh(), 2500);
+    let cancelled = false;
+    let timeoutId = 0;
+
+    const schedule = (delayMs: number) => {
+      timeoutId = window.setTimeout(async () => {
+        if (cancelled) return;
+        const ok = await refresh();
+        if (cancelled) return;
+        schedule(ok ? 2500 : 15_000);
+      }, delayMs);
+    };
+
+    schedule(0);
+
     return () => {
-      window.clearTimeout(startId);
-      window.clearInterval(id);
+      cancelled = true;
+      window.clearTimeout(timeoutId);
     };
   }, []);
 

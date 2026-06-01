@@ -1,0 +1,213 @@
+{
+  "info": {
+    "_postman_id": "seatsbrokers-sandbox-fifa",
+    "name": "SeatsBrokers Seller API (Sandbox)",
+    "description": "External Seller API — sandbox base URL.\n\n**Setup**\n1. Import this collection.\n2. Open collection **Variables** and set `apiKey` to your sandbox key.\n3. Run **1. Get tournaments** first, then set `tournamentId` / `matchId` from responses.\n\nAuth: `apiKey` header on every request.\nPOST bodies use **form-data** (not JSON).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://sandbox-sellerapi.seatsbrokers.com/api"
+    },
+    {
+      "key": "apiKey",
+      "value": "YOUR_SANDBOX_API_KEY"
+    },
+    {
+      "key": "tournamentId",
+      "value": "64"
+    },
+    {
+      "key": "matchId",
+      "value": ""
+    }
+  ],
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "apiKey",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{apiKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "1. Get tournaments",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/tournament",
+          "host": ["{{baseUrl}}"],
+          "path": ["tournament"]
+        },
+        "description": "List tournaments. Pick an `id` for `tournamentId` variable, then run **2. List events**."
+      },
+      "response": []
+    },
+    {
+      "name": "2. List events (matches)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "tournament_id",
+              "value": "{{tournamentId}}",
+              "type": "text",
+              "description": "e.g. 64 = Football World Cup 2026"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/events",
+          "host": ["{{baseUrl}}"],
+          "path": ["events"]
+        },
+        "description": "Events/matches for a tournament. Copy a match `id` / `match_id` into collection variable `matchId`."
+      },
+      "response": []
+    },
+    {
+      "name": "3. List tickets for match",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "match_id",
+              "value": "{{matchId}}",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/ticket",
+          "host": ["{{baseUrl}}"],
+          "path": ["ticket"]
+        },
+        "description": "Existing ticket listings for a match."
+      },
+      "response": []
+    },
+    {
+      "name": "4. Ticket dropdown (categories)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "match_id",
+              "value": "{{matchId}}",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/ticket_dropdown",
+          "host": ["{{baseUrl}}"],
+          "path": ["ticket_dropdown"]
+        },
+        "description": "Category/block dropdown data for a match."
+      },
+      "response": []
+    },
+    {
+      "name": "5. Create ticket (listing)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "match_id",
+              "value": "{{matchId}}",
+              "type": "text"
+            },
+            {
+              "key": "ticket_type",
+              "value": "3",
+              "type": "text",
+              "description": "Default in app: SEATS_BROKERS_DEFAULT_TICKET_TYPE"
+            },
+            {
+              "key": "quantity",
+              "value": "2",
+              "type": "text"
+            },
+            {
+              "key": "ticket_category",
+              "value": "CATEGORY_ID",
+              "type": "text",
+              "description": "From your inventory / dropdown"
+            },
+            {
+              "key": "ticket_block",
+              "value": "BLOCK_ID",
+              "type": "text"
+            },
+            {
+              "key": "ticket_row",
+              "value": "ALL",
+              "type": "text"
+            },
+            {
+              "key": "home_town",
+              "value": "1",
+              "type": "text"
+            },
+            {
+              "key": "price_type",
+              "value": "USD",
+              "type": "text"
+            },
+            {
+              "key": "price",
+              "value": "100",
+              "type": "text"
+            },
+            {
+              "key": "ticket_details",
+              "value": "1,2",
+              "type": "text",
+              "description": "Comma-separated seat numbers"
+            },
+            {
+              "key": "split_type",
+              "value": "5",
+              "type": "text",
+              "description": "Together=5, Single=2 (app defaults)"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/ticket/create",
+          "host": ["{{baseUrl}}"],
+          "path": ["ticket", "create"]
+        },
+        "description": "Creates a listing. **Use real category/block IDs** from ticket_dropdown or your FIFA app SB API preview. Test carefully on sandbox."
+      },
+      "response": []
+    }
+  ]
+}
