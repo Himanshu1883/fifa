@@ -38,6 +38,7 @@ export type EditableEvent = {
   prefId: string;
   resalePrefId: string | null;
   isImportant: boolean;
+  eventDate: string | null;
 };
 
 type Props = {
@@ -179,6 +180,28 @@ export function EditEventDialog({ event, venueOptions = [], className }: Props) 
                   <p id={`edit-event-err-sortOrder-${event.id}`} className="text-xs text-red-400">
                     {fieldErrors.sortOrder}
                   </p>
+                ) : null}
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label
+                  htmlFor={`edit-event-eventDate-${event.id}`}
+                  className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
+                >
+                  Event date
+                </label>
+                <input
+                  id={`edit-event-eventDate-${event.id}`}
+                  name="eventDate"
+                  type="date"
+                  defaultValue={event.eventDate ?? ""}
+                  disabled={pending}
+                  className={`${inpModal} font-mono text-xs`}
+                  aria-invalid={fieldErrors.eventDate ? true : undefined}
+                />
+                <p className="text-[10px] text-zinc-600">SB date_to_ship = event date − 2 days</p>
+                {fieldErrors.eventDate ? (
+                  <p className="text-xs text-red-400">{fieldErrors.eventDate}</p>
                 ) : null}
               </div>
 

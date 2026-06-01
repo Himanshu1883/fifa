@@ -157,9 +157,15 @@
             },
             {
               "key": "ticket_category",
-              "value": "CATEGORY_ID",
+              "value": "1",
               "type": "text",
-              "description": "From your inventory / dropdown"
+              "description": "Category 1–4"
+            },
+            {
+              "key": "date_to_ship",
+              "value": "2026-06-10",
+              "type": "text",
+              "description": "Event date minus 2 days (YYYY-MM-DD)"
             },
             {
               "key": "ticket_block",

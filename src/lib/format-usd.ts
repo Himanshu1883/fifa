@@ -1,5 +1,13 @@
 const CENTS_PER_USD = 100;
 
+/** SockAvailable `amount` field → USD (amount / 1000, same as sock-available panel). */
+export function sockAmountToUsd(amount: string | null): number | null {
+  if (!amount) return null;
+  const n = priceToNumber(amount);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n / 1000;
+}
+
 export function priceToNumber(value: string): number {
   const s = String(value).trim().replace(/,/g, "");
   if (!s) return Number.NaN;

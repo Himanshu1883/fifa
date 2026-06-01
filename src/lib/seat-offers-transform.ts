@@ -1,4 +1,4 @@
-import { priceToNumber } from "@/lib/format-usd";
+import { priceToNumber, sockAmountToUsd } from "@/lib/format-usd";
 import { applyMarkupPercentToCents } from "@/lib/markup";
 import {
   groupSockAvailableRows,
@@ -149,10 +149,7 @@ export function mapAggregatedSeatOfferQuantity(inputCount: number, offerType: Se
 }
 
 function amountToUsd(amount: string | null): number | null {
-  if (!amount) return null;
-  const n = priceToNumber(amount);
-  if (!Number.isFinite(n)) return null;
-  return n / 1000;
+  return sockAmountToUsd(amount);
 }
 
 function offerTypeForGroup(g: SockAvailableSeatGroup): SeatOfferType {

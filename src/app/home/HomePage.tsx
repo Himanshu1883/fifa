@@ -4,6 +4,7 @@ import { unstable_cache } from "next/cache";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { formatUsd, priceToNumber } from "@/lib/format-usd";
+import { categoryNumFromCategoryName as catNumberFromSockCategoryName } from "@/lib/sb-category";
 import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
 import { AddEventDialog } from "@/app/add-event-dialog";
 import { EditEventDialog } from "@/app/edit-event-dialog";
@@ -57,6 +58,7 @@ type HomeEventRow = {
   prefId: string;
   resalePrefId: string | null;
   sbEventId: string | null;
+  eventDate: string | null;
   ticketsCount: number;
   lowestPriceCents: string | null;
   cat1: string | null;
@@ -189,16 +191,6 @@ function sockAmountRawToCentsString(value: string | null): string | null {
   // formatUsd expects cents, so dollars = n/1000 => cents = n/10.
   const cents = n / 10;
   return Number.isFinite(cents) ? String(cents) : null;
-}
-
-function catNumberFromSockCategoryName(name: string): 1 | 2 | 3 | 4 | null {
-  const s = String(name ?? "").trim().toLowerCase();
-  if (!s) return null;
-  const m = s.match(/(\d+)/);
-  if (!m) return null;
-  const n = Number.parseInt(m[1] ?? "", 10);
-  if (n === 1 || n === 2 || n === 3 || n === 4) return n;
-  return null;
 }
 
 export function firstQs(v: string | string[] | undefined): string | undefined {
@@ -494,6 +486,7 @@ export async function HomePage({
         prefId: true,
         resalePrefId: true,
         sbEventId: true,
+        eventDate: true,
       },
     });
 
@@ -561,6 +554,7 @@ export async function HomePage({
       const limits = limitByEventId.get(e.id);
       return {
         ...e,
+        eventDate: e.eventDate?.toISOString().slice(0, 10) ?? null,
         matchNum: parseEventMatchNumber(e.matchLabel, e.name),
         ticketsCount: agg?.ticketsCount ?? 0,
         lowestPriceCents: agg?.lowestPriceCents ?? null,

@@ -1,7 +1,9 @@
 "use client";
 
 import { updateSbEventIdAction } from "@/app/actions/event-sb-id";
+import { syncEventDateAction } from "@/app/actions/sync-event-date";
 import { ModalPortal } from "@/app/modal-portal";
+import { computeDateToShip } from "@/lib/sb-date-to-ship";
 import { countSbTicketListings } from "@/lib/seatsbrokers-parse";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -20,7 +22,18 @@ const sectionTitle = "text-[10px] font-semibold uppercase tracking-[0.14em] text
 /** Page size when max offers is empty (push all). */
 const PREVIEW_PAGE_SIZE = 20;
 
+/** SB push/preview only includes SockAvailable RESALE rows (not LAST_MINUTE). */
+const SB_PUSH_KIND = "RESALE";
+
+function appendSbPushQueryParams(params: URLSearchParams) {
+  params.set("kind", SB_PUSH_KIND);
+}
+
 type LimitMode = { mode: "all" } | { mode: "exact"; count: number };
+
+function computeDateToShipLabel(eventDateIso: string): string {
+  return computeDateToShip(eventDateIso) ?? "—";
+}
 
 function parseLimitDraft(draft: string): LimitMode {
   const t = draft.trim();
@@ -60,6 +73,7 @@ type SbMatchOption = {
   matchId: string;
   label: string;
   raw: Record<string, unknown>;
+  eventDate?: string | null;
 };
 
 type SbEventsFetchResponse = {
@@ -77,18 +91,90 @@ type SbEventsFetchResponse = {
   };
 };
 
+type SbBlockOption = { rowId: string; blockId: string };
+
 type TicketPayload = {
+  offerIndex?: number;
+  sbBlockOptions?: SbBlockOption[];
   fields: Record<string, string>;
   summary: {
     offerType: string;
     quantity: number;
     priceUsd: number | null;
-    categoryId: string;
-    blockId: string;
+    priceRaw?: string | null;
+    fifaCategoryId?: string;
+    sbCategoryId?: string;
+    categoryName?: string;
+    categoryNum?: number | null;
+    categoryLabel?: string;
+    fifaBlockId?: string;
+    sbBlockId?: string;
+    sbBlockCode?: string;
+    sbBlockMatched?: boolean;
+    sbBlockOptions?: SbBlockOption[];
+    blockName?: string;
     row: string;
     seatNumbers: string[];
   };
 };
+
+type PreviewOfferRow = {
+  id: string;
+  offerIndex: number;
+  ticket: TicketPayload;
+  included: boolean;
+  editing: boolean;
+};
+
+function ticketRowId(offerIndex: number, t: TicketPayload): string {
+  return `${offerIndex}-${t.summary.fifaBlockId ?? t.summary.sbBlockId ?? ""}-${t.summary.seatNumbers.join("|")}`;
+}
+
+function formatPreviewPrice(summary: TicketPayload["summary"]): string {
+  if (summary.priceUsd != null && Number.isFinite(summary.priceUsd) && summary.priceUsd > 0) {
+    return `$${summary.priceUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  }
+  if (summary.priceRaw) return `— (raw ${summary.priceRaw})`;
+  return "— (no price)";
+}
+
+function applyTicketFieldUpdate(ticket: TicketPayload, field: string, value: string): TicketPayload {
+  const fields = { ...ticket.fields, [field]: value };
+  const summary = { ...ticket.summary };
+  if (field === "price") {
+    const n = Number.parseFloat(value);
+    summary.priceUsd = Number.isFinite(n) ? n : null;
+  }
+  if (field === "quantity") {
+    const n = Number.parseInt(value, 10);
+    if (Number.isFinite(n)) summary.quantity = n;
+  }
+  if (field === "ticket_details") {
+    summary.seatNumbers = value.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  if (field === "ticket_row") summary.row = value;
+  if (field === "ticket_block") {
+    const opt = ticket.sbBlockOptions?.find((b) => b.rowId === value || b.blockId === value);
+    const rowId = opt?.rowId ?? value;
+    fields.ticket_block = rowId;
+    summary.sbBlockId = rowId;
+    summary.sbBlockCode = opt?.blockId ?? "";
+    summary.sbBlockMatched = Boolean(rowId.trim());
+  }
+  if (field === "ticket_category") {
+    summary.sbCategoryId = value;
+    const n = Number.parseInt(value, 10);
+    if (n === 13 || n === 14 || n === 15 || n === 16) {
+      const numMap: Record<number, 1 | 2 | 3 | 4> = { 16: 1, 15: 2, 14: 3, 13: 4 };
+      summary.categoryNum = numMap[n] ?? null;
+    } else {
+      summary.categoryNum = n === 1 || n === 2 || n === 3 || n === 4 ? n : null;
+    }
+    summary.categoryLabel =
+      summary.categoryNum != null ? `Category ${summary.categoryNum}` : (summary.categoryName ?? "—");
+  }
+  return { ...ticket, fields, summary };
+}
 
 type PushCapacity = {
   offerCount: number;
@@ -102,6 +188,7 @@ type PushResponse = {
   ok?: boolean;
   dryRun?: boolean;
   countOnly?: boolean;
+  inventoryKind?: string;
   error?: string;
   eventId?: number;
   eventName?: string;
@@ -113,6 +200,8 @@ type PushResponse = {
   limit?: number | null;
   offset?: number;
   hasMore?: boolean;
+  eventDate?: string | null;
+  dateToShip?: string | null;
   created?: number;
   failed?: number;
   tickets?: TicketPayload[];
@@ -120,6 +209,7 @@ type PushResponse = {
     offerIndex: number;
     ok: boolean;
     status?: number;
+    fields?: Record<string, string>;
     summary: TicketPayload["summary"];
     response?: unknown;
     error?: string;
@@ -143,7 +233,7 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
   const [resolving, setResolving] = useState(false);
   const [limitDraft, setLimitDraft] = useState("");
   const [savedLimit, setSavedLimit] = useState<string | null>(null);
-  const [displayedTickets, setDisplayedTickets] = useState<TicketPayload[]>([]);
+  const [previewRows, setPreviewRows] = useState<PreviewOfferRow[]>([]);
   const [previewMeta, setPreviewMeta] = useState<PushResponse | null>(null);
   const [previewPaged, setPreviewPaged] = useState(false);
   const [previewOffset, setPreviewOffset] = useState(0);
@@ -221,16 +311,6 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
     }
   }, [hasSbId, sbEventId]);
 
-  const buildLivePushParams = useCallback(() => {
-    const params = new URLSearchParams();
-    params.set("dryRun", "0");
-    const parsed = parseLimitDraft(savedLimit ?? "");
-    if (parsed.mode === "exact") {
-      params.set("limit", String(parsed.count));
-    }
-    return params;
-  }, [savedLimit]);
-
   const applyLimitSave = useCallback(
     async (append = false) => {
       if (!resolvedEventId || !hasSbId) return;
@@ -253,6 +333,7 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
         params.set("dryRun", "1");
         params.set("limit", String(pageLimit));
         params.set("offset", String(offset));
+        appendSbPushQueryParams(params);
 
         const res = await fetch(`/api/events/${resolvedEventId}/push-to-seatsbrokers?${params.toString()}`, {
           method: "POST",
@@ -266,8 +347,22 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
         }
 
         const batch = data.tickets ?? [];
+        const newRows: PreviewOfferRow[] = batch.map((t, i) => {
+          const offerIndex = t.offerIndex ?? offset + i;
+          return {
+            id: ticketRowId(offerIndex, t),
+            offerIndex,
+            ticket: {
+              ...t,
+              offerIndex,
+              sbBlockOptions: t.sbBlockOptions ?? t.summary?.sbBlockOptions ?? [],
+            },
+            included: true,
+            editing: false,
+          };
+        });
         setPreviewMeta(data);
-        setDisplayedTickets((prev) => (append ? [...prev, ...batch] : batch));
+        setPreviewRows((prev) => (append ? [...prev, ...newRows] : newRows));
         setPreviewOffset(offset + batch.length);
         setPreviewPaged(parsed.mode === "all");
       } catch (e) {
@@ -291,15 +386,31 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
       return;
     }
 
+    const selected = previewRows.filter((r) => r.included).map((r) => r.ticket);
+    if (selected.length === 0) {
+      setError("Select at least one listing to push (checkboxes in preview).");
+      return;
+    }
+
     setPushing(true);
     setPushResult(null);
     setError(null);
 
     try {
-      const res = await fetch(
-        `/api/events/${resolvedEventId}/push-to-seatsbrokers?${buildLivePushParams().toString()}`,
-        { method: "POST" },
-      );
+      const params = new URLSearchParams();
+      params.set("dryRun", "0");
+      appendSbPushQueryParams(params);
+      const res = await fetch(`/api/events/${resolvedEventId}/push-to-seatsbrokers?${params.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tickets: selected.map((t) => ({
+            offerIndex: t.offerIndex,
+            fields: t.fields,
+            summary: t.summary,
+          })),
+        }),
+      });
       const data = (await res.json()) as PushResponse;
       if (!res.ok) {
         setError(data.error ?? `Request failed (${res.status})`);
@@ -312,12 +423,13 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
     } finally {
       setPushing(false);
     }
-  }, [resolvedEventId, savedLimit, buildLivePushParams]);
+  }, [resolvedEventId, savedLimit, previewRows]);
 
   const buildCountOnlyParams = useCallback(() => {
     const params = new URLSearchParams();
     params.set("dryRun", "1");
     params.set("countOnly", "1");
+    appendSbPushQueryParams(params);
     return params;
   }, []);
 
@@ -391,6 +503,18 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                 setLocalSbEventId(suggested.matchId);
                 canPreview = true;
               }
+
+              const sbEventDate = suggested.eventDate?.trim();
+              if (sbEventDate && resolvedEventId) {
+                const synced = await syncEventDateAction(resolvedEventId, sbEventDate);
+                if (synced.ok) {
+                  const shipLabel = computeDateToShipLabel(sbEventDate);
+                  setResolveNote(
+                    (note) =>
+                      `${note ?? `Matched: ${suggested.label}`} · Event date ${sbEventDate} (ship ${shipLabel})`,
+                  );
+                }
+              }
             }
           }
         }
@@ -440,7 +564,7 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
     setPushResult(null);
     setLimitDraft("");
     setSavedLimit(null);
-    setDisplayedTickets([]);
+    setPreviewRows([]);
     setPreviewMeta(null);
     setPreviewPaged(false);
     setPreviewOffset(0);
@@ -477,20 +601,28 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
     router.refresh();
   }, [open, router]);
 
-  const tickets = displayedTickets;
   const displayResult = pushResult ?? null;
   const mappableTotal = previewMeta?.mappableCount ?? capacity?.mappableCount ?? 0;
-  const canShowMore = previewPaged && tickets.length < mappableTotal;
+  const canShowMore = previewPaged && previewRows.length < mappableTotal;
   const limitDirty = savedLimit === null || limitDraft.trim() !== savedLimit;
-  const hasPreview = savedLimit !== null && (tickets.length > 0 || previewMeta != null);
+  const hasPreview = savedLimit !== null && (previewRows.length > 0 || previewMeta != null);
+  const includedCount = previewRows.filter((r) => r.included).length;
+  const excludedCount = previewRows.length - includedCount;
 
-  const pushBatchCount = (() => {
-    const parsed = parseLimitDraft(savedLimit ?? "");
-    if (parsed.mode === "exact") {
-      return Math.min(parsed.count, capacity?.mappableCount ?? parsed.count);
-    }
-    return capacity?.mappableCount ?? previewMeta?.mappableCount ?? "all available";
-  })();
+  const pushBatchCount = includedCount > 0 ? includedCount : 0;
+
+  const setAllIncluded = (included: boolean) => {
+    setPreviewRows((rows) => rows.map((r) => ({ ...r, included })));
+  };
+
+  const updatePreviewRow = (id: string, patch: Partial<PreviewOfferRow> | ((row: PreviewOfferRow) => PreviewOfferRow)) => {
+    setPreviewRows((rows) =>
+      rows.map((r) => {
+        if (r.id !== id) return r;
+        return typeof patch === "function" ? patch(r) : { ...r, ...patch };
+      }),
+    );
+  };
 
   useEffect(() => {
     if (!pushConfirmOpen) return;
@@ -532,9 +664,9 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                     SeatsBrokers API
                   </h2>
                   <p className="mt-1 max-w-2xl text-xs leading-relaxed text-zinc-500">
-                    Preview transformed offers mapped to{" "}
+                    Preview transformed <strong className="font-medium text-zinc-400">RESALE</strong> offers mapped to{" "}
                     <code className="text-zinc-400">POST ticket/create</code>, then push live to the sandbox seller
-                    API. Uses the same seat rules and markup as our internal API.
+                    API. Last-minute inventory is excluded. Uses the same seat rules and markup as our internal API.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -627,6 +759,18 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                     <dt className="text-zinc-500">SB match_id</dt>
                     <dd className="font-mono text-sky-300/90">{hasSbId ? sbEventId : "—"}</dd>
                   </div>
+                  {previewMeta?.eventDate ? (
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-zinc-500">Event date</dt>
+                      <dd className="font-mono text-zinc-300">{previewMeta.eventDate}</dd>
+                    </div>
+                  ) : null}
+                  {previewMeta?.dateToShip ? (
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-zinc-500">date_to_ship</dt>
+                      <dd className="font-mono text-emerald-300/90">{previewMeta.dateToShip}</dd>
+                    </div>
+                  ) : null}
                   {previewMeta?.markupPercent != null ? (
                     <div className="flex justify-between gap-2">
                       <dt className="text-zinc-500">Markup applied</dt>
@@ -634,6 +778,11 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                     </div>
                   ) : null}
                 </dl>
+                {!previewMeta?.dateToShip && hasSbId ? (
+                  <p className="text-[10px] text-amber-200/90">
+                    Set event date on this event (Edit event) — SB listings need date_to_ship = event date − 2 days.
+                  </p>
+                ) : null}
 
                 <div className="flex flex-col gap-2 rounded-xl border border-white/[0.08] bg-black/25 p-3 ring-1 ring-white/[0.04] sm:col-span-2">
                   <p className={sectionTitle}>Listing capacity</p>
@@ -710,7 +859,8 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                   </div>
                   <p className="text-[10px] leading-relaxed text-zinc-600">
                     Type a number and click <strong className="text-zinc-400">Save</strong> to preview that many. Leave
-                    empty (Push all) and Save to preview {PREVIEW_PAGE_SIZE} at a time with More for the next batch.
+                    empty (Push all) and Save to preview {PREVIEW_PAGE_SIZE} at a time with More. Uncheck listings you do
+                    not want; use <strong className="text-zinc-400">Edit</strong> to change price or seats before push.
                   </p>
                 </div>
               </section>
@@ -771,50 +921,229 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                 ) : null}
 
                 {hasPreview ? (
-                  <p className="text-xs text-zinc-500">
-                    Showing <strong className="text-zinc-300">{tickets.length}</strong> listing
-                    {tickets.length === 1 ? "" : "s"} in preview
-                    {mappableTotal > tickets.length ? (
-                      <>
-                        {" "}
-                        of <strong className="text-zinc-300">{mappableTotal.toLocaleString()}</strong>
-                      </>
-                    ) : null}{" "}
-                    · dry run
-                    {previewing ? <span className="ml-1 text-zinc-600">· loading…</span> : null}
-                  </p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-zinc-500">
+                      <strong className="text-zinc-300">{previewRows.length}</strong> in preview
+                      {mappableTotal > previewRows.length ? (
+                        <>
+                          {" "}
+                          of <strong className="text-zinc-300">{mappableTotal.toLocaleString()}</strong>
+                        </>
+                      ) : null}
+                      {" · "}
+                      <strong className="text-emerald-300/90">{includedCount}</strong> selected
+                      {excludedCount > 0 ? (
+                        <span className="text-zinc-600"> · {excludedCount} excluded</span>
+                      ) : null}
+                      {previewing ? <span className="ml-1 text-zinc-600">· loading…</span> : null}
+                    </p>
+                    {previewRows.length > 0 ? (
+                      <div className="flex gap-2 text-[10px]">
+                        <button
+                          type="button"
+                          className="text-sky-300/90 hover:text-sky-200"
+                          disabled={busy}
+                          onClick={() => setAllIncluded(true)}
+                        >
+                          Select all
+                        </button>
+                        <button
+                          type="button"
+                          className="text-zinc-500 hover:text-zinc-300"
+                          disabled={busy}
+                          onClick={() => setAllIncluded(false)}
+                        >
+                          Exclude all
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 ) : previewing ? (
                   <p className="text-xs text-zinc-500">Loading preview…</p>
                 ) : null}
 
                 <div className={`space-y-3 ${previewing ? "opacity-70" : ""}`}>
-                  {tickets.length === 0 && hasPreview && !previewing ? (
+                  {previewRows.length === 0 && hasPreview && !previewing ? (
                     <p className="text-xs text-zinc-500">No offers to push for this event.</p>
                   ) : null}
-                  {tickets.map((t, i) => (
-                    <article
-                      key={i}
-                      className="rounded-xl border border-white/[0.08] bg-black/30 p-3 ring-1 ring-white/[0.04]"
-                    >
-                      <p className="mb-2 text-xs font-semibold text-zinc-200">
-                        Offer #{i + 1}{" "}
-                        <span className="font-normal text-zinc-500">
-                          · {t.summary.offerType} · qty {t.summary.quantity} · ${t.summary.priceUsd ?? "—"}
-                        </span>
-                      </p>
-                      <dl className="space-y-1">
-                        <FieldRow label="match_id" value={t.fields.match_id ?? ""} />
-                        <FieldRow label="quantity" value={t.fields.quantity ?? ""} />
-                        <FieldRow label="price" value={`${t.fields.price ?? ""} ${t.fields.price_type ?? ""}`} />
-                        <FieldRow label="ticket_category" value={t.fields.ticket_category ?? ""} />
-                        <FieldRow label="ticket_block" value={t.fields.ticket_block ?? ""} />
-                        <FieldRow label="ticket_row" value={t.fields.ticket_row ?? ""} />
-                        <FieldRow label="ticket_details" value={t.fields.ticket_details ?? ""} />
-                        <FieldRow label="split_type" value={t.fields.split_type ?? ""} />
-                        <FieldRow label="ticket_type" value={t.fields.ticket_type ?? ""} />
-                      </dl>
-                    </article>
-                  ))}
+                  {previewRows.map((row, i) => {
+                    const t = row.ticket;
+                    const priceWarn =
+                      t.summary.priceUsd == null ||
+                      !Number.isFinite(t.summary.priceUsd) ||
+                      t.summary.priceUsd <= 0;
+                    const categoryWarn = !String(t.fields.ticket_category ?? "").trim();
+                    const blockOptions = row.ticket.sbBlockOptions ?? [];
+                    const blockWarn =
+                      blockOptions.length > 0 &&
+                      !t.summary.sbBlockMatched &&
+                      !String(t.fields.ticket_block ?? "").trim();
+                    const shipDateWarn = !String(t.fields.date_to_ship ?? "").trim();
+                    return (
+                      <article
+                        key={row.id}
+                        className={`rounded-xl border p-3 ring-1 ${
+                          row.included
+                            ? "border-white/[0.08] bg-black/30 ring-white/[0.04]"
+                            : "border-white/[0.04] bg-black/15 opacity-60 ring-white/[0.02]"
+                        }`}
+                      >
+                        <div className="mb-2 flex flex-wrap items-start gap-2">
+                          <label className="flex cursor-pointer items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={row.included}
+                              disabled={busy}
+                              className="size-4 rounded border-white/20 bg-black/40"
+                              onChange={(e) => updatePreviewRow(row.id, { included: e.target.checked })}
+                            />
+                            <span className="text-xs font-semibold text-zinc-200">
+                              Offer #{i + 1}
+                              <span className="font-normal text-zinc-500">
+                                {" "}
+                                · {t.summary.categoryLabel ?? `Cat ${t.fields.ticket_category ?? "?"}`} ·{" "}
+                                {t.summary.offerType} · qty {t.summary.quantity} · {formatPreviewPrice(t.summary)}
+                              </span>
+                            </span>
+                          </label>
+                          <button
+                            type="button"
+                            className="ml-auto text-[10px] font-medium text-sky-300/90 hover:text-sky-200"
+                            disabled={busy}
+                            onClick={() => updatePreviewRow(row.id, { editing: !row.editing })}
+                          >
+                            {row.editing ? "Done" : "Edit"}
+                          </button>
+                        </div>
+                        {priceWarn ? (
+                          <p className="mb-2 rounded border border-amber-500/30 bg-amber-950/20 px-2 py-1 text-[10px] text-amber-200">
+                            Missing or zero price — edit before push or exclude this listing.
+                          </p>
+                        ) : null}
+                        {categoryWarn ? (
+                          <p className="mb-2 rounded border border-amber-500/30 bg-amber-950/20 px-2 py-1 text-[10px] text-amber-200">
+                            Missing SB <strong>ticket_category</strong> — refresh preview after match_id is set.
+                          </p>
+                        ) : null}
+                        {blockWarn ? (
+                          <p className="mb-2 rounded border border-amber-500/30 bg-amber-950/20 px-2 py-1 text-[10px] text-amber-200">
+                            No SB block auto-match for FIFA block &quot;{t.summary.blockName ?? "—"}&quot; — pick{" "}
+                            <strong>ticket_block</strong> in Edit ({blockOptions.length} options from SB).
+                          </p>
+                        ) : null}
+                        {blockOptions.length > 0 && !row.editing ? (
+                          <p className="mb-2 text-[10px] text-zinc-600">
+                            SB blocks for cat {t.fields.ticket_category}:{" "}
+                            {blockOptions
+                              .slice(0, 12)
+                              .map((b) => b.blockId)
+                              .join(", ")}
+                            {blockOptions.length > 12 ? ` … +${blockOptions.length - 12} more` : ""}
+                          </p>
+                        ) : null}
+                        {shipDateWarn ? (
+                          <p className="mb-2 rounded border border-amber-500/30 bg-amber-950/20 px-2 py-1 text-[10px] text-amber-200">
+                            Missing <strong>date_to_ship</strong> — set event date on the event, then Save preview
+                            again.
+                          </p>
+                        ) : null}
+                        {row.editing ? (
+                          <div className="mb-2 grid gap-2 sm:grid-cols-2">
+                            {(
+                              [
+                                ["date_to_ship", "date_to_ship (YYYY-MM-DD)"],
+                                ["ticket_category", "SB ticket_category id"],
+                                ["price", "Price (USD)"],
+                                ["quantity", "Quantity"],
+                                ["ticket_row", "Row"],
+                                ["ticket_details", "Seats (comma-separated)"],
+                                ["split_type", "Split type"],
+                              ] as const
+                            ).map(([field, label]) => (
+                              <label key={field} className="flex flex-col gap-0.5 text-[10px]">
+                                <span className="font-medium text-zinc-500">{label}</span>
+                                <input
+                                  value={t.fields[field] ?? ""}
+                                  disabled={busy}
+                                  className="rounded border border-white/10 bg-black/40 px-2 py-1 font-mono text-xs text-zinc-100"
+                                  onChange={(e) =>
+                                    updatePreviewRow(row.id, (r) => ({
+                                      ...r,
+                                      ticket: applyTicketFieldUpdate(r.ticket, field, e.target.value),
+                                    }))
+                                  }
+                                />
+                              </label>
+                            ))}
+                            <label className="flex flex-col gap-0.5 text-[10px] sm:col-span-2">
+                              <span className="font-medium text-zinc-500">
+                                SB ticket_block (row id from POST ticket_block, e.g. 1060776)
+                              </span>
+                              {blockOptions.length > 0 ? (
+                                <select
+                                  value={t.fields.ticket_block ?? ""}
+                                  disabled={busy}
+                                  className="rounded border border-white/10 bg-black/40 px-2 py-1 font-mono text-xs text-zinc-100"
+                                  onChange={(e) =>
+                                    updatePreviewRow(row.id, (r) => ({
+                                      ...r,
+                                      ticket: applyTicketFieldUpdate(r.ticket, "ticket_block", e.target.value),
+                                    }))
+                                  }
+                                >
+                                  <option value="">— Select SB block —</option>
+                                  {blockOptions.map((b) => (
+                                    <option key={b.rowId} value={b.rowId}>
+                                      {b.blockId} ({b.rowId})
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  value={t.fields.ticket_block ?? ""}
+                                  disabled={busy}
+                                  placeholder="Load preview to fetch SB blocks"
+                                  className="rounded border border-white/10 bg-black/40 px-2 py-1 font-mono text-xs text-zinc-100"
+                                  onChange={(e) =>
+                                    updatePreviewRow(row.id, (r) => ({
+                                      ...r,
+                                      ticket: applyTicketFieldUpdate(r.ticket, "ticket_block", e.target.value),
+                                    }))
+                                  }
+                                />
+                              )}
+                            </label>
+                          </div>
+                        ) : null}
+                        <dl className="space-y-1">
+                          <FieldRow label="match_id" value={t.fields.match_id ?? ""} />
+                          <FieldRow label="date_to_ship" value={t.fields.date_to_ship ?? ""} />
+                          <FieldRow label="quantity" value={t.fields.quantity ?? ""} />
+                          <FieldRow label="price" value={`${t.fields.price ?? ""} ${t.fields.price_type ?? ""}`} />
+                          <FieldRow label="SB ticket_category" value={t.fields.ticket_category ?? ""} />
+                          <FieldRow
+                            label="FIFA category"
+                            value={t.summary.fifaCategoryId ?? "—"}
+                          />
+                          <FieldRow
+                            label="SB ticket_block (row id)"
+                            value={t.fields.ticket_block ?? ""}
+                          />
+                          {t.summary.sbBlockCode ? (
+                            <FieldRow label="SB section" value={t.summary.sbBlockCode} />
+                          ) : null}
+                          <FieldRow label="FIFA block" value={t.summary.fifaBlockId ?? "—"} />
+                          {t.summary.blockName ? (
+                            <FieldRow label="Block name" value={t.summary.blockName} />
+                          ) : null}
+                          <FieldRow label="ticket_row" value={t.fields.ticket_row ?? ""} />
+                          <FieldRow label="ticket_details" value={t.fields.ticket_details ?? ""} />
+                          <FieldRow label="split_type" value={t.fields.split_type ?? ""} />
+                          <FieldRow label="ticket_type" value={t.fields.ticket_type ?? ""} />
+                        </dl>
+                      </article>
+                    );
+                  })}
                   {canShowMore ? (
                     <button
                       type="button"
@@ -822,7 +1151,9 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                       disabled={busy || previewing}
                       onClick={() => void applyLimitSave(true)}
                     >
-                      {previewing ? "Loading…" : `More (${Math.min(PREVIEW_PAGE_SIZE, mappableTotal - tickets.length)} next)`}
+                      {previewing
+                        ? "Loading…"
+                        : `More (${Math.min(PREVIEW_PAGE_SIZE, mappableTotal - previewRows.length)} next)`}
                     </button>
                   ) : null}
                 </div>
@@ -849,6 +1180,13 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                         <p className="font-semibold">
                           Offer #{r.offerIndex + 1} · HTTP {r.status ?? "—"} · {r.ok ? "OK" : "Failed"}
                         </p>
+                        {r.fields ? (
+                          <p className="mt-1 font-mono text-[10px] opacity-90">
+                            SB ticket_block: {r.fields.ticket_block ?? "—"}
+                            {r.summary.sbBlockCode ? ` (${r.summary.sbBlockCode})` : ""} · ticket_category:{" "}
+                            {r.fields.ticket_category ?? "—"}
+                          </p>
+                        ) : null}
                         {!r.ok && r.error ? <p className="mt-1 opacity-90">{r.error}</p> : null}
                         {r.response != null ? (
                           <pre className="mt-2 max-h-24 overflow-auto text-[10px] opacity-80">
@@ -865,7 +1203,14 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                 <section className="space-y-2">
                   <h3 className={sectionTitle}>Raw JSON</h3>
                   <pre className="max-h-48 overflow-auto rounded-lg border border-white/[0.08] bg-black/40 p-3 text-[10px] text-zinc-300">
-                    {JSON.stringify(pushResult ?? { ...previewMeta, tickets }, null, 2)}
+                    {JSON.stringify(
+                      pushResult ?? {
+                        ...previewMeta,
+                        tickets: previewRows.map((r) => ({ ...r.ticket, included: r.included })),
+                      },
+                      null,
+                      2,
+                    )}
                   </pre>
                 </section>
               ) : null}
@@ -895,10 +1240,10 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                 <button
                   type="button"
                   className={btnPrimary}
-                  disabled={busy || !hasSbId || !resolvedEventId || savedLimit === null}
+                  disabled={busy || !hasSbId || !resolvedEventId || savedLimit === null || includedCount === 0}
                   onClick={() => setPushConfirmOpen(true)}
                 >
-                  {pushing ? "Pushing to SB…" : "Push to SB"}
+                  {pushing ? "Pushing to SB…" : `Push to SB (${includedCount})`}
                 </button>
               </div>
             </footer>

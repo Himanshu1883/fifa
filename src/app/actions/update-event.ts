@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { parseEventDateInput } from "@/lib/sb-date-to-ship";
 
 const trimmedNonEmpty = (label: string) =>
   z
@@ -30,6 +31,7 @@ const updateEventFormSchema = z.object({
   resalePrefId: optionalTrimmedNullable,
   isImportant: z.boolean(),
   sortOrder: z.number().int(),
+  eventDate: z.date().nullable(),
 });
 
 function parseRequiredInteger(
@@ -72,6 +74,12 @@ export async function updateEventAction(formData: FormData): Promise<UpdateEvent
   }
 
   const resaleRaw = formData.get("resalePrefId");
+  const eventDateRaw = String(formData.get("eventDate") ?? "").trim();
+  const eventDateParsed = eventDateRaw ? parseEventDateInput(eventDateRaw) : null;
+  if (eventDateRaw && !eventDateParsed) {
+    return { ok: false, fieldErrors: { eventDate: "Invalid event date." } };
+  }
+
   const raw = {
     id,
     matchLabel: String(formData.get("matchLabel") ?? ""),
@@ -84,6 +92,7 @@ export async function updateEventAction(formData: FormData): Promise<UpdateEvent
       resaleRaw == null ? null : typeof resaleRaw === "string" ? resaleRaw : String(resaleRaw),
     isImportant: formData.get("isImportant") != null,
     sortOrder: sortParsed.value,
+    eventDate: eventDateParsed,
   };
 
   const parsed = updateEventFormSchema.safeParse(raw);
@@ -104,6 +113,7 @@ export async function updateEventAction(formData: FormData): Promise<UpdateEvent
         prefId: parsed.data.prefId,
         resalePrefId: parsed.data.resalePrefId,
         isImportant: parsed.data.isImportant,
+        eventDate: parsed.data.eventDate,
       },
     });
   } catch (err) {

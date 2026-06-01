@@ -137,6 +137,23 @@ export function AddEventDialog({ suggestedSortOrder }: Props) {
                 )}
               </div>
 
+              <div className="flex flex-col gap-1">
+                <label htmlFor="add-event-eventDate" className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                  Event date
+                </label>
+                <input
+                  id="add-event-eventDate"
+                  name="eventDate"
+                  type="date"
+                  className={`${inpModal} font-mono text-xs`}
+                  aria-invalid={fieldErrors.eventDate ? true : undefined}
+                />
+                <p className="text-[10px] text-zinc-600">Optional · SB ship date = event date − 2 days</p>
+                {fieldErrors.eventDate ? (
+                  <p className="text-xs text-red-400">{fieldErrors.eventDate}</p>
+                ) : null}
+              </div>
+
               <div className="flex flex-col gap-1 sm:col-span-2">
                 <label htmlFor="add-event-name" className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
                   Event name{" "}

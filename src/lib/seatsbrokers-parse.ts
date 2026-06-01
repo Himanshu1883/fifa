@@ -1,7 +1,10 @@
+import { parseEventDateInput } from "@/lib/sb-date-to-ship";
+
 export type SbMatchOption = {
   matchId: string;
   label: string;
   raw: Record<string, unknown>;
+  eventDate: string | null;
 };
 
 function asRecord(v: unknown): Record<string, unknown> | null {
@@ -14,6 +17,29 @@ function pickString(obj: Record<string, unknown>, keys: string[]): string {
     if (v != null && String(v).trim() !== "") return String(v).trim();
   }
   return "";
+}
+
+/** Best-effort match kickoff / event date from SB POST /events row. */
+export function parseSbMatchEventDate(raw: Record<string, unknown>): string | null {
+  for (const k of [
+    "match_date",
+    "matchDate",
+    "event_date",
+    "eventDate",
+    "date",
+    "start_date",
+    "startDate",
+    "match_start_date",
+    "matchStartDate",
+  ]) {
+    const v = raw[k];
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (!s) continue;
+    const parsed = parseEventDateInput(s);
+    if (parsed) return parsed.toISOString().slice(0, 10);
+  }
+  return null;
 }
 
 function parseMatchRow(row: unknown): SbMatchOption | null {
@@ -42,7 +68,8 @@ function parseMatchRow(row: unknown): SbMatchOption | null {
   ]);
 
   const label = name ? `${name} (${matchId})` : `Match ${matchId}`;
-  return { matchId, label, raw: obj };
+  const eventDate = parseSbMatchEventDate(obj);
+  return { matchId, label, raw: obj, eventDate };
 }
 
 function extractArray(data: unknown): unknown[] {

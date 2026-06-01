@@ -81,6 +81,8 @@ model Event {
   resalePrefId  String?                  @map("resale_pref_id")
   /// SeatsBrokers event id mapping (optional).
   sbEventId     String?                  @map("sb_event_id")
+  /// Calendar date of the match (used for SB date_to_ship = event_date − 2 days).
+  eventDate     DateTime?                @map("event_date")
   categories    EventCategory[]
   shopEventCategoryBlocks ShopEventCategoryBlock[]
   blockPrices   EventCategoryBlockPrice[]

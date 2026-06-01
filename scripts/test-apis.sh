@@ -51,8 +51,8 @@ print(json.dumps({
 }, indent=2))
 "
 
-section "5. Push to SeatsBrokers — dry run (needs sbEventId on event)"
-curl -sS --max-time 90 -X POST "$BASE/api/events/$EVENT_ID/push-to-seatsbrokers?dryRun=1&limit=3" | python3 -m json.tool | head -60
+section "5. Push to SeatsBrokers — dry run RESALE only (needs sbEventId on event)"
+curl -sS --max-time 90 -X POST "$BASE/api/events/$EVENT_ID/push-to-seatsbrokers?dryRun=1&limit=3&kind=RESALE" | python3 -m json.tool | head -60
 
 echo ""
 echo "Done. For live push, remove dryRun=1 (only when sbEventId is set)."

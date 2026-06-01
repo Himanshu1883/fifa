@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { parseEventDateInput } from "@/lib/sb-date-to-ship";
 
 const trimmedNonEmpty = (label: string) =>
   z
@@ -66,6 +67,11 @@ export type CreateEventActionResult =
 
 export async function createEventAction(formData: FormData): Promise<CreateEventActionResult> {
   const resaleRaw = formData.get("resalePrefId");
+  const eventDateRaw = String(formData.get("eventDate") ?? "").trim();
+  const eventDateParsed = eventDateRaw ? parseEventDateInput(eventDateRaw) : null;
+  if (eventDateRaw && !eventDateParsed) {
+    return { ok: false, fieldErrors: { eventDate: "Invalid event date." } };
+  }
 
   const raw = {
     matchLabel: String(formData.get("matchLabel") ?? ""),
@@ -110,6 +116,7 @@ export async function createEventAction(formData: FormData): Promise<CreateEvent
         country: parsed.data.country,
         prefId: parsed.data.prefId,
         resalePrefId: parsed.data.resalePrefId,
+        eventDate: eventDateParsed,
       },
     });
   } catch (err) {

@@ -7,6 +7,9 @@ import {
   type TransformSeatOffersResult,
 } from "@/lib/seat-offers-transform";
 
+/** SockAvailable kind used for SeatsBrokers preview/push (resale inventory only). */
+export const SEATS_BROKERS_PUSH_INVENTORY_KIND = "RESALE" as const;
+
 export type LoadTransformedSeatOffersOptions = {
   kind?: "RESALE" | "LAST_MINUTE";
   markupPercent?: number | "persisted";
@@ -19,6 +22,7 @@ export type LoadedTransformedSeatOffers = {
     prefId: string;
     resalePrefId: string | null;
     name: string;
+    eventDate: Date | null;
   };
   markupPercent: number;
   sourceRowCount: number;
@@ -38,7 +42,7 @@ export async function loadTransformedSeatOffersForEvent(
 ): Promise<LoadedTransformedSeatOffers | null> {
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { id: true, sbEventId: true, prefId: true, resalePrefId: true, name: true },
+    select: { id: true, sbEventId: true, prefId: true, resalePrefId: true, name: true, eventDate: true },
   });
   if (!event) return null;
 

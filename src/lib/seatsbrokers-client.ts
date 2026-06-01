@@ -97,3 +97,14 @@ export async function sbCreateTicket(
 export async function sbGetTicketDropdown(matchId: string, config?: SeatsBrokersConfig) {
   return postForm(config ?? requireSeatsBrokersConfig(), "ticket_dropdown", { match_id: matchId });
 }
+
+export async function sbGetTicketBlocks(
+  matchId: string,
+  categoryId: string,
+  config?: SeatsBrokersConfig,
+) {
+  return postForm(config ?? requireSeatsBrokersConfig(), "ticket_block", {
+    match_id: matchId,
+    category_id: categoryId,
+  });
+}
