@@ -3,7 +3,9 @@
 import { updateSbEventIdAction } from "@/app/actions/event-sb-id";
 import { syncEventDateAction } from "@/app/actions/sync-event-date";
 import { ModalPortal } from "@/app/modal-portal";
+import { SbListingHistoryModal } from "@/app/sb-listing-history-modal";
 import { computeDateToShip } from "@/lib/sb-date-to-ship";
+import { DEFAULT_SB_TICKET_TYPE_ID, SB_TICKET_TYPES } from "@/lib/sb-ticket-types";
 import { countSbTicketListings } from "@/lib/seatsbrokers-parse";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -25,8 +27,9 @@ const PREVIEW_PAGE_SIZE = 20;
 /** SB push/preview only includes SockAvailable RESALE rows (not LAST_MINUTE). */
 const SB_PUSH_KIND = "RESALE";
 
-function appendSbPushQueryParams(params: URLSearchParams) {
+function appendSbPushQueryParams(params: URLSearchParams, ticketType: string) {
   params.set("kind", SB_PUSH_KIND);
+  params.set("ticketType", ticketType);
 }
 
 type LimitMode = { mode: "all" } | { mode: "exact"; count: number };
@@ -204,6 +207,7 @@ type PushResponse = {
   dateToShip?: string | null;
   created?: number;
   failed?: number;
+  skipped?: number;
   tickets?: TicketPayload[];
   results?: Array<{
     offerIndex: number;
@@ -213,6 +217,7 @@ type PushResponse = {
     summary: TicketPayload["summary"];
     response?: unknown;
     error?: string;
+    skipped?: boolean;
   }>;
 };
 
@@ -254,6 +259,11 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
   const [error, setError] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
   const [pushConfirmOpen, setPushConfirmOpen] = useState(false);
+  const [autoPushEnabled, setAutoPushEnabled] = useState(false);
+  const [autoPushToggling, setAutoPushToggling] = useState(false);
+  const [eventAutoPushEligible, setEventAutoPushEligible] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [ticketTypeId, setTicketTypeId] = useState(DEFAULT_SB_TICKET_TYPE_ID);
   const titleId = useId();
   const pushConfirmTitleId = useId();
   const didInitOpenRef = useRef(false);
@@ -264,6 +274,7 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
   const needsPageRefreshRef = useRef(false);
   const eventNameRef = useRef("");
   const tournamentIdRef = useRef("64");
+  const ticketTypeIdRef = useRef(DEFAULT_SB_TICKET_TYPE_ID);
   const sbEventIdFromPropsRef = useRef<string | null>(null);
 
   const resolvedEventId = fixedEventId ?? (typeof selectedEventId === "number" ? selectedEventId : null);
@@ -275,6 +286,7 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
 
   eventNameRef.current = eventName;
   tournamentIdRef.current = tournamentId;
+  ticketTypeIdRef.current = ticketTypeId;
   sbEventIdFromPropsRef.current = sbEventIdFromProps;
 
   const saveSbMatchId = useCallback(
@@ -311,6 +323,98 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
     }
   }, [hasSbId, sbEventId]);
 
+  const loadAutoPushState = useCallback(async () => {
+    if (!resolvedEventId) {
+      setEventAutoPushEligible(false);
+      return;
+    }
+    try {
+      const res = await fetch(
+        `/api/seatsbrokers/auto-push?eventId=${encodeURIComponent(String(resolvedEventId))}`,
+        { cache: "no-store" },
+      );
+      const data = (await res.json()) as {
+        enabled?: boolean;
+        eventEligible?: boolean;
+        ticketType?: string;
+      };
+      if (res.ok) {
+        setAutoPushEnabled(Boolean(data.enabled));
+        setEventAutoPushEligible(Boolean(data.eventEligible));
+        if (data.ticketType) {
+          setTicketTypeId(data.ticketType);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [resolvedEventId]);
+
+  const setAutoPush = useCallback(
+    async (enabled: boolean) => {
+      setAutoPushToggling(true);
+      try {
+        const body: { enabled: boolean; eventId?: number } = { enabled };
+        if (enabled && resolvedEventId != null) {
+          body.eventId = resolvedEventId;
+        }
+        const res = await fetch("/api/seatsbrokers/auto-push", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = (await res.json()) as {
+          ok?: boolean;
+          enabled?: boolean;
+          error?: string;
+          autoPushRun?: { ran?: boolean; created?: number; skippedReason?: string };
+        };
+        if (!res.ok) {
+          setError(data.error ?? "Could not update auto-push setting.");
+          return;
+        }
+        setAutoPushEnabled(Boolean(data.enabled));
+        if (enabled && data.autoPushRun?.ran && (data.autoPushRun.created ?? 0) > 0) {
+          void loadStatus();
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setAutoPushToggling(false);
+      }
+    },
+    [resolvedEventId, loadStatus],
+  );
+
+  const patchPreviewTicketType = useCallback((typeId: string) => {
+    setPreviewRows((prev) =>
+      prev.map((r) => ({
+        ...r,
+        ticket: {
+          ...r.ticket,
+          fields: { ...r.ticket.fields, ticket_type: typeId },
+        },
+      })),
+    );
+  }, []);
+
+  const saveTicketType = useCallback(
+    async (typeId: string) => {
+      setTicketTypeId(typeId);
+      patchPreviewTicketType(typeId);
+      try {
+        await fetch("/api/seatsbrokers/auto-push", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticketType: typeId }),
+        });
+      } catch {
+        /* ignore */
+      }
+    },
+    [patchPreviewTicketType],
+  );
+
   const applyLimitSave = useCallback(
     async (append = false) => {
       if (!resolvedEventId || !hasSbId) return;
@@ -333,7 +437,7 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
         params.set("dryRun", "1");
         params.set("limit", String(pageLimit));
         params.set("offset", String(offset));
-        appendSbPushQueryParams(params);
+        appendSbPushQueryParams(params, ticketTypeIdRef.current);
 
         const res = await fetch(`/api/events/${resolvedEventId}/push-to-seatsbrokers?${params.toString()}`, {
           method: "POST",
@@ -399,7 +503,7 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
     try {
       const params = new URLSearchParams();
       params.set("dryRun", "0");
-      appendSbPushQueryParams(params);
+      appendSbPushQueryParams(params, ticketTypeIdRef.current);
       const res = await fetch(`/api/events/${resolvedEventId}/push-to-seatsbrokers?${params.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -418,18 +522,22 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
         return;
       }
       setPushResult(data);
+      if (data.created && data.created > 0) {
+        void loadAutoPushState();
+        void applyLimitSave(false);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setPushing(false);
     }
-  }, [resolvedEventId, savedLimit, previewRows]);
+  }, [resolvedEventId, savedLimit, previewRows, loadAutoPushState, applyLimitSave]);
 
   const buildCountOnlyParams = useCallback(() => {
     const params = new URLSearchParams();
     params.set("dryRun", "1");
     params.set("countOnly", "1");
-    appendSbPushQueryParams(params);
+    appendSbPushQueryParams(params, ticketTypeIdRef.current);
     return params;
   }, []);
 
@@ -551,7 +659,13 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
     [resolvedEventId, saveSbMatchId, buildCountOnlyParams, localSbEventId, sbMatchDetail],
   );
 
-  const busy = previewing || pushing || resolving;
+  const panelBusy = previewing || pushing || resolving;
+  const busy = panelBusy || autoPushToggling;
+
+  useEffect(() => {
+    if (!open) return;
+    void loadAutoPushState();
+  }, [open, loadAutoPushState]);
 
   useEffect(() => {
     if (!open) {
@@ -581,11 +695,17 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !busy) setOpen(false);
+      if (e.key !== "Escape" || busy) return;
+      if (historyOpen) {
+        setHistoryOpen(false);
+        return;
+      }
+      if (pushConfirmOpen) return;
+      setOpen(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, busy]);
+  }, [open, busy, historyOpen, pushConfirmOpen]);
 
   useEffect(() => {
     if (!open || !resolvedEventId) return;
@@ -647,7 +767,7 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
       {open ? (
         <ModalPortal
           onBackdropMouseDown={(e) => {
-            if (e.target === e.currentTarget && !busy) setOpen(false);
+            if (e.target === e.currentTarget && !busy && !historyOpen) setOpen(false);
           }}
         >
           <div
@@ -666,10 +786,23 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                   <p className="mt-1 max-w-2xl text-xs leading-relaxed text-zinc-500">
                     Preview transformed <strong className="font-medium text-zinc-400">RESALE</strong> offers mapped to{" "}
                     <code className="text-zinc-400">POST ticket/create</code>, then push live to the sandbox seller
-                    API. Last-minute inventory is excluded. Uses the same seat rules and markup as our internal API.
+                    API. Duplicate listings are never pushed twice (manual or auto).
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {resolvedEventId ? (
+                    <button
+                      type="button"
+                      disabled={panelBusy}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setHistoryOpen(true);
+                      }}
+                      className="rounded-lg border border-violet-500/35 bg-violet-950/25 px-3 py-1.5 text-xs font-medium text-violet-100 hover:bg-violet-950/40 disabled:opacity-50"
+                    >
+                      Listing history
+                    </button>
+                  ) : null}
                   {sbStatus?.configured === false ? (
                     <span className="rounded-full border border-red-500/40 bg-red-950/30 px-2.5 py-1 text-[10px] font-semibold text-red-200">
                       Not configured
@@ -689,11 +822,70 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                   )}
                 </div>
               </div>
+
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/[0.08] bg-black/25 px-3 py-2.5">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-zinc-200">Auto-push to SeatsBrokers</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={autoPushEnabled}
+                    disabled={panelBusy || autoPushToggling}
+                    onClick={() => void setAutoPush(!autoPushEnabled)}
+                    className={`relative h-7 w-12 shrink-0 rounded-full border transition-colors ${
+                      autoPushEnabled
+                        ? "border-emerald-500/50 bg-emerald-600/80"
+                        : "border-white/15 bg-zinc-700/80"
+                    } ${panelBusy || autoPushToggling ? "opacity-50" : ""}`}
+                  >
+                    <span
+                      className={`absolute top-0.5 block h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                        autoPushEnabled ? "translate-x-5" : "translate-x-0.5"
+                      }`}
+                    />
+                  </button>
+                  <span className="text-xs text-zinc-500">{autoPushEnabled ? "On" : "Off"}</span>
+                  {autoPushEnabled ? (
+                    <span className="text-[10px] text-emerald-400/90">· every 3s while this app is open</span>
+                  ) : null}
+                </div>
+                {eventAutoPushEligible ? (
+                  <span className="rounded-full border border-sky-500/30 bg-sky-950/20 px-2 py-0.5 text-[10px] text-sky-200">
+                    Auto-push eligible
+                  </span>
+                ) : (
+                  <span className="max-w-md text-[10px] text-zinc-600">
+                    Push once manually to enable auto-push for this event
+                  </span>
+                )}
+              </div>
             </header>
 
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4" style={{ scrollbarGutter: "stable" }}>
               {/* Event + settings */}
               <section className="grid gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1 sm:col-span-2">
+                  <label htmlFor="sb-api-ticket-type" className={sectionTitle}>
+                    Ticket type
+                  </label>
+                  <select
+                    id="sb-api-ticket-type"
+                    value={ticketTypeId}
+                    disabled={busy}
+                    onChange={(e) => void saveTicketType(e.target.value)}
+                    className="rounded-md border border-white/10 bg-black/35 px-3 py-2 text-sm text-zinc-100"
+                  >
+                    {SB_TICKET_TYPES.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} (id {t.id})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-zinc-600">
+                    Sent as <code className="text-zinc-500">ticket_type</code> on create · default Mobile Ticket (4)
+                  </p>
+                </div>
+
                 <div className="flex flex-col gap-1 sm:col-span-2">
                   <label htmlFor="sb-api-tournament" className={sectionTitle}>
                     SB tournament
@@ -998,11 +1190,12 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                               onChange={(e) => updatePreviewRow(row.id, { included: e.target.checked })}
                             />
                             <span className="text-xs font-semibold text-zinc-200">
-                              Offer #{i + 1}
+                              Offer #{row.offerIndex + 1}
                               <span className="font-normal text-zinc-500">
                                 {" "}
                                 · {t.summary.categoryLabel ?? `Cat ${t.fields.ticket_category ?? "?"}`} ·{" "}
-                                {t.summary.offerType} · qty {t.summary.quantity} · {formatPreviewPrice(t.summary)}
+                                {t.summary.offerType} · qty {t.summary.quantity} · row {t.summary.row || "—"} · seats{" "}
+                                {t.summary.seatNumbers.join(",") || "—"} · {formatPreviewPrice(t.summary)}
                               </span>
                             </span>
                           </label>
@@ -1166,6 +1359,13 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                   <p className="text-xs text-zinc-400">
                     Created: <span className="font-semibold text-emerald-400">{displayResult.created ?? 0}</span> ·
                     Failed: <span className="font-semibold text-red-400">{displayResult.failed ?? 0}</span>
+                    {(displayResult.skipped ?? 0) > 0 ? (
+                      <>
+                        {" "}
+                        · Skipped (duplicate):{" "}
+                        <span className="font-semibold text-zinc-400">{displayResult.skipped}</span>
+                      </>
+                    ) : null}
                   </p>
                   <div className="space-y-2">
                     {displayResult.results?.map((r, i) => (
@@ -1317,6 +1517,12 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
           </div>
         </ModalPortal>
       ) : null}
+
+      <SbListingHistoryModal
+        open={historyOpen}
+        eventId={resolvedEventId}
+        onClose={() => setHistoryOpen(false)}
+      />
     </>
   );
 }

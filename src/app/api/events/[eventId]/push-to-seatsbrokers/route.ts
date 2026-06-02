@@ -6,16 +6,13 @@ import {
   parseOptionalMarkupPercentParam,
   SEATS_BROKERS_PUSH_INVENTORY_KIND,
 } from "@/lib/event-seat-offers-service";
-import { sbCreateTicket } from "@/lib/seatsbrokers-client";
-import { getSeatsBrokersConfig } from "@/lib/seatsbrokers-config";
+import { configWithTicketType, getSeatsBrokersConfig } from "@/lib/seatsbrokers-config";
+import { parseSbTicketTypeId } from "@/lib/sb-ticket-types";
+import { executeSbTicketPush } from "@/lib/seatsbrokers-push-service";
 import type { SbCategoryNum } from "@/lib/sb-category";
 import { computeDateToShip } from "@/lib/sb-date-to-ship";
 import { loadSbMatchCatalogForOffers, serializeSbCatalogBlocks } from "@/lib/seatsbrokers-catalog";
-import {
-  enrichMappedTicketForPush,
-  isLikelyFifaSnowflakeId,
-  mapOffersToSeatsBrokersCreateTickets,
-} from "@/lib/seatsbrokers-offer-map";
+import { enrichMappedTicketForPush, mapOffersToSeatsBrokersCreateTickets } from "@/lib/seatsbrokers-offer-map";
 
 export const runtime = "nodejs";
 
@@ -54,6 +51,7 @@ const pushBodySchema = z.object({
             blockName: z.string().optional(),
             row: z.string(),
             seatNumbers: z.array(z.string()),
+            seatIds: z.array(z.string()).optional(),
             priceRaw: z.string().nullable().optional(),
           })
           .optional(),
@@ -70,8 +68,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ eventId: strin
     return NextResponse.json({ ok: false, error: "Invalid eventId." }, { status: 400 });
   }
 
-  const sbConfig = getSeatsBrokersConfig();
-  if (!sbConfig) {
+  const sbConfigBase = getSeatsBrokersConfig();
+  if (!sbConfigBase) {
     return NextResponse.json(
       {
         ok: false,
@@ -82,6 +80,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ eventId: strin
   }
 
   const url = new URL(req.url);
+  const ticketTypeParam = url.searchParams.get("ticketType")?.trim();
+  const sbConfig = configWithTicketType(sbConfigBase, parseSbTicketTypeId(ticketTypeParam));
+
   const parsedQuery = querySchema.safeParse({
     kind: url.searchParams.get("kind")?.trim().toUpperCase() || undefined,
     dryRun: url.searchParams.get("dryRun")?.trim() || undefined,
@@ -247,73 +248,26 @@ export async function POST(req: Request, ctx: { params: Promise<{ eventId: strin
           row: t.summary?.row ?? t.fields.ticket_row ?? "",
           seatNumbers:
             t.summary?.seatNumbers ?? (t.fields.ticket_details ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+          seatIds: t.summary?.seatIds ?? [],
         },
       })) ?? pushSlice;
 
-    const ticketsToPush: typeof pushSlice = [];
+    const enrichedTickets: typeof pushSlice = [];
     for (const raw of rawTicketsToPush) {
       const enriched = enrichMappedTicketForPush(raw, offers, matchId, sbConfig, dateToShip, catalog);
-      if (enriched) ticketsToPush.push(enriched);
+      if (enriched) enrichedTickets.push(enriched);
     }
 
-    const results: Array<{
-      offerIndex: number;
-      ok: boolean;
-      status?: number;
-      fields?: Record<string, string>;
-      summary: (typeof allMapped)[0]["summary"];
-      response?: unknown;
-      error?: string;
-    }> = [];
-
-    let created = 0;
-    let failed = 0;
-
-    for (const item of ticketsToPush) {
-      const fields: Record<string, string> = {
-        ...item.fields,
-        match_id: item.fields.match_id?.trim() || matchId,
-      };
-      const block = fields.ticket_block?.trim() ?? "";
-
-      if (!block || isLikelyFifaSnowflakeId(block) || !item.summary.sbBlockMatched) {
-        failed++;
-        results.push({
-          offerIndex: item.offerIndex,
-          ok: false,
-          fields,
-          summary: item.summary,
-          error: block
-            ? `ticket_block "${block}" is not a valid SeatsBrokers block row id for this category. Open preview, pick SB block in Edit, then push again.`
-            : "No SeatsBrokers ticket_block (block row id) mapped for this offer. Load preview and select a block from the SB list.",
-        });
-        continue;
-      }
-
-      const res = await sbCreateTicket(fields, sbConfig);
-      if (res.ok) {
-        created++;
-        results.push({
-          offerIndex: item.offerIndex,
-          ok: true,
-          status: res.status,
-          fields,
-          summary: item.summary,
-          response: res.data,
-        });
-      } else {
-        failed++;
-        results.push({
-          offerIndex: item.offerIndex,
-          ok: false,
-          status: res.status,
-          fields,
-          summary: item.summary,
-          error: res.error,
-          response: res.raw,
-        });
-      }
-    }
+    const { created, failed, skipped, results } = await executeSbTicketPush({
+      eventId: loaded.event.id,
+      matchId,
+      offers,
+      tickets: enrichedTickets,
+      config: sbConfig,
+      dateToShip,
+      catalog,
+      trigger: "MANUAL",
+    });
 
     return NextResponse.json({
       ok: failed === 0,
@@ -325,12 +279,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ eventId: strin
       markupPercent: loaded.markupPercent,
       offerCount: rawOfferCount,
       mappableCount,
-      pushCount: ticketsToPush.length,
+      pushCount: enrichedTickets.length,
       limit: limitParam ?? null,
       eventDate: eventDateIso,
       dateToShip,
       created,
       failed,
+      skipped,
       results,
     });
   } catch (e) {

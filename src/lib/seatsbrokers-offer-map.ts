@@ -34,6 +34,8 @@ export type MappedSeatsBrokersTicket = {
     sbBlockOptions: SbBlockOption[];
     row: string;
     seatNumbers: string[];
+    /** FIFA seat ids — used for dedupe; optional on older preview payloads. */
+    seatIds?: string[];
   };
 };
 
@@ -112,6 +114,7 @@ export function mapOfferToSeatsBrokersCreateTicket(
       sbBlockOptions,
       row: first.row,
       seatNumbers,
+      seatIds: offer.seats.map((s) => s.seatId.trim()).filter(Boolean),
     },
   };
 }
@@ -138,8 +141,9 @@ export function isLikelyFifaSnowflakeId(value: string): boolean {
 
 
 /**
- * Re-apply SB catalog mapping on push so ticket_category / ticket_block are never FIFA ids,
- * while preserving client edits to price, quantity, seats, and manually chosen SB blocks.
+ * Re-apply SB catalog mapping on push so ticket_category / ticket_block are never FIFA ids.
+ * Seat fields (row, ticket_details, quantity) always come from current inventory — stale preview
+ * payloads cannot re-push an old seat after offers refresh.
  */
 export function enrichMappedTicketForPush(
   ticket: MappedSeatsBrokersTicket,
@@ -182,26 +186,38 @@ export function enrichMappedTicketForPush(
   const ticketCategory = useClientCategory ? clientCategory : baseline.fields.ticket_category;
   const sbBlockCode = sbBlockCodeForRowId(ticketBlock, baseline.summary.sbBlockOptions);
 
+  const clientPrice = clientFields.price?.trim();
+  const clientTicketType = clientFields.ticket_type?.trim();
+  const clientSplitType = clientFields.split_type?.trim();
+  const clientDateToShip = clientFields.date_to_ship?.trim();
+
   const fields: Record<string, string> = {
     ...baseline.fields,
-    ...clientFields,
-    match_id: clientFields.match_id?.trim() || matchId,
+    match_id: matchId,
     ticket_category: ticketCategory,
     ticket_block: ticketBlock,
+    ...(clientPrice ? { price: clientPrice } : {}),
+    ...(clientTicketType ? { ticket_type: clientTicketType } : {}),
+    ...(clientSplitType ? { split_type: clientSplitType } : {}),
+    ...(clientDateToShip ? { date_to_ship: clientDateToShip } : {}),
   };
 
   const sbBlockMatched =
     Boolean(ticketBlock) &&
     (baseline.summary.sbBlockMatched || isValidSbTicketBlockValue(ticketBlock, baseline.summary.sbBlockOptions));
 
+  const clientPriceUsd = ticket.summary.priceUsd;
+  const priceUsd =
+    clientPriceUsd != null && Number.isFinite(clientPriceUsd) && clientPriceUsd > 0
+      ? clientPriceUsd
+      : baseline.summary.priceUsd;
+
   return {
     offerIndex: ticket.offerIndex,
     fields,
     summary: {
       ...baseline.summary,
-      offerType: ticket.summary.offerType,
-      quantity: ticket.summary.quantity ?? baseline.summary.quantity,
-      priceUsd: ticket.summary.priceUsd ?? baseline.summary.priceUsd,
+      priceUsd,
       sbBlockId: ticketBlock,
       sbBlockCode,
       sbBlockMatched,

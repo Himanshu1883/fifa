@@ -1,3 +1,5 @@
+import { DEFAULT_SB_TICKET_TYPE_ID, parseSbTicketTypeId } from "@/lib/sb-ticket-types";
+
 export type SeatsBrokersConfig = {
   baseUrl: string;
   apiKey: string;
@@ -28,6 +30,15 @@ export function getSeatsBrokersConfig(): SeatsBrokersConfig | null {
     defaultHomeTown: process.env.SEATS_BROKERS_DEFAULT_HOME_TOWN?.trim() || "1",
     priceType: process.env.SEATS_BROKERS_PRICE_TYPE?.trim() || "USD",
   };
+}
+
+export function configWithTicketType(
+  config: SeatsBrokersConfig,
+  ticketTypeId?: string | null,
+): SeatsBrokersConfig {
+  const ticketType = parseSbTicketTypeId(ticketTypeId ?? config.defaultTicketType);
+  if (ticketType === config.defaultTicketType) return config;
+  return { ...config, defaultTicketType: ticketType };
 }
 
 export function requireSeatsBrokersConfig(): SeatsBrokersConfig {

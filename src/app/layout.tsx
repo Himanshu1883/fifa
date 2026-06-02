@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import { logoutAction } from "@/app/actions/logout";
 import { MarkupProvider } from "@/app/markup-context";
+import { SbAutoPushPoller } from "@/app/sb-auto-push-poller";
 import { getSession, type SessionPayload } from "@/lib/auth/session";
 import { getPersistedMarkupPercent } from "@/lib/markup-settings";
 import "./globals.css";
@@ -87,7 +88,10 @@ export default async function RootLayout({
             </Link>
           )}
         </div>
-        <MarkupProvider initialMarkupPercent={initialMarkupPercent}>{children}</MarkupProvider>
+        <MarkupProvider initialMarkupPercent={initialMarkupPercent}>
+          {session ? <SbAutoPushPoller /> : null}
+          {children}
+        </MarkupProvider>
       </body>
     </html>
   );

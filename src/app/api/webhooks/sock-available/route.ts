@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { CataloguePayloadError } from "@/lib/price-range-catalogue";
 import { parseSockAvailableGeojsonBody } from "@/lib/parse-sock-available-geojson-webhook";
 import { computeSockAvailableDiffInTx, maybeNotifySockAvailableDiff } from "@/lib/notify-sock-available-diff";
+import { runSbAutoPushForEvent } from "@/lib/seatsbrokers-push-service";
 import { syncSockAvailableForEvent } from "@/lib/sync-sock-available";
 
 export const runtime = "nodejs";
@@ -187,12 +188,23 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    let sbAutoPush: Awaited<ReturnType<typeof runSbAutoPushForEvent>> | undefined;
+    if (kind === "RESALE") {
+      try {
+        sbAutoPush = await runSbAutoPushForEvent(txn.result.eventId);
+      } catch (autoErr) {
+        console.warn("[sock-available webhook] SB auto-push failed", autoErr);
+        sbAutoPush = { ran: false, skippedReason: "error" };
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       partial: skippedCount > 0,
       lookup: "pref-or-resale",
       prefId,
       eventId: txn.result.eventId,
+      sbAutoPush,
       featureCount,
       rowCount: rows.length,
       acceptedCount: rows.length,

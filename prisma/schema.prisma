@@ -93,6 +93,8 @@ model Event {
   buyingCriteria EventBuyingCriteria?
   buyingCriteriaRules EventBuyingCriteriaRule[]
   sockAvailableWebhookDiffLogs SockAvailableWebhookDiffLog[]
+  sbAutoPushRegistration SbEventAutoPush?
+  sbListingPushLogs      SbListingPushLog[]
 
   @@index([sortOrder])
   @@index([prefId])
@@ -283,6 +285,52 @@ model MarkupSettings {
   markupPercent Float @default(0) @map("markup_percent")
 
   @@map("markup_settings")
+}
+
+/// Singleton row `id = 1`: global auto-push to SeatsBrokers when inventory updates.
+model SbAutoPushSettings {
+  id         Int     @id
+  enabled    Boolean @default(false)
+  ticketType String  @default("4") @map("ticket_type") @db.VarChar(8)
+
+  @@map("sb_auto_push_settings")
+}
+
+/// Events that have had at least one manual SB push — eligible for auto-push when global toggle is on.
+model SbEventAutoPush {
+  eventId        Int      @id @map("event_id")
+  event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  firstPushedAt  DateTime @default(now()) @map("first_pushed_at")
+  lastAutoPushAt DateTime? @map("last_auto_push_at")
+
+  @@map("sb_event_auto_push")
+}
+
+enum SbListingPushTrigger {
+  MANUAL
+  AUTO
+}
+
+model SbListingPushLog {
+  id                 Int                  @id @default(autoincrement())
+  eventId            Int                  @map("event_id")
+  event              Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  matchId            String               @map("match_id")
+  offerIndex         Int?                 @map("offer_index")
+  listingFingerprint String               @map("listing_fingerprint")
+  trigger            SbListingPushTrigger
+  ok                 Boolean
+  httpStatus         Int?                 @map("http_status")
+  sbTicketId         String?              @map("sb_ticket_id")
+  requestFields      Json                 @map("request_fields")
+  requestSummary     Json                 @map("request_summary")
+  responseBody       Json?                @map("response_body")
+  errorMessage       String?              @map("error_message") @db.Text
+  createdAt          DateTime             @default(now()) @map("created_at")
+
+  @@index([eventId, createdAt(sort: Desc)])
+  @@index([eventId, listingFingerprint])
+  @@map("sb_listing_push_logs")
 }
 
 model SockAvailable {
