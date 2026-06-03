@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSeatsBrokersConfig } from "@/lib/seatsbrokers-config";
+import { reconcileSbListingsAfterSockSync } from "@/lib/sb-listing-reconcile";
 import { loadSbListingStatusForEvent } from "@/lib/sb-listing-status";
 
 export const runtime = "nodejs";
@@ -12,11 +13,19 @@ export async function GET(_req: Request, ctx: { params: Promise<{ eventId: strin
   }
 
   try {
+    let reconcile: Awaited<ReturnType<typeof reconcileSbListingsAfterSockSync>> | undefined;
+    try {
+      reconcile = await reconcileSbListingsAfterSockSync(id);
+    } catch (reconcileErr) {
+      console.warn("[sb-listing-status] reconcile failed", reconcileErr);
+    }
+
     const status = await loadSbListingStatusForEvent(id);
     return NextResponse.json({
       ok: true,
       configured: Boolean(getSeatsBrokersConfig()),
       ...status,
+      reconcile,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

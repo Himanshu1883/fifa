@@ -88,8 +88,6 @@ export function mapOfferToSeatsBrokersCreateTicket(
     ticket_type: config.defaultTicketType,
     quantity: String(offer.transformedCount),
     ticket_category: sbCategoryId,
-    ticket_block: sbBlockRowId,
-    ticket_row: first.row || "ALL",
     home_town: config.defaultHomeTown,
     price_type: config.priceType,
     price: formatPriceUsdForSb(resolveOfferPriceUsd(offer)),
@@ -143,10 +141,56 @@ export function isLikelyFifaSnowflakeId(value: string): boolean {
   return /^\d{12,}$/.test(value.trim());
 }
 
+/** SB ticket/create fields we intentionally omit (block/row live in ticket_details + category). */
+const SB_CREATE_OMITTED_FIELD_KEYS = new Set(["ticket_row", "ticket_block"]);
+
+/** Strip row/block before POST ticket/create — kept in summary for UI only. */
+export function fieldsForSbTicketCreate(fields: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (SB_CREATE_OMITTED_FIELD_KEYS.has(key)) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
+/** Preview / API responses: only fields actually POSTed to SB. */
+export type SbTicketPreviewPayload = {
+  offerIndex: number;
+  fields: Record<string, string>;
+  summary: {
+    offerType: MappedSeatsBrokersTicket["summary"]["offerType"];
+    quantity: number;
+    priceUsd: number | null;
+    categoryName: string;
+    categoryNum: MappedSeatsBrokersTicket["summary"]["categoryNum"];
+    categoryLabel: string;
+    sbCategoryId: string;
+  };
+};
+
+export function toSbTicketPreviewPayload(ticket: MappedSeatsBrokersTicket): SbTicketPreviewPayload {
+  const { summary } = ticket;
+  return {
+    offerIndex: ticket.offerIndex,
+    fields: fieldsForSbTicketCreate(ticket.fields),
+    summary: {
+      offerType: summary.offerType,
+      quantity: summary.quantity,
+      priceUsd: summary.priceUsd,
+      categoryName: summary.categoryName,
+      categoryNum: summary.categoryNum,
+      categoryLabel: summary.categoryLabel,
+      sbCategoryId: summary.sbCategoryId,
+    },
+  };
+}
+
 
 /**
- * Re-apply SB catalog mapping on push so ticket_category / ticket_block are never FIFA ids.
- * Seat fields (row, ticket_details, quantity) always come from current inventory — stale preview
+ * Re-apply SB catalog mapping on push so ticket_category is never a FIFA id.
+ * Row/block are not sent on ticket/create; seat numbers go in ticket_details.
+ * Seat fields (ticket_details, quantity) always come from current inventory — stale preview
  * payloads cannot re-push an old seat after offers refresh.
  */
 export function enrichMappedTicketForPush(
@@ -185,8 +229,8 @@ export function enrichMappedTicketForPush(
     (catalog?.categories.some((c) => c.id === clientCategory) ?? false);
 
   const ticketBlock = useClientBlock
-    ? resolveSbTicketBlockRowId(clientBlock, baseline.summary.sbBlockOptions, baseline.fields.ticket_block)
-    : baseline.fields.ticket_block;
+    ? resolveSbTicketBlockRowId(clientBlock, baseline.summary.sbBlockOptions, baseline.summary.sbBlockId)
+    : baseline.summary.sbBlockId;
   const ticketCategory = useClientCategory ? clientCategory : baseline.fields.ticket_category;
   const sbBlockCode = sbBlockCodeForRowId(ticketBlock, baseline.summary.sbBlockOptions);
 
@@ -196,10 +240,9 @@ export function enrichMappedTicketForPush(
   const clientDateToShip = clientFields.date_to_ship?.trim();
 
   const fields: Record<string, string> = {
-    ...baseline.fields,
+    ...fieldsForSbTicketCreate(baseline.fields),
     match_id: matchId,
     ticket_category: ticketCategory,
-    ticket_block: ticketBlock,
     ...(clientPrice ? { price: clientPrice } : {}),
     ...(clientTicketType ? { ticket_type: clientTicketType } : {}),
     ...(clientSplitType ? { split_type: clientSplitType } : {}),

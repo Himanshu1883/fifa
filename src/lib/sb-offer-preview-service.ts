@@ -3,26 +3,21 @@ import {
   SEATS_BROKERS_PUSH_INVENTORY_KIND,
 } from "@/lib/event-seat-offers-service";
 import { resolveOfferForSeatIds } from "@/lib/sb-offer-match";
+import { describeQuantityRule } from "@/lib/sb-push-transform-rules";
 import {
-  describeQuantityRule,
-  SB_PUSH_TRANSFORM_RULES_DOC,
-} from "@/lib/sb-push-transform-rules";
-import { getPushedListingDedupeKeys } from "@/lib/seatsbrokers-push-service";
-import {
-  dedupeKeysFromPushLog,
   listingDedupeKeysForMappedTicket,
   listingFingerprintForOffer,
 } from "@/lib/sb-listing-fingerprint";
+import { resolveAlreadyPushedOnSb } from "@/lib/seatsbrokers-push-service";
 import { computeDateToShip } from "@/lib/sb-date-to-ship";
 import { loadSbMatchCatalogForOffers } from "@/lib/seatsbrokers-catalog";
 import { configWithTicketType, getSeatsBrokersConfig } from "@/lib/seatsbrokers-config";
 import {
   enrichMappedTicketForPush,
   mapOffersToSeatsBrokersCreateTickets,
-  type MappedSeatsBrokersTicket,
+  toSbTicketPreviewPayload,
+  type SbTicketPreviewPayload,
 } from "@/lib/seatsbrokers-offer-map";
-import { prisma } from "@/lib/prisma";
-
 export type SbOfferPreviewResult =
   | {
       ok: true;
@@ -46,14 +41,11 @@ export type SbOfferPreviewResult =
         seats: Array<{
           seatId: string;
           seatNumber: string;
-          row: string;
-          blockName: string;
           categoryName: string;
         }>;
       };
       quantityRule: string;
-      ticket: MappedSeatsBrokersTicket;
-      rules: typeof SB_PUSH_TRANSFORM_RULES_DOC;
+      ticket: SbTicketPreviewPayload;
       warnings: string[];
       alreadyPushed: boolean;
       existingSbTicketId: string | null;
@@ -115,9 +107,9 @@ export async function loadSbOfferPreviewForSeatIds(
   if (!String(ticket.fields.ticket_category ?? "").trim()) {
     warnings.push("SB ticket_category is not mapped for this FIFA category.");
   }
-  if (!ticket.summary.sbBlockMatched || !String(ticket.fields.ticket_block ?? "").trim()) {
+  if (!ticket.summary.sbBlockMatched) {
     warnings.push(
-      `SB ticket_block not auto-matched for FIFA block "${ticket.summary.blockName}".`,
+      `FIFA block "${ticket.summary.blockName}" is not mapped in SB catalog (row/block are not sent in the create payload).`,
     );
   }
   if (!String(ticket.fields.date_to_ship ?? "").trim()) {
@@ -125,33 +117,14 @@ export async function loadSbOfferPreviewForSeatIds(
   }
 
   const dedupeKeys = listingDedupeKeysForMappedTicket(offer, ticket);
-  const existingKeys = await getPushedListingDedupeKeys(eventId);
-  const alreadyPushed = dedupeKeys.some((k) => existingKeys.has(k));
+  const fingerprint = listingFingerprintForOffer(offer);
+  const { alreadyPushed, existingSbTicketId } = await resolveAlreadyPushedOnSb(
+    eventId,
+    dedupeKeys,
+    fingerprint,
+  );
 
-  let existingSbTicketId: string | null = null;
   if (alreadyPushed) {
-    const fp = listingFingerprintForOffer(offer);
-    const log = await prisma.sbListingPushLog.findFirst({
-      where: { eventId, listingFingerprint: fp, ok: true, sbTicketId: { not: null } },
-      orderBy: { createdAt: "desc" },
-      select: { sbTicketId: true, listingFingerprint: true, requestSummary: true },
-    });
-    if (log?.sbTicketId) existingSbTicketId = log.sbTicketId;
-    else {
-      const logs = await prisma.sbListingPushLog.findMany({
-        where: { eventId, ok: true, sbTicketId: { not: null } },
-        orderBy: { createdAt: "desc" },
-        take: 200,
-        select: { sbTicketId: true, listingFingerprint: true, requestSummary: true },
-      });
-      for (const row of logs) {
-        const keys = dedupeKeysFromPushLog(row.listingFingerprint, row.requestSummary);
-        if (dedupeKeys.some((k) => keys.includes(k))) {
-          existingSbTicketId = row.sbTicketId;
-          break;
-        }
-      }
-    }
     warnings.push(
       existingSbTicketId
         ? `Already on SB (listing id ${existingSbTicketId}).`
@@ -190,14 +163,11 @@ export async function loadSbOfferPreviewForSeatIds(
       seats: offer.seats.map((s) => ({
         seatId: s.seatId,
         seatNumber: s.seatNumber,
-        row: s.row,
-        blockName: s.blockName,
         categoryName: s.categoryName,
       })),
     },
     quantityRule: describeQuantityRule(offer.offerType, offer.originalCount, offer.transformedCount),
-    ticket,
-    rules: SB_PUSH_TRANSFORM_RULES_DOC,
+    ticket: toSbTicketPreviewPayload(ticket),
     warnings,
     alreadyPushed,
     existingSbTicketId,

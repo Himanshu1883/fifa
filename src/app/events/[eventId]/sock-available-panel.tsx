@@ -2,12 +2,19 @@
 
 import { ModalPortal } from "@/app/modal-portal";
 import { SbRemovedListingsSection } from "@/app/events/[eventId]/sb-removed-listings-section";
-import {
-  seatKeyFromSeatIds,
-  SbListingRowActions,
-} from "@/app/events/[eventId]/sb-listing-row-actions";
+import { SbListingRowActions } from "@/app/events/[eventId]/sb-listing-row-actions";
 import type { SbListingStatusEntry, SbListingStatusPayload } from "@/lib/sb-listing-status";
-import { inventoryRowLookupKey } from "@/lib/sb-ticket-id";
+import {
+  applyPinnedOverrides,
+  findSbListingEntryForRow,
+  indexSbListingEntry,
+  loadPinnedSbListings,
+  mergeSbListingBySeatKey,
+  payloadFromBySeatKey,
+  pinSbListingEntries,
+  unpinSbListingEntries,
+  type SbRowLookupMeta,
+} from "@/lib/sb-listing-row-index";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { formatUsd, priceToNumber } from "@/lib/format-usd";
 
@@ -330,6 +337,7 @@ export function SockAvailablePanel(props: {
   );
   const [sbStatus, setSbStatus] = useState<SbListingStatusPayload>(emptySbStatus);
   const [sbConfigured, setSbConfigured] = useState(false);
+  const [sbOnSbOnly, setSbOnSbOnly] = useState(false);
 
   const refreshSbConfigured = useCallback(async () => {
     try {
@@ -349,15 +357,12 @@ export function SockAvailablePanel(props: {
       if (res.ok && json.ok !== false) {
         setSbStatus((prev) => {
           const serverBySeatKey = json.bySeatKey ?? {};
-          const mergedBySeatKey = { ...serverBySeatKey };
-          for (const [k, v] of Object.entries(prev.bySeatKey)) {
-            if (v.status === "pushed" && !mergedBySeatKey[k]) {
-              mergedBySeatKey[k] = v;
-            }
-          }
-          const active = Object.values(mergedBySeatKey).filter((e) => e.status === "pushed");
-          const removed = Object.values(mergedBySeatKey).filter((e) => e.status !== "pushed");
-          return { bySeatKey: mergedBySeatKey, active, removed };
+          const pins = loadPinnedSbListings(eventId);
+          const mergedBySeatKey = applyPinnedOverrides(
+            mergeSbListingBySeatKey(prev.bySeatKey, pins, serverBySeatKey),
+            pins,
+          );
+          return payloadFromBySeatKey(mergedBySeatKey);
         });
         if (json.configured != null) setSbConfigured(Boolean(json.configured));
       }
@@ -367,11 +372,34 @@ export function SockAvailablePanel(props: {
   }, [eventId]);
 
   useEffect(() => {
+    if (!eventId) return;
+    const pins = loadPinnedSbListings(eventId);
+    if (Object.keys(pins).length > 0) {
+      setSbStatus((prev) => payloadFromBySeatKey(mergeSbListingBySeatKey(prev.bySeatKey, pins)));
+    }
+  }, [eventId]);
+
+  useEffect(() => {
     void refreshSbConfigured();
     void refreshSbStatus();
-  }, [refreshSbConfigured, refreshSbStatus, rows.length]);
+  }, [refreshSbConfigured, refreshSbStatus, eventId]);
 
   const resaleView = initialKind === "RESALE";
+
+  const resaleInventoryKey = useMemo(() => {
+    if (!resaleView) return "";
+    return rows
+      .filter((r) => r.kind === "RESALE")
+      .map((r) => r.seatId?.trim() ?? "")
+      .filter(Boolean)
+      .sort()
+      .join(",");
+  }, [rows, resaleView]);
+
+  useEffect(() => {
+    if (!eventId || !resaleView) return;
+    void refreshSbStatus();
+  }, [eventId, resaleView, resaleInventoryKey, refreshSbStatus]);
 
   useEffect(() => {
     if (!eventId || !resaleView) return;
@@ -383,44 +411,92 @@ export function SockAvailablePanel(props: {
 
   useEffect(() => {
     if (!eventId || !resaleView) return;
-    const onPushed = (e: Event) => {
+    const onBulkPushed = (e: Event) => {
       const detail = (e as CustomEvent<{ eventId?: number }>).detail;
-      if (detail?.eventId === eventId) void refreshSbStatus();
+      if (detail?.eventId === eventId) {
+        window.setTimeout(() => void refreshSbStatus(), 4000);
+      }
     };
-    window.addEventListener("sb-listing-pushed", onPushed);
-    return () => window.removeEventListener("sb-listing-pushed", onPushed);
+    window.addEventListener("sb-listing-pushed", onBulkPushed);
+    return () => window.removeEventListener("sb-listing-pushed", onBulkPushed);
   }, [eventId, resaleView, refreshSbStatus]);
 
-  const handleSbStatusChange = useCallback((seatKey: string, entry: SbListingStatusEntry | null) => {
-    setSbStatus((prev) => {
-      const bySeatKey = { ...prev.bySeatKey };
-      if (entry) bySeatKey[seatKey] = entry;
-      else delete bySeatKey[seatKey];
-      const active = Object.values(bySeatKey).filter((e) => e.status === "pushed");
-      const removed = Object.values(bySeatKey).filter((e) => e.status !== "pushed");
-      return { bySeatKey, active, removed };
-    });
-  }, []);
+  useEffect(() => {
+    if (!eventId || !resaleView) return;
+    const onRowPushed = (e: Event) => {
+      const detail = (e as CustomEvent<{
+        eventId?: number;
+        entry?: SbListingStatusEntry;
+        meta?: SbRowLookupMeta;
+      }>).detail;
+      if (detail?.eventId !== eventId || !detail.entry || !detail.meta) return;
+      pinSbListingEntries(eventId, detail.entry, detail.meta);
+      setSbStatus((prev) => {
+        const bySeatKey = { ...prev.bySeatKey };
+        indexSbListingEntry(bySeatKey, detail.entry!, detail.meta!);
+        return payloadFromBySeatKey(bySeatKey);
+      });
+    };
+    window.addEventListener("sb-listing-row-pushed", onRowPushed);
+    return () => window.removeEventListener("sb-listing-row-pushed", onRowPushed);
+  }, [eventId, resaleView]);
+
+  const handleSbStatusChange = useCallback(
+    (entry: SbListingStatusEntry, meta: SbRowLookupMeta) => {
+      if (!eventId) return;
+      pinSbListingEntries(eventId, entry, meta);
+      setSbStatus((prev) => {
+        const bySeatKey = { ...prev.bySeatKey };
+        indexSbListingEntry(bySeatKey, entry, meta);
+        return payloadFromBySeatKey(bySeatKey);
+      });
+    },
+    [eventId],
+  );
+
+  const handleSbDeleted = useCallback(
+    (entry: SbListingStatusEntry, meta: SbRowLookupMeta) => {
+      if (!eventId) return;
+      unpinSbListingEntries(eventId, entry, meta);
+      setSbStatus((prev) => {
+        const bySeatKey = { ...prev.bySeatKey };
+        indexSbListingEntry(bySeatKey, entry, meta);
+        return payloadFromBySeatKey(bySeatKey);
+      });
+    },
+    [eventId],
+  );
+
+  useEffect(() => {
+    if (!eventId || !resaleView) return;
+    const onRowDeleted = (e: Event) => {
+      const detail = (e as CustomEvent<{
+        eventId?: number;
+        entry?: SbListingStatusEntry;
+        meta?: SbRowLookupMeta;
+      }>).detail;
+      if (detail?.eventId !== eventId || !detail.entry || !detail.meta) return;
+      handleSbDeleted(detail.entry, detail.meta);
+      void refreshSbStatus();
+    };
+    window.addEventListener("sb-listing-row-deleted", onRowDeleted);
+    return () => window.removeEventListener("sb-listing-row-deleted", onRowDeleted);
+  }, [eventId, resaleView, handleSbDeleted, refreshSbStatus]);
 
   const lookupSbEntry = useCallback(
     (
       seatIds: string[],
       rowMeta?: { blockName?: string | null; row?: string | null; seatSpan?: string | null },
     ): SbListingStatusEntry | null => {
-      const key = seatKeyFromSeatIds(seatIds);
-      const direct = sbStatus.bySeatKey[key];
-      if (direct) return direct;
-      for (const id of seatIds) {
-        const trimmed = id.trim();
-        if (!trimmed) continue;
-        const byId = sbStatus.bySeatKey[trimmed];
-        if (byId) return byId;
-      }
-      const invKey = inventoryRowLookupKey(rowMeta?.blockName, rowMeta?.row, rowMeta?.seatSpan);
-      if (invKey && sbStatus.bySeatKey[invKey]) return sbStatus.bySeatKey[invKey]!;
-      return null;
+      const meta: SbRowLookupMeta = {
+        seatIds,
+        blockName: rowMeta?.blockName,
+        row: rowMeta?.row,
+        seatSpan: rowMeta?.seatSpan,
+      };
+      return findSbListingEntryForRow(sbStatus.bySeatKey, meta);
     },
-    [sbStatus],
+    [sbStatus.bySeatKey],
   );
 
   const showSbColumn = Boolean(eventId) && resaleView;
@@ -519,6 +595,16 @@ export function SockAvailablePanel(props: {
       if (hasFrom && (!Number.isFinite(createdMs) || createdMs < fromMs)) return false;
       if (hasTo && (!Number.isFinite(createdMs) || createdMs > toMs)) return false;
 
+      if (sbOnSbOnly && showSbColumn && eventId) {
+        const sbEntry = findSbListingEntryForRow(sbStatus.bySeatKey, {
+          seatIds: [r.seatId],
+          blockName: r.blockName,
+          row: r.row,
+          seatSpan: r.seatNumber,
+        });
+        if (sbEntry?.status !== "pushed") return false;
+      }
+
       if (!q) return true;
       const hay = [
         r.amount ?? "",
@@ -553,9 +639,13 @@ export function SockAvailablePanel(props: {
     minUsd,
     movement,
     row,
+    eventId,
     rows,
+    sbOnSbOnly,
+    sbStatus.bySeatKey,
     search,
     seat,
+    showSbColumn,
   ]);
 
   const groupedFiltered = useMemo(() => {
@@ -697,8 +787,11 @@ export function SockAvailablePanel(props: {
       maxUsd ||
       createdFrom ||
       createdTo ||
-      sortKey !== "amount_asc",
+      sortKey !== "amount_asc" ||
+      sbOnSbOnly,
   );
+
+  const sbActiveCount = sbStatus.active.length;
 
   return (
     <section className={`relative flex flex-col gap-3 sm:gap-4 ${sectionPad}`} aria-label="Sock available table">
@@ -835,6 +928,31 @@ export function SockAvailablePanel(props: {
                 />
               </div>
 
+              {showSbColumn ? (
+                <button
+                  type="button"
+                  aria-pressed={sbOnSbOnly}
+                  title={
+                    sbOnSbOnly
+                      ? "Showing only rows with an SB listing — click to show all"
+                      : `Show only ${sbActiveCount} row(s) with SB listings`
+                  }
+                  onClick={() => setSbOnSbOnly((v) => !v)}
+                  className={
+                    sbOnSbOnly
+                      ? "flex min-h-10 shrink-0 items-center gap-2 rounded-lg border border-emerald-400/35 bg-emerald-500/12 px-3 py-2 text-sm font-semibold text-emerald-100 ring-1 ring-emerald-400/25 outline-none transition-colors hover:bg-emerald-500/18 focus-visible:ring-2 focus-visible:ring-emerald-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                      : "flex min-h-10 shrink-0 items-center gap-2 rounded-lg border border-white/[0.10] bg-black/30 px-3 py-2 text-sm font-semibold text-zinc-200 ring-1 ring-white/[0.04] outline-none transition-colors hover:border-white/16 hover:bg-black/40 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                  }
+                >
+                  On SB
+                  {sbActiveCount > 0 ? (
+                    <span className="rounded-full bg-black/35 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-zinc-300">
+                      {sbActiveCount}
+                    </span>
+                  ) : null}
+                </button>
+              ) : null}
+
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-2.5">
                 <div className="flex min-w-0 flex-col gap-1 sm:w-[15rem]">
                   <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
@@ -927,6 +1045,7 @@ export function SockAvailablePanel(props: {
                     setCreatedFrom("");
                     setCreatedTo("");
                     setSortKey("amount_asc");
+                    setSbOnSbOnly(false);
                     setShowMoreFilters(false);
                     setFiltersExpanded(false);
                   }}
@@ -1336,6 +1455,7 @@ export function SockAvailablePanel(props: {
                           setCreatedFrom("");
                           setCreatedTo("");
                           setSortKey("amount_asc");
+                          setSbOnSbOnly(false);
                           setShowMoreFilters(false);
                           setFiltersExpanded(false);
                           setMobileFiltersOpen(false);
@@ -1455,7 +1575,7 @@ export function SockAvailablePanel(props: {
                                   seatSpan: r.seatNumber,
                                 })}
                                 onStatusChange={handleSbStatusChange}
-                                onRefreshStatus={refreshSbStatus}
+                                onDeleted={handleSbDeleted}
                               />
                             </td>
                           ) : null}
@@ -1584,7 +1704,7 @@ export function SockAvailablePanel(props: {
                                 seatSpan: g.seatSpan,
                               })}
                               onStatusChange={handleSbStatusChange}
-                              onRefreshStatus={refreshSbStatus}
+                              onDeleted={handleSbDeleted}
                             />
                           </td>
                         ) : null}

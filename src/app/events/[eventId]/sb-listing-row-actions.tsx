@@ -2,9 +2,12 @@
 
 import { SbPushPreviewModal } from "@/app/events/[eventId]/sb-push-preview-modal";
 import type { SbPushSuccessResult } from "@/app/events/[eventId]/sb-push-result-types";
+import { preferListingEntry, seatKeyFromSeatIds, type SbRowLookupMeta } from "@/lib/sb-listing-row-index";
 import { extractSbTicketId } from "@/lib/sb-ticket-id";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { SbListingStatusEntry, SbListingUiStatus } from "@/lib/sb-listing-status";
+
+export { seatKeyFromSeatIds } from "@/lib/sb-listing-row-index";
 
 const pushBtnClass =
   "inline-flex shrink-0 items-center justify-center rounded-lg border border-[color:color-mix(in_oklab,var(--ticketing-accent)_52%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-2.5 py-1 text-xs font-semibold text-zinc-50 shadow-sm shadow-black/25 transition-[filter,background-color] hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] hover:brightness-[1.05] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] disabled:cursor-not-allowed disabled:opacity-50";
@@ -52,14 +55,6 @@ function ListingIdDisplay(props: { sbTicketId: string }) {
   );
 }
 
-export function seatKeyFromSeatIds(seatIds: string[]): string {
-  return seatIds
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .sort()
-    .join(",");
-}
-
 type Props = {
   eventId: number;
   sbEventId: string | null;
@@ -70,9 +65,12 @@ type Props = {
   blockName?: string | null;
   rowLabel?: string | null;
   seatSpan?: string | null;
-  onStatusChange: (seatKey: string, entry: SbListingStatusEntry | null) => void;
-  onRefreshStatus: () => void;
+  onStatusChange: (entry: SbListingStatusEntry, meta: SbRowLookupMeta) => void;
+  onDeleted?: (entry: SbListingStatusEntry, meta: SbRowLookupMeta) => void;
 };
+
+const deleteBtnClass =
+  "inline-flex shrink-0 items-center justify-center rounded-lg border border-rose-400/40 bg-rose-500/10 px-2.5 py-1 text-xs font-semibold text-rose-100 shadow-sm shadow-black/20 transition-[filter,background-color] hover:bg-rose-500/18 hover:brightness-[1.05] focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/45 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] disabled:cursor-not-allowed disabled:opacity-50";
 
 export function SbListingRowActions(props: Props) {
   const {
@@ -86,40 +84,125 @@ export function SbListingRowActions(props: Props) {
     rowLabel,
     seatSpan,
     onStatusChange,
-    onRefreshStatus,
+    onDeleted,
   } = props;
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [instantEntry, setInstantEntry] = useState<SbListingStatusEntry | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const seatKey = seatKeyFromSeatIds(seatIds);
   const isResale = kind === "RESALE";
 
+  useEffect(() => {
+    if (!entry) return;
+    if (entry.status === "pushed" && entry.sbTicketId) setInstantEntry(null);
+    if (entry.status === "deleted" || entry.status === "removed" || entry.status === "delete_failed") {
+      setInstantEntry(null);
+    }
+  }, [entry]);
+
+  const displayEntry = (() => {
+    const candidates = [instantEntry, entry].filter(Boolean) as SbListingStatusEntry[];
+    if (candidates.length === 0) return null;
+    if (candidates.length === 1) return candidates[0];
+    return preferListingEntry(candidates[0], candidates[1]) ?? candidates[0];
+  })();
+
+  const isOnSeatsBrokers = displayEntry?.status === "pushed";
+
   const handlePushed = useCallback(
     (result: SbPushSuccessResult) => {
+      const rowMeta: SbRowLookupMeta = { seatIds, blockName, row: rowLabel, seatSpan };
       const sbTicketId = result.sbTicketId ?? extractSbTicketId(result.response) ?? null;
       const next: SbListingStatusEntry = {
-        logId: result.logId ?? entry?.logId ?? 0,
+        logId: result.logId ?? displayEntry?.logId ?? 0,
         sbTicketId,
         status: "pushed",
-        listingFingerprint: result.listingFingerprint || entry?.listingFingerprint || "",
+        listingFingerprint: result.listingFingerprint || displayEntry?.listingFingerprint || "",
         seatKey,
-        blockName: result.blockName ?? blockName ?? entry?.blockName ?? null,
-        row: result.row ?? rowLabel ?? entry?.row ?? null,
+        blockName: result.blockName ?? blockName ?? displayEntry?.blockName ?? null,
+        row: result.row ?? rowLabel ?? displayEntry?.row ?? null,
         seatNumbers:
           result.seatNumbers?.length
             ? result.seatNumbers
             : seatSpan
               ? seatSpan.split(/[,\s–-]+/).map((s) => s.trim()).filter(Boolean)
-              : entry?.seatNumbers ?? [],
+              : displayEntry?.seatNumbers ?? [],
+        sourceSeatIds: seatIds,
         inventoryRemovedAt: null,
         sbDeletedAt: null,
         sbDeleteError: null,
         pushedAt: new Date().toISOString(),
       };
-      onStatusChange(seatKey, next);
-      void onRefreshStatus();
+
+      setInstantEntry(next);
+      onStatusChange(next, rowMeta);
+
+      window.dispatchEvent(
+        new CustomEvent("sb-listing-row-pushed", {
+          detail: { eventId, meta: rowMeta, entry: next },
+        }),
+      );
     },
-    [blockName, entry, onRefreshStatus, onStatusChange, rowLabel, seatKey, seatSpan],
+    [blockName, displayEntry, eventId, onStatusChange, rowLabel, seatIds, seatKey, seatSpan],
   );
+
+  const handleDelete = useCallback(async () => {
+    const ticketId = displayEntry?.sbTicketId?.trim();
+    if (!ticketId || displayEntry?.status !== "pushed") return;
+
+    const label = ticketId;
+    if (
+      !window.confirm(
+        `Delete SB listing ${label}?\n\nThis calls SeatsBrokers ticket/delete and marks the listing removed in this app.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeleting(true);
+    setDeleteError(null);
+    const rowMeta: SbRowLookupMeta = { seatIds, blockName, row: rowLabel, seatSpan };
+
+    try {
+      const res = await fetch(`/api/events/${eventId}/sb-delete-listing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sbTicketId: ticketId,
+          ...(displayEntry.logId > 0 ? { logId: displayEntry.logId } : {}),
+          blockName: blockName ?? undefined,
+          row: rowLabel ?? undefined,
+          seatIds,
+        }),
+        cache: "no-store",
+      });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        entry?: SbListingStatusEntry;
+      };
+      if (!res.ok || !json.ok || !json.entry) {
+        setDeleteError(json.error ?? `Delete failed (${res.status})`);
+        return;
+      }
+
+      setInstantEntry(json.entry);
+      onStatusChange(json.entry, rowMeta);
+      onDeleted?.(json.entry, rowMeta);
+
+      window.dispatchEvent(
+        new CustomEvent("sb-listing-row-deleted", {
+          detail: { eventId, meta: rowMeta, entry: json.entry },
+        }),
+      );
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleting(false);
+    }
+  }, [displayEntry, eventId, onDeleted, onStatusChange, blockName, rowLabel, seatIds, seatSpan]);
 
   if (!isResale) return <span className="text-xs text-zinc-600">—</span>;
 
@@ -131,21 +214,54 @@ export function SbListingRowActions(props: Props) {
     );
   }
 
-  if (entry) {
+  if (isOnSeatsBrokers) {
     return (
       <div className="flex min-w-0 flex-col items-end gap-1.5">
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {statusBadge(entry.status)}
+          {statusBadge("pushed")}
+          <button
+            type="button"
+            className={deleteBtnClass}
+            disabled={!sbConfigured || deleting || !displayEntry.sbTicketId}
+            title={
+              !sbConfigured
+                ? "Set SEATS_BROKERS_API_KEY in .env.local"
+                : "Delete this listing on SeatsBrokers"
+            }
+            aria-label={`Delete SB listing ${displayEntry.sbTicketId ?? ""}`}
+            onClick={() => void handleDelete()}
+          >
+            {deleting ? "Deleting…" : "Delete"}
+          </button>
         </div>
-        {entry.sbTicketId && entry.status === "pushed" ? <ListingIdDisplay sbTicketId={entry.sbTicketId} /> : null}
-        {entry.sbTicketId && entry.status !== "pushed" ? (
-          <code className="max-w-[10rem] truncate font-mono text-[11px] text-zinc-400" title={entry.sbTicketId}>
-            was {entry.sbTicketId}
+        {displayEntry.sbTicketId ? (
+          <ListingIdDisplay sbTicketId={displayEntry.sbTicketId} />
+        ) : (
+          <span className="text-[11px] text-zinc-400">On SB (no listing id in log)</span>
+        )}
+        {deleteError ? (
+          <span className="max-w-[12rem] truncate text-[10px] text-rose-300/90" title={deleteError}>
+            {deleteError}
+          </span>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (displayEntry && displayEntry.status !== "pushed") {
+    return (
+      <div className="flex min-w-0 flex-col items-end gap-1.5">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {statusBadge(displayEntry.status)}
+        </div>
+        {displayEntry.sbTicketId ? (
+          <code className="max-w-[10rem] truncate font-mono text-[11px] text-zinc-400" title={displayEntry.sbTicketId}>
+            was {displayEntry.sbTicketId}
           </code>
         ) : null}
-        {entry.status === "delete_failed" && entry.sbDeleteError ? (
-          <span className="max-w-[12rem] truncate text-[10px] text-rose-300/90" title={entry.sbDeleteError}>
-            {entry.sbDeleteError}
+        {displayEntry.status === "delete_failed" && displayEntry.sbDeleteError ? (
+          <span className="max-w-[12rem] truncate text-[10px] text-rose-300/90" title={displayEntry.sbDeleteError}>
+            {displayEntry.sbDeleteError}
           </span>
         ) : null}
       </div>
@@ -165,16 +281,18 @@ export function SbListingRowActions(props: Props) {
         Push to SB
       </button>
 
-      <SbPushPreviewModal
-        open={previewOpen}
-        eventId={eventId}
-        seatIds={seatIds}
-        blockName={blockName}
-        rowLabel={rowLabel}
-        seatSpan={seatSpan}
-        onClose={() => setPreviewOpen(false)}
-        onPushed={handlePushed}
-      />
+      {previewOpen ? (
+        <SbPushPreviewModal
+          open
+          eventId={eventId}
+          seatIds={seatIds}
+          blockName={blockName}
+          rowLabel={rowLabel}
+          seatSpan={seatSpan}
+          onClose={() => setPreviewOpen(false)}
+          onPushed={handlePushed}
+        />
+      ) : null}
     </>
   );
 }

@@ -114,6 +114,17 @@ export function dedupeKeysFromPushLog(listingFingerprint: string, requestSummary
     keys.add(`RESALE|together|${seatPart}`);
   }
 
+  const sourceIds = sourceSeatIdsFromPushSummary(requestSummary);
+  if (sourceIds.length > 0) {
+    const joined = sourceIds.join(",");
+    keys.add(`RESALE|single|${joined}`);
+    keys.add(`RESALE|together|${joined}`);
+    for (const id of sourceIds) {
+      keys.add(`RESALE|single|${id}`);
+      keys.add(`RESALE|together|${id}`);
+    }
+  }
+
   // Legacy fingerprint: …|seatId:seatNum|priceRaw
   const legacySeatMatch = listingFingerprint.match(/\|(\d{12,}):([^|,]+)/);
   if (legacySeatMatch) {

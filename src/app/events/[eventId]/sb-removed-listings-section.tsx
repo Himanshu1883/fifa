@@ -11,7 +11,7 @@ function statusLabel(entry: SbListingStatusEntry): string {
 
 function rowShell(entry: SbListingStatusEntry): string {
   if (entry.status === "deleted") {
-    return "border-l-4 border-zinc-400/70 bg-zinc-500/10 ring-1 ring-zinc-500/25";
+    return "border-l-4 border-rose-400/70 bg-rose-950/35 ring-1 ring-rose-500/25";
   }
   if (entry.status === "delete_failed") {
     return "border-l-4 border-rose-400/70 bg-rose-500/10 ring-1 ring-rose-500/20";
@@ -21,7 +21,7 @@ function rowShell(entry: SbListingStatusEntry): string {
 
 function badgeClass(entry: SbListingStatusEntry): string {
   if (entry.status === "deleted") {
-    return "inline-flex rounded-full border border-zinc-400/50 bg-zinc-600/35 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-zinc-100 shadow-sm shadow-black/30";
+    return "inline-flex rounded-full border border-rose-400/50 bg-rose-500/20 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-rose-50 shadow-sm shadow-black/30";
   }
   if (entry.status === "delete_failed") {
     return "inline-flex rounded-full border border-rose-400/50 bg-rose-500/20 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-rose-50";
@@ -58,8 +58,8 @@ export function SbRemovedListingsSection(props: { entries: SbListingStatusEntry[
         </p>
         <div className="mt-2.5 flex flex-wrap gap-2">
           {deletedCount > 0 ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-400/40 bg-zinc-600/30 px-2.5 py-0.5 text-[11px] font-semibold text-zinc-100">
-              <span className="size-1.5 rounded-full bg-zinc-300" aria-hidden />
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-400/40 bg-rose-500/12 px-2.5 py-0.5 text-[11px] font-semibold text-rose-100">
+              <span className="size-1.5 rounded-full bg-rose-300" aria-hidden />
               {deletedCount} deleted on SB
             </span>
           ) : null}
@@ -82,9 +82,9 @@ export function SbRemovedListingsSection(props: { entries: SbListingStatusEntry[
             key={e.logId}
             className={`flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5 ${rowShell(e)}`}
           >
-            <div className={`min-w-0 space-y-0.5 ${e.status === "deleted" ? "opacity-80" : ""}`}>
+            <div className={`min-w-0 space-y-0.5 ${e.status === "deleted" ? "opacity-90" : ""}`}>
               <p
-                className={`text-sm font-medium ${e.status === "deleted" ? "text-zinc-400 line-through decoration-zinc-500" : "text-zinc-100"}`}
+                className={`text-sm font-medium ${e.status === "deleted" ? "text-rose-200/80 line-through decoration-rose-400/60" : "text-zinc-100"}`}
               >
                 {e.blockName ?? "Block"}{" "}
                 {e.row ? (
@@ -95,7 +95,7 @@ export function SbRemovedListingsSection(props: { entries: SbListingStatusEntry[
               </p>
               {e.seatNumbers.length > 0 ? (
                 <p
-                  className={`font-mono text-xs ${e.status === "deleted" ? "text-zinc-600 line-through" : "text-zinc-500"}`}
+                  className={`font-mono text-xs ${e.status === "deleted" ? "text-rose-300/55 line-through" : "text-zinc-500"}`}
                 >
                   Seats {e.seatNumbers.join(", ")}
                 </p>
@@ -108,7 +108,7 @@ export function SbRemovedListingsSection(props: { entries: SbListingStatusEntry[
               <span className={badgeClass(e)}>{statusLabel(e)}</span>
               {e.sbTicketId ? (
                 <code
-                  className={`font-mono text-[11px] ${e.status === "deleted" ? "text-zinc-500" : "text-zinc-400"}`}
+                  className={`font-mono text-[11px] ${e.status === "deleted" ? "text-rose-300/70" : "text-zinc-400"}`}
                   title="Former SB listing id"
                 >
                   SB id {e.sbTicketId}

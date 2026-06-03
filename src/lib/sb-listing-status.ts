@@ -7,6 +7,58 @@ import {
 } from "@/lib/sb-listing-fingerprint";
 import { inventoryRowLookupKey, seatSpanFromNumbers } from "@/lib/sb-ticket-id";
 
+function listingEntryPriority(entry: SbListingStatusEntry): number {
+  switch (entry.status) {
+    case "deleted":
+      return 0;
+    case "delete_failed":
+      return 1;
+    case "removed":
+      return 2;
+    case "pushed":
+      return entry.sbTicketId ? 4 : 3;
+    default:
+      return 5;
+  }
+}
+
+function preferListingEntry(
+  a: SbListingStatusEntry | undefined,
+  b: SbListingStatusEntry,
+): SbListingStatusEntry {
+  if (!a) return b;
+  const pa = listingEntryPriority(a);
+  const pb = listingEntryPriority(b);
+  if (pa !== pb) return pa < pb ? a : b;
+  return a.pushedAt >= b.pushedAt ? a : b;
+}
+
+function indexKeysForLog(entry: SbListingStatusEntry, requestSummary: unknown, listingFingerprint: string): string[] {
+  const keys = new Set<string>(dedupeKeysFromPushLog(listingFingerprint, requestSummary));
+  if (entry.seatKey) keys.add(entry.seatKey);
+  const sourceIds = sourceSeatIdsFromPushSummary(requestSummary);
+  if (sourceIds.length > 0) {
+    keys.add(sourceIds.join(","));
+    for (const id of sourceIds) keys.add(id);
+  }
+  const invKey = inventoryRowLookupKey(
+    entry.blockName,
+    entry.row,
+    seatSpanFromNumbers(entry.seatNumbers),
+  );
+  if (invKey) keys.add(invKey);
+  const sourceNums = sourceSeatNumbersFromPushSummary(requestSummary);
+  if (sourceNums.length > 0) {
+    const srcInv = inventoryRowLookupKey(
+      entry.blockName,
+      entry.row,
+      seatSpanFromNumbers(sourceNums),
+    );
+    if (srcInv) keys.add(srcInv);
+  }
+  return [...keys];
+}
+
 export type SbListingUiStatus = "pushed" | "removed" | "deleted" | "delete_failed";
 
 export type SbListingStatusEntry = {
@@ -18,6 +70,8 @@ export type SbListingStatusEntry = {
   blockName: string | null;
   row: string | null;
   seatNumbers: string[];
+  /** UI row seat ids when push used quantity reduction. */
+  sourceSeatIds: string[];
   inventoryRemovedAt: string | null;
   sbDeletedAt: string | null;
   sbDeleteError: string | null;
@@ -76,6 +130,7 @@ function entryFromLog(log: {
     blockName: summaryField(log.requestSummary, "blockName"),
     row: summaryField(log.requestSummary, "row"),
     seatNumbers: summarySeatNumbers(log.requestSummary),
+    sourceSeatIds: sourceSeatIdsFromPushSummary(log.requestSummary),
     inventoryRemovedAt: log.inventoryRemovedAt != null ? log.inventoryRemovedAt.toISOString() : null,
     sbDeletedAt: log.sbDeletedAt != null ? log.sbDeletedAt.toISOString() : null,
     sbDeleteError: log.sbDeleteError ?? null,
@@ -83,46 +138,25 @@ function entryFromLog(log: {
   };
 }
 
-/** Latest push log per dedupe key (for row-level UI lookup). */
+/** Index all successful push logs so every resale row can resolve its SB listing id. */
 export async function loadSbListingStatusForEvent(eventId: number): Promise<SbListingStatusPayload> {
   const logs = await findSbListingPushLogsForStatus(eventId);
 
   const bySeatKey: Record<string, SbListingStatusEntry> = {};
-  const active: SbListingStatusEntry[] = [];
-  const removed: SbListingStatusEntry[] = [];
-  const seenKeys = new Set<string>();
 
   for (const log of logs) {
     const entry = entryFromLog(log);
-    const dedupeKeys = dedupeKeysFromPushLog(log.listingFingerprint, log.requestSummary);
-    const primaryKey = entry.seatKey ?? dedupeKeys[0] ?? log.listingFingerprint;
-    if (seenKeys.has(primaryKey)) continue;
-    seenKeys.add(primaryKey);
-
-    const keysToIndex = new Set<string>();
-    if (entry.seatKey) keysToIndex.add(entry.seatKey);
-    const sourceIds = sourceSeatIdsFromPushSummary(log.requestSummary);
-    if (sourceIds.length > 0) {
-      keysToIndex.add(sourceIds.join(","));
-      for (const id of sourceIds) keysToIndex.add(id);
+    for (const k of indexKeysForLog(entry, log.requestSummary, log.listingFingerprint)) {
+      bySeatKey[k] = preferListingEntry(bySeatKey[k], entry) ?? entry;
     }
-    const invKey = inventoryRowLookupKey(
-      entry.blockName,
-      entry.row,
-      seatSpanFromNumbers(entry.seatNumbers),
-    );
-    if (invKey) keysToIndex.add(invKey);
-    const sourceNums = sourceSeatNumbersFromPushSummary(log.requestSummary);
-    if (sourceNums.length > 0) {
-      const srcInv = inventoryRowLookupKey(
-        entry.blockName,
-        entry.row,
-        seatSpanFromNumbers(sourceNums),
-      );
-      if (srcInv) keysToIndex.add(srcInv);
-    }
-    for (const k of keysToIndex) bySeatKey[k] = entry;
+  }
 
+  const seenLog = new Set<number>();
+  const active: SbListingStatusEntry[] = [];
+  const removed: SbListingStatusEntry[] = [];
+  for (const entry of Object.values(bySeatKey)) {
+    if (seenLog.has(entry.logId)) continue;
+    seenLog.add(entry.logId);
     if (entry.status === "pushed") active.push(entry);
     else removed.push(entry);
   }

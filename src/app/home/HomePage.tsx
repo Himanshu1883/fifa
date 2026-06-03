@@ -764,6 +764,12 @@ export async function HomePage({
                     Buying criteria
                   </Link>
                   <Link
+                    href="/sb-listings"
+                    className="rounded-md bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-3 py-1.5 text-xs font-semibold text-zinc-100 ring-1 ring-white/10 hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)]"
+                  >
+                    SB Listings
+                  </Link>
+                  <Link
                     href="/listing-changes"
                     className="rounded-md bg-sky-500/15 px-3 py-1.5 text-xs font-medium text-sky-100 ring-1 ring-white/10 hover:bg-sky-500/20"
                   >

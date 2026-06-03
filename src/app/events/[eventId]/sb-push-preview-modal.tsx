@@ -9,7 +9,15 @@ import {
 import type { SbPushSuccessResult } from "@/app/events/[eventId]/sb-push-result-types";
 import { extractSbTicketId } from "@/lib/sb-ticket-id";
 import type { SbOfferPreviewResult } from "@/lib/sb-offer-preview-service";
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+
+function seatIdsKeyFrom(seatIds: string[]): string {
+  return seatIds
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .sort()
+    .join(",");
+}
 
 const sectionTitle = "text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500";
 
@@ -73,15 +81,19 @@ export function SbPushPreviewModal(props: Props) {
   const [showRules, setShowRules] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
 
+  const seatIdsKey = seatIdsKeyFrom(seatIds);
+  const lastFetchedKeyRef = useRef<string | null>(null);
+  const syncedAlreadyRef = useRef(false);
+
   const loadPreview = useCallback(async () => {
-    if (!open || seatIds.length === 0) return;
+    if (seatIdsKey.length === 0) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/events/${eventId}/push-to-seatsbrokers/offer/preview`, {
+      const res = await fetch(`/api/events/${eventId}/sb-push-offer-preview`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seatIds }),
+        body: JSON.stringify({ seatIds: seatIdsKey.split(",") }),
         cache: "no-store",
       });
       const json = (await res.json()) as SbOfferPreviewResult;
@@ -91,23 +103,38 @@ export function SbPushPreviewModal(props: Props) {
         return;
       }
       setPreview(json);
+      lastFetchedKeyRef.current = `${eventId}:${seatIdsKey}`;
     } catch (e) {
       setPreview(null);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, [open, eventId, seatIds]);
+  }, [eventId, seatIdsKey]);
 
   useEffect(() => {
-    if (open) void loadPreview();
-    else {
+    if (!open) {
+      lastFetchedKeyRef.current = null;
+      syncedAlreadyRef.current = false;
       setPreview(null);
       setPushSuccess(null);
       setError(null);
       setShowRaw(false);
+      return;
     }
-  }, [open, loadPreview]);
+
+    if (seatIdsKey.length === 0) return;
+
+    const fetchKey = `${eventId}:${seatIdsKey}`;
+    if (lastFetchedKeyRef.current === fetchKey) return;
+
+    void loadPreview();
+  }, [open, eventId, seatIdsKey, loadPreview]);
+
+  const handleRefreshPreview = useCallback(() => {
+    lastFetchedKeyRef.current = null;
+    void loadPreview();
+  }, [loadPreview]);
 
   useEffect(() => {
     if (!open) return;
@@ -118,13 +145,29 @@ export function SbPushPreviewModal(props: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  useEffect(() => {
+    if (!open || !preview?.alreadyPushed || !preview.existingSbTicketId || syncedAlreadyRef.current) {
+      return;
+    }
+    syncedAlreadyRef.current = true;
+    onPushed({
+      sbTicketId: preview.existingSbTicketId,
+      listingFingerprint: "",
+      blockName: blockName ?? null,
+      row: rowLabel ?? null,
+      seatNumbers: seatSpan
+        ? seatSpan.split(/[,\s–-]+/).map((s) => s.trim()).filter(Boolean)
+        : preview.offer.seats.map((s) => s.seatNumber).filter(Boolean),
+    });
+  }, [open, preview, onPushed, blockName, rowLabel, seatSpan]);
+
   const handleConfirmPush = async () => {
-    if (!preview) return;
+    if (!preview || preview.alreadyPushed) return;
     setPushing(true);
     setError(null);
     try {
       const res = await fetch(
-        `/api/events/${eventId}/push-to-seatsbrokers/offer?offerIndex=${preview.offerIndex}`,
+        `/api/events/${eventId}/sb-push-offer?offerIndex=${preview.offerIndex}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -135,15 +178,31 @@ export function SbPushPreviewModal(props: Props) {
         ok?: boolean;
         error?: string;
         sbTicketId?: string | null;
+        existingSbTicketId?: string | null;
         logId?: number;
         httpStatus?: number;
         listingFingerprint?: string;
         fields?: Record<string, string>;
-        summary?: { blockName?: string; row?: string; seatNumbers?: string[] };
+        summary?: { blockName?: string; row?: string };
         response?: unknown;
         skipped?: boolean;
       };
       if (!res.ok || !json.ok) {
+        const existingId = json.existingSbTicketId ?? preview.existingSbTicketId ?? null;
+        if (json.skipped && existingId) {
+          const success: SbPushSuccessResult = {
+            sbTicketId: existingId,
+            listingFingerprint: json.listingFingerprint ?? "",
+            blockName: blockName ?? null,
+            row: rowLabel ?? null,
+            seatNumbers: seatSpan
+              ? seatSpan.split(/[,\s–-]+/).map((s) => s.trim()).filter(Boolean)
+              : preview.offer.seats.map((s) => s.seatNumber).filter(Boolean),
+          };
+          setPushSuccess(success);
+          onPushed(success);
+          return;
+        }
         setError(json.error ?? `Push failed (${res.status})`);
         return;
       }
@@ -155,12 +214,11 @@ export function SbPushPreviewModal(props: Props) {
         listingFingerprint: json.listingFingerprint ?? "",
         fields: json.fields ?? preview.ticket.fields,
         response: json.response,
-        blockName: json.summary?.blockName ?? preview.ticket.summary.blockName ?? blockName ?? null,
-        row: json.summary?.row ?? preview.ticket.summary.row ?? rowLabel ?? null,
-        seatNumbers:
-          json.summary?.seatNumbers ??
-          preview.ticket.summary.seatNumbers ??
-          (seatSpan ? [seatSpan] : []),
+        blockName: blockName ?? null,
+        row: rowLabel ?? null,
+        seatNumbers: seatSpan
+          ? seatSpan.split(/[,\s–-]+/).map((s) => s.trim()).filter(Boolean)
+          : preview.offer.seats.map((s) => s.seatNumber).filter(Boolean),
       };
       setPushSuccess(success);
       onPushed(success);
@@ -173,7 +231,11 @@ export function SbPushPreviewModal(props: Props) {
 
   if (!open) return null;
 
-  const canPush = Boolean(preview && !preview.alreadyPushed && !pushSuccess);
+  const alreadyOnSb = Boolean(preview?.alreadyPushed);
+  const existingListingId =
+    pushSuccess?.sbTicketId ?? preview?.existingSbTicketId ?? null;
+  const showListingPanel = Boolean(pushSuccess || (alreadyOnSb && existingListingId));
+  const canPush = Boolean(preview && !alreadyOnSb && !pushSuccess);
 
   const handleDone = () => {
     setPushSuccess(null);
@@ -198,29 +260,39 @@ export function SbPushPreviewModal(props: Props) {
             Push to SeatsBrokers
           </p>
           <h2 className="mt-1 text-lg font-semibold tracking-tight text-white">
-            {pushSuccess ? "Listing created on SB" : preview?.eventName ?? "Loading preview…"}
+            {pushSuccess
+              ? "Listing created on SB"
+              : alreadyOnSb
+                ? "Already on SeatsBrokers"
+                : preview?.eventName ?? "Loading preview…"}
           </h2>
           <p className="mt-1 text-xs text-zinc-500">
             {pushSuccess
               ? "Listing id is saved on this row in the table."
-              : "Review transform rules and the exact payload before creating the SB listing."}
+              : alreadyOnSb
+                ? "This listing is already live on SB — use the listing id below."
+                : "Review transform rules and the exact payload before creating the SB listing."}
           </p>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5 [-webkit-overflow-scrolling:touch]">
-          {pushSuccess ? (
+          {showListingPanel ? (
             <div className="space-y-4">
               <div className="rounded-xl border border-emerald-400/35 bg-emerald-500/10 p-4 ring-1 ring-emerald-400/25">
                 <p className={sectionTitle}>SB listing id</p>
                 <p className="mt-2 break-all font-mono text-xl font-bold tabular-nums text-emerald-100">
-                  {pushSuccess.sbTicketId ?? "— (SB did not return ticket_id)"}
+                  {existingListingId ?? "— (listing id not in push log)"}
                 </p>
-                <p className="mt-2 text-xs text-emerald-200/80">
-                  HTTP {pushSuccess.httpStatus ?? "—"}
-                  {pushSuccess.logId != null ? ` · log #${pushSuccess.logId}` : null}
-                </p>
+                {pushSuccess ? (
+                  <p className="mt-2 text-xs text-emerald-200/80">
+                    HTTP {pushSuccess.httpStatus ?? "—"}
+                    {pushSuccess.logId != null ? ` · log #${pushSuccess.logId}` : null}
+                  </p>
+                ) : (
+                  <p className="mt-2 text-xs text-emerald-200/80">Already pushed — no new create needed.</p>
+                )}
               </div>
-              {(pushSuccess.blockName || pushSuccess.row || pushSuccess.seatNumbers?.length) ? (
+              {(pushSuccess?.blockName || pushSuccess?.row || pushSuccess?.seatNumbers?.length) ? (
                 <dl className="grid gap-2 text-xs sm:grid-cols-2">
                   {pushSuccess.blockName ? (
                     <div>
@@ -242,7 +314,7 @@ export function SbPushPreviewModal(props: Props) {
                   ) : null}
                 </dl>
               ) : null}
-              {pushSuccess.fields ? (
+              {pushSuccess?.fields ? (
                 <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
                   <p className={sectionTitle}>Sent to SB</p>
                   <dl className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -255,12 +327,14 @@ export function SbPushPreviewModal(props: Props) {
                   </dl>
                 </div>
               ) : null}
-              <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
-                <p className={sectionTitle}>SeatsBrokers response</p>
-                <pre className="mt-2 max-h-52 overflow-auto rounded bg-black/40 p-2 font-mono text-[10px] leading-relaxed text-zinc-300">
-                  {JSON.stringify(pushSuccess.response ?? {}, null, 2)}
-                </pre>
-              </div>
+              {pushSuccess?.response != null ? (
+                <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
+                  <p className={sectionTitle}>SeatsBrokers response</p>
+                  <pre className="mt-2 max-h-52 overflow-auto rounded bg-black/40 p-2 font-mono text-[10px] leading-relaxed text-zinc-300">
+                    {JSON.stringify(pushSuccess.response ?? {}, null, 2)}
+                  </pre>
+                </div>
+              ) : null}
             </div>
           ) : loading ? (
             <p className="text-sm text-zinc-400">Building preview from current resale inventory…</p>
@@ -326,7 +400,7 @@ export function SbPushPreviewModal(props: Props) {
                 <ul className="mt-2 max-h-32 space-y-1 overflow-y-auto text-[11px]">
                   {preview.offer.seats.map((s) => (
                     <li key={s.seatId} className="font-mono text-zinc-300">
-                      {s.categoryName} · {s.blockName} · row {s.row} · seat {s.seatNumber}
+                      {s.categoryName} · seat {s.seatNumber}
                       <span className="text-zinc-600"> · {s.seatId}</span>
                     </li>
                   ))}
@@ -343,13 +417,6 @@ export function SbPushPreviewModal(props: Props) {
                     </div>
                   ))}
                 </dl>
-              </div>
-
-              <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3">
-                <p className={sectionTitle}>Summary</p>
-                <pre className="mt-2 max-h-40 overflow-auto rounded bg-black/40 p-2 font-mono text-[10px] leading-relaxed text-zinc-300">
-                  {JSON.stringify(preview.ticket.summary, null, 2)}
-                </pre>
               </div>
 
               <div>
@@ -397,7 +464,7 @@ export function SbPushPreviewModal(props: Props) {
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-white/[0.08] px-4 py-3 sm:px-5">
-          {pushSuccess ? (
+          {showListingPanel || alreadyOnSb ? (
             <button type="button" className={btnPrimary} onClick={handleDone}>
               Done — view on row
             </button>
@@ -411,7 +478,7 @@ export function SbPushPreviewModal(props: Props) {
                   type="button"
                   className={btnSecondary}
                   disabled={loading || pushing}
-                  onClick={() => void loadPreview()}
+                  onClick={() => handleRefreshPreview()}
                 >
                   Refresh
                 </button>
@@ -420,10 +487,9 @@ export function SbPushPreviewModal(props: Props) {
                 type="button"
                 className={btnPrimary}
                 disabled={!canPush || loading || pushing}
-                title={preview?.alreadyPushed ? "Already pushed" : undefined}
                 onClick={() => void handleConfirmPush()}
               >
-                {pushing ? "Pushing…" : preview?.alreadyPushed ? "Already on SB" : "Confirm push to SB"}
+                {pushing ? "Pushing…" : "Confirm push to SB"}
               </button>
             </>
           )}

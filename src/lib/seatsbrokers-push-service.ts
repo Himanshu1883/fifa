@@ -17,6 +17,7 @@ import {
   listingDedupeKeysForMappedTicket,
   listingFingerprintForMappedTicket,
 } from "@/lib/sb-listing-fingerprint";
+import { sbPushLogExcludingClaimWhere } from "@/lib/sb-listing-push-log-query";
 import { computeDateToShip } from "@/lib/sb-date-to-ship";
 import { loadSbMatchCatalogForOffers } from "@/lib/seatsbrokers-catalog";
 import { sbCreateTicket } from "@/lib/seatsbrokers-client";
@@ -27,8 +28,11 @@ import {
 } from "@/lib/seatsbrokers-config";
 import {
   enrichMappedTicketForPush,
+  fieldsForSbTicketCreate,
   isLikelyFifaSnowflakeId,
   mapOffersToSeatsBrokersCreateTickets,
+  toSbTicketPreviewPayload,
+  type SbTicketPreviewPayload,
   type MappedSeatsBrokersTicket,
 } from "@/lib/seatsbrokers-offer-map";
 import { extractSbTicketId } from "@/lib/sb-ticket-id";
@@ -106,11 +110,7 @@ export async function getPushedListingDedupeKeys(eventId: number): Promise<Set<s
   await expireStalePushClaims(eventId);
 
   const rows = await prisma.sbListingPushLog.findMany({
-    where: {
-      eventId,
-      ok: true,
-      NOT: { errorMessage: SB_PUSH_CLAIM_MARKER },
-    },
+    where: { eventId, ok: true, ...sbPushLogExcludingClaimWhere() },
     select: { listingFingerprint: true, requestSummary: true },
   });
 
@@ -121,6 +121,74 @@ export async function getPushedListingDedupeKeys(eventId: number): Promise<Set<s
     }
   }
   return keys;
+}
+
+/** Latest SB ticket_id for a listing that was already created (or blocked by in-flight claim). */
+export async function findExistingSbTicketIdForKeys(
+  eventId: number,
+  dedupeKeys: string[],
+  listingFingerprint?: string | null,
+): Promise<string | null> {
+  if (listingFingerprint) {
+    const direct = await prisma.sbListingPushLog.findFirst({
+      where: {
+        eventId,
+        listingFingerprint,
+        ok: true,
+        sbTicketId: { not: null },
+        ...sbPushLogExcludingClaimWhere(),
+      },
+      orderBy: { createdAt: "desc" },
+      select: { sbTicketId: true },
+    });
+    if (direct?.sbTicketId) return direct.sbTicketId;
+  }
+
+  const logs = await prisma.sbListingPushLog.findMany({
+    where: {
+      eventId,
+      ok: true,
+      sbTicketId: { not: null },
+      ...sbPushLogExcludingClaimWhere(),
+    },
+    orderBy: { createdAt: "desc" },
+    take: 300,
+    select: { sbTicketId: true, listingFingerprint: true, requestSummary: true },
+  });
+
+  for (const row of logs) {
+    const keys = dedupeKeysFromPushLog(row.listingFingerprint, row.requestSummary);
+    if (dedupeKeys.some((k) => keys.includes(k)) && row.sbTicketId) return row.sbTicketId;
+  }
+
+  return null;
+}
+
+/** Whether this offer is already on SB and the listing id when known. */
+export async function resolveAlreadyPushedOnSb(
+  eventId: number,
+  dedupeKeys: string[],
+  listingFingerprint: string,
+): Promise<{ alreadyPushed: boolean; existingSbTicketId: string | null }> {
+  const existingKeys = await getPushedListingDedupeKeys(eventId);
+  const keyHit = dedupeKeys.some((k) => existingKeys.has(k));
+
+  const fpRow = await prisma.sbListingPushLog.findFirst({
+    where: { eventId, listingFingerprint, ok: true },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+
+  if (!keyHit && !fpRow) {
+    return { alreadyPushed: false, existingSbTicketId: null };
+  }
+
+  const existingSbTicketId = await findExistingSbTicketIdForKeys(
+    eventId,
+    dedupeKeys,
+    listingFingerprint,
+  );
+  return { alreadyPushed: true, existingSbTicketId };
 }
 
 /** @deprecated Use getPushedListingDedupeKeys */
@@ -269,13 +337,18 @@ export async function executeSbTicketPush(
 
     if (isAlreadyPushed(existing, dedupeKeys) || dedupeKeys.some((k) => seenInBatch.has(k))) {
       skipped++;
+      const duplicateOnSb = isAlreadyPushed(existing, dedupeKeys);
+      const existingSbTicketId = duplicateOnSb
+        ? await findExistingSbTicketIdForKeys(eventId, dedupeKeys, fingerprint)
+        : null;
       results.push({
         offerIndex: enriched.offerIndex,
         ok: false,
         skipped: true,
         summary,
         listingFingerprint: fingerprint,
-        error: isAlreadyPushed(existing, dedupeKeys)
+        sbTicketId: existingSbTicketId,
+        error: duplicateOnSb
           ? "Already pushed to SeatsBrokers (duplicate listing)."
           : "Duplicate listing in this push batch.",
       });
@@ -283,17 +356,17 @@ export async function executeSbTicketPush(
     }
     for (const k of dedupeKeys) seenInBatch.add(k);
 
-    const fields: Record<string, string> = {
+    const fields: Record<string, string> = fieldsForSbTicketCreate({
       ...enriched.fields,
       match_id: enriched.fields.match_id?.trim() || matchId,
-    };
-    const block = fields.ticket_block?.trim() ?? "";
+    });
+    const category = fields.ticket_category?.trim() ?? "";
 
-    if (!block || isLikelyFifaSnowflakeId(block) || !enriched.summary.sbBlockMatched) {
+    if (!category || isLikelyFifaSnowflakeId(category)) {
       failed++;
-      const error = block
-        ? `ticket_block "${block}" is not a valid SeatsBrokers block row id for this category.`
-        : "No SeatsBrokers ticket_block mapped for this offer.";
+      const error = category
+        ? `ticket_category "${category}" is not a valid SeatsBrokers category id.`
+        : "No SeatsBrokers ticket_category mapped for this offer.";
       const logId = await writePushLog({
         eventId,
         matchId,
@@ -330,12 +403,14 @@ export async function executeSbTicketPush(
     if (!claim) {
       skipped++;
       for (const k of dedupeKeys) existing.add(k);
+      const existingSbTicketId = await findExistingSbTicketIdForKeys(eventId, dedupeKeys, fingerprint);
       results.push({
         offerIndex: enriched.offerIndex,
         ok: false,
         skipped: true,
         summary,
         listingFingerprint: fingerprint,
+        sbTicketId: existingSbTicketId,
         error: "Already pushed to SeatsBrokers (duplicate listing).",
       });
       continue;
@@ -399,7 +474,7 @@ export type PushSingleSbOfferResult =
       httpStatus?: number;
       listingFingerprint: string;
       fields?: Record<string, string>;
-      summary: MappedSeatsBrokersTicket["summary"];
+      summary: SbTicketPreviewPayload["summary"];
       response?: unknown;
     }
   | {
@@ -407,6 +482,7 @@ export type PushSingleSbOfferResult =
       error: string;
       offerIndex?: number;
       skipped?: boolean;
+      existingSbTicketId?: string | null;
       httpStatus?: number;
       listingFingerprint?: string;
       response?: unknown;
@@ -481,9 +557,15 @@ export async function pushSingleSbOfferForEvent(
       offerIndex,
       skipped: true,
       listingFingerprint: row.listingFingerprint,
+      existingSbTicketId: row.sbTicketId ?? null,
     };
   }
   if (row.ok) {
+    const preview = toSbTicketPreviewPayload({
+      offerIndex: row.offerIndex,
+      fields: row.fields ?? {},
+      summary: row.summary,
+    });
     return {
       ok: true,
       sbTicketId: row.sbTicketId ?? null,
@@ -491,8 +573,8 @@ export async function pushSingleSbOfferForEvent(
       offerIndex,
       httpStatus: row.status,
       listingFingerprint: row.listingFingerprint,
-      fields: row.fields,
-      summary: row.summary,
+      fields: preview.fields,
+      summary: preview.summary,
       response: row.response,
     };
   }
