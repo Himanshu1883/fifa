@@ -213,6 +213,7 @@ type PushResponse = {
     offerIndex: number;
     ok: boolean;
     status?: number;
+    sbTicketId?: string | null;
     fields?: Record<string, string>;
     summary: TicketPayload["summary"];
     response?: unknown;
@@ -525,6 +526,9 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
       if (data.created && data.created > 0) {
         void loadAutoPushState();
         void applyLimitSave(false);
+        window.dispatchEvent(
+          new CustomEvent("sb-listing-pushed", { detail: { eventId: resolvedEventId } }),
+        );
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -1380,6 +1384,11 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                         <p className="font-semibold">
                           Offer #{r.offerIndex + 1} · HTTP {r.status ?? "—"} · {r.ok ? "OK" : "Failed"}
                         </p>
+                        {r.ok && r.sbTicketId ? (
+                          <p className="mt-1 font-mono text-sm font-bold tabular-nums text-emerald-200">
+                            SB listing id: {r.sbTicketId}
+                          </p>
+                        ) : null}
                         {r.fields ? (
                           <p className="mt-1 font-mono text-[10px] opacity-90">
                             SB ticket_block: {r.fields.ticket_block ?? "—"}

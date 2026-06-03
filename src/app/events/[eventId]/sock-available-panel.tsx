@@ -1,7 +1,14 @@
 "use client";
 
 import { ModalPortal } from "@/app/modal-portal";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { SbRemovedListingsSection } from "@/app/events/[eventId]/sb-removed-listings-section";
+import {
+  seatKeyFromSeatIds,
+  SbListingRowActions,
+} from "@/app/events/[eventId]/sb-listing-row-actions";
+import type { SbListingStatusEntry, SbListingStatusPayload } from "@/lib/sb-listing-status";
+import { inventoryRowLookupKey } from "@/lib/sb-ticket-id";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { formatUsd, priceToNumber } from "@/lib/format-usd";
 
 const searchInpClass =
@@ -291,8 +298,10 @@ export function SockAvailablePanel(props: {
   embedInParentCard?: boolean;
   initialKind?: "" | "RESALE" | "LAST_MINUTE";
   latestDiffNewKeysByKind?: Partial<Record<SockAvailableKind, string[]>>;
+  eventId?: number;
+  sbEventId?: string | null;
 }) {
-  const { rows, embedInParentCard = false, initialKind = "", latestDiffNewKeysByKind } = props;
+  const { rows, embedInParentCard = false, initialKind = "", latestDiffNewKeysByKind, eventId, sbEventId = null } = props;
   const smUp = useMediaQuery("(min-width: 640px)");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -315,6 +324,108 @@ export function SockAvailablePanel(props: {
   const [sortKey, setSortKey] = useState<SortKey>("amount_asc");
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const emptySbStatus = useMemo(
+    (): SbListingStatusPayload => ({ bySeatKey: {}, active: [], removed: [] }),
+    [],
+  );
+  const [sbStatus, setSbStatus] = useState<SbListingStatusPayload>(emptySbStatus);
+  const [sbConfigured, setSbConfigured] = useState(false);
+
+  const refreshSbConfigured = useCallback(async () => {
+    try {
+      const res = await fetch("/api/seatsbrokers/status", { cache: "no-store" });
+      const json = (await res.json()) as { configured?: boolean; ok?: boolean };
+      setSbConfigured(Boolean(res.ok && json.configured));
+    } catch {
+      setSbConfigured(false);
+    }
+  }, []);
+
+  const refreshSbStatus = useCallback(async () => {
+    if (!eventId) return;
+    try {
+      const res = await fetch(`/api/events/${eventId}/sb-listing-status`, { cache: "no-store" });
+      const json = (await res.json()) as SbListingStatusPayload & { ok?: boolean; configured?: boolean };
+      if (res.ok && json.ok !== false) {
+        setSbStatus((prev) => {
+          const serverBySeatKey = json.bySeatKey ?? {};
+          const mergedBySeatKey = { ...serverBySeatKey };
+          for (const [k, v] of Object.entries(prev.bySeatKey)) {
+            if (v.status === "pushed" && !mergedBySeatKey[k]) {
+              mergedBySeatKey[k] = v;
+            }
+          }
+          const active = Object.values(mergedBySeatKey).filter((e) => e.status === "pushed");
+          const removed = Object.values(mergedBySeatKey).filter((e) => e.status !== "pushed");
+          return { bySeatKey: mergedBySeatKey, active, removed };
+        });
+        if (json.configured != null) setSbConfigured(Boolean(json.configured));
+      }
+    } catch {
+      /* non-fatal — listing status may fail before migration; keep empty status */
+    }
+  }, [eventId]);
+
+  useEffect(() => {
+    void refreshSbConfigured();
+    void refreshSbStatus();
+  }, [refreshSbConfigured, refreshSbStatus, rows.length]);
+
+  const resaleView = initialKind === "RESALE";
+
+  useEffect(() => {
+    if (!eventId || !resaleView) return;
+    const id = window.setInterval(() => {
+      void refreshSbStatus();
+    }, 20_000);
+    return () => window.clearInterval(id);
+  }, [eventId, resaleView, refreshSbStatus]);
+
+  useEffect(() => {
+    if (!eventId || !resaleView) return;
+    const onPushed = (e: Event) => {
+      const detail = (e as CustomEvent<{ eventId?: number }>).detail;
+      if (detail?.eventId === eventId) void refreshSbStatus();
+    };
+    window.addEventListener("sb-listing-pushed", onPushed);
+    return () => window.removeEventListener("sb-listing-pushed", onPushed);
+  }, [eventId, resaleView, refreshSbStatus]);
+
+  const handleSbStatusChange = useCallback((seatKey: string, entry: SbListingStatusEntry | null) => {
+    setSbStatus((prev) => {
+      const bySeatKey = { ...prev.bySeatKey };
+      if (entry) bySeatKey[seatKey] = entry;
+      else delete bySeatKey[seatKey];
+      const active = Object.values(bySeatKey).filter((e) => e.status === "pushed");
+      const removed = Object.values(bySeatKey).filter((e) => e.status !== "pushed");
+      return { bySeatKey, active, removed };
+    });
+  }, []);
+
+  const lookupSbEntry = useCallback(
+    (
+      seatIds: string[],
+      rowMeta?: { blockName?: string | null; row?: string | null; seatSpan?: string | null },
+    ): SbListingStatusEntry | null => {
+      const key = seatKeyFromSeatIds(seatIds);
+      const direct = sbStatus.bySeatKey[key];
+      if (direct) return direct;
+      for (const id of seatIds) {
+        const trimmed = id.trim();
+        if (!trimmed) continue;
+        const byId = sbStatus.bySeatKey[trimmed];
+        if (byId) return byId;
+      }
+      const invKey = inventoryRowLookupKey(rowMeta?.blockName, rowMeta?.row, rowMeta?.seatSpan);
+      if (invKey && sbStatus.bySeatKey[invKey]) return sbStatus.bySeatKey[invKey]!;
+      return null;
+    },
+    [sbStatus],
+  );
+
+  const showSbColumn = Boolean(eventId) && resaleView;
+
+  const sbDeletedCount = sbStatus.removed.filter((e) => e.status === "deleted").length;
 
   const newKeySetByKind = useMemo(() => {
     return {
@@ -599,6 +710,19 @@ export function SockAvailablePanel(props: {
           <h2 className="text-base font-semibold tracking-tight text-white sm:text-lg">
             Sock available rows
           </h2>
+          {resaleView && sbStatus.removed.length > 0 ? (
+            <p className="mt-1 text-xs text-zinc-500">
+              {sbDeletedCount > 0 ? (
+                <span className="font-medium text-zinc-400">
+                  {sbDeletedCount} listing{sbDeletedCount === 1 ? "" : "s"} deleted on SB after scrape
+                </span>
+              ) : (
+                <span className="text-amber-200/90">
+                  {sbStatus.removed.length} removed from scrape — see below
+                </span>
+              )}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
           <div className="flex items-center gap-2">
@@ -1226,6 +1350,10 @@ export function SockAvailablePanel(props: {
             </div>
           ) : null}
 
+          {resaleView && sbStatus.removed.length > 0 ? (
+            <SbRemovedListingsSection entries={sbStatus.removed} />
+          ) : null}
+
           {shownItems.length === 0 ? (
             <div
               className="rounded-xl border border-white/[0.07] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_88%,transparent)] px-6 py-10 text-center ring-1 ring-white/[0.04]"
@@ -1258,6 +1386,11 @@ export function SockAvailablePanel(props: {
                         <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Area ID</th>
                         <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Block ID</th>
                         <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Updated</th>
+                        {showSbColumn ? (
+                          <th scope="col" className="px-4 py-3 text-right font-medium text-zinc-400">
+                            SB listing
+                          </th>
+                        ) : null}
                         <th scope="col" className="px-4 py-3 pr-5 text-right font-medium text-zinc-400 sm:pr-6">Info</th>
                       </tr>
                     </thead>
@@ -1305,6 +1438,27 @@ export function SockAvailablePanel(props: {
                           <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500" title={r.updatedAt}>
                             {formatAgeFromIso(r.updatedAt)}
                           </td>
+                          {showSbColumn && eventId ? (
+                            <td className="whitespace-nowrap px-4 py-3 text-right align-middle">
+                              <SbListingRowActions
+                                eventId={eventId}
+                                sbEventId={sbEventId}
+                                sbConfigured={sbConfigured}
+                                seatIds={[r.seatId]}
+                                kind={r.kind}
+                                blockName={r.blockName}
+                                rowLabel={r.row}
+                                seatSpan={r.seatNumber}
+                                entry={lookupSbEntry([r.seatId], {
+                                  blockName: r.blockName,
+                                  row: r.row,
+                                  seatSpan: r.seatNumber,
+                                })}
+                                onStatusChange={handleSbStatusChange}
+                                onRefreshStatus={refreshSbStatus}
+                              />
+                            </td>
+                          ) : null}
                           <td className="whitespace-nowrap px-4 py-3 pr-5 text-right sm:pr-6">
                             <button
                               type="button"
@@ -1320,7 +1474,7 @@ export function SockAvailablePanel(props: {
                     </tbody>
                   </table>
                 ) : (
-                  <table className="w-full min-w-[72rem] border-collapse text-sm">
+                  <table className="w-full min-w-[80rem] border-collapse text-sm">
                   <thead>
                     <tr className="sticky top-0 z-10 border-b border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_95%,transparent)] text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 backdrop-blur-md">
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
@@ -1350,6 +1504,11 @@ export function SockAvailablePanel(props: {
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
                         Updated
                       </th>
+                      {showSbColumn ? (
+                        <th scope="col" className="px-4 py-3 text-right font-medium text-zinc-400">
+                          SB listing
+                        </th>
+                      ) : null}
                       <th scope="col" className="px-4 py-3 pr-5 text-right font-medium text-zinc-400 sm:pr-6">
                         Info
                       </th>
@@ -1408,6 +1567,27 @@ export function SockAvailablePanel(props: {
                         >
                           {Number.isFinite(g.updatedAtMaxMs) ? formatAgeFromMs(g.updatedAtMaxMs) : "—"}
                         </td>
+                        {showSbColumn && eventId ? (
+                          <td className="whitespace-nowrap px-4 py-3 text-right align-middle">
+                            <SbListingRowActions
+                              eventId={eventId}
+                              sbEventId={sbEventId}
+                              sbConfigured={sbConfigured}
+                              seatIds={g.seats.map((s) => s.seatId)}
+                              kind={g.kind}
+                              blockName={g.blockName}
+                              rowLabel={g.row}
+                              seatSpan={g.seatSpan}
+                              entry={lookupSbEntry(g.seats.map((s) => s.seatId), {
+                                blockName: g.blockName,
+                                row: g.row,
+                                seatSpan: g.seatSpan,
+                              })}
+                              onStatusChange={handleSbStatusChange}
+                              onRefreshStatus={refreshSbStatus}
+                            />
+                          </td>
+                        ) : null}
                         <td className="whitespace-nowrap px-4 py-3 pr-5 text-right sm:pr-6">
                           <button
                             type="button"

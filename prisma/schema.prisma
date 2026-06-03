@@ -326,10 +326,15 @@ model SbListingPushLog {
   requestSummary     Json                 @map("request_summary")
   responseBody       Json?                @map("response_body")
   errorMessage       String?              @map("error_message") @db.Text
+  inventoryRemovedAt DateTime?            @map("inventory_removed_at")
+  sbDeletedAt        DateTime?            @map("sb_deleted_at")
+  sbDeleteHttpStatus Int?                 @map("sb_delete_http_status")
+  sbDeleteError      String?              @map("sb_delete_error") @db.Text
   createdAt          DateTime             @default(now()) @map("created_at")
 
   @@index([eventId, createdAt(sort: Desc)])
   @@index([eventId, listingFingerprint])
+  @@index([eventId, inventoryRemovedAt])
   @@map("sb_listing_push_logs")
 }
 

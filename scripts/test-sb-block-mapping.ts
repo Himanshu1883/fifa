@@ -98,6 +98,8 @@ const mockOffer: TransformedSeatOffer = {
   originalCount: 1,
   transformedCount: 1,
   sourceGroupCount: 1,
+  allSeatIds: ["s1"],
+  allSeatNumbers: ["7"],
   seats: [
     {
       key: "k1",

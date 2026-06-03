@@ -36,6 +36,10 @@ export type MappedSeatsBrokersTicket = {
     seatNumbers: string[];
     /** FIFA seat ids — used for dedupe; optional on older preview payloads. */
     seatIds?: string[];
+    /** All seats on the UI row when push used quantity reduction (e.g. 9–12 → qty 1). */
+    sourceSeatIds?: string[];
+    /** Seat numbers on that UI row (e.g. 9,10,11,12) for table lookup. */
+    sourceSeatNumbers?: string[];
   };
 };
 

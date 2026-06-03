@@ -31,6 +31,7 @@ import {
   mapOffersToSeatsBrokersCreateTickets,
   type MappedSeatsBrokersTicket,
 } from "@/lib/seatsbrokers-offer-map";
+import { extractSbTicketId } from "@/lib/sb-ticket-id";
 import type { TransformedSeatOffer } from "@/lib/seat-offers-transform";
 
 export type SbPushTicketResult = {
@@ -58,13 +59,20 @@ export type ExecuteSbPushOptions = {
   trigger: "MANUAL" | "AUTO";
 };
 
-function extractSbTicketId(data: unknown): string | null {
-  if (data === null || typeof data !== "object") return null;
-  const o = data as Record<string, unknown>;
-  const id = o.ticket_id ?? o.ticketId;
-  if (id == null) return null;
-  const s = String(id).trim();
-  return s || null;
+function sourceSeatsForPush(
+  offer: TransformedSeatOffer | undefined,
+  explicitIds?: string[],
+): { sourceSeatIds?: string[]; sourceSeatNumbers?: string[] } {
+  const fromUi = explicitIds?.map((s) => s.trim()).filter(Boolean);
+  const ids =
+    fromUi?.length
+      ? [...fromUi].sort()
+      : (offer?.allSeatIds?.map((s) => s.trim()).filter(Boolean) ?? []);
+  const numbers = offer?.allSeatNumbers?.map((s) => s.trim()).filter(Boolean) ?? [];
+  return {
+    ...(ids.length > 0 ? { sourceSeatIds: [...ids].sort() } : {}),
+    ...(numbers.length > 0 ? { sourceSeatNumbers: [...numbers].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) } : {}),
+  };
 }
 
 /** In-flight push claim marker (row has ok=true until API completes or claim expires). */
@@ -219,6 +227,8 @@ async function finalizeClaimedPushLog(
           : (input.response as Prisma.InputJsonValue),
       errorMessage: input.ok ? null : (input.error ?? "Push failed."),
     },
+    // Avoid RETURNING removal-tracking columns when migration is not applied yet.
+    select: { id: true },
   });
 }
 
@@ -249,8 +259,13 @@ export async function executeSbTicketPush(
     if (!enriched) continue;
 
     const offer = offers[enriched.offerIndex];
-    const fingerprint = listingFingerprintForMappedTicket(offer, enriched);
-    const dedupeKeys = listingDedupeKeysForMappedTicket(offer, enriched);
+    const sourceSeats = sourceSeatsForPush(offer);
+    const summary =
+      sourceSeats.sourceSeatIds?.length || sourceSeats.sourceSeatNumbers?.length
+        ? { ...enriched.summary, ...sourceSeats }
+        : enriched.summary;
+    const fingerprint = listingFingerprintForMappedTicket(offer, { ...enriched, summary });
+    const dedupeKeys = listingDedupeKeysForMappedTicket(offer, { ...enriched, summary });
 
     if (isAlreadyPushed(existing, dedupeKeys) || dedupeKeys.some((k) => seenInBatch.has(k))) {
       skipped++;
@@ -258,7 +273,7 @@ export async function executeSbTicketPush(
         offerIndex: enriched.offerIndex,
         ok: false,
         skipped: true,
-        summary: enriched.summary,
+        summary,
         listingFingerprint: fingerprint,
         error: isAlreadyPushed(existing, dedupeKeys)
           ? "Already pushed to SeatsBrokers (duplicate listing)."
@@ -287,14 +302,14 @@ export async function executeSbTicketPush(
         trigger,
         ok: false,
         fields,
-        summary: enriched.summary,
+        summary,
         error,
       });
       results.push({
         offerIndex: enriched.offerIndex,
         ok: false,
         fields,
-        summary: enriched.summary,
+        summary,
         error,
         listingFingerprint: fingerprint,
         logId,
@@ -309,7 +324,7 @@ export async function executeSbTicketPush(
       listingFingerprint: fingerprint,
       trigger,
       fields,
-      summary: enriched.summary,
+      summary,
     });
 
     if (!claim) {
@@ -319,7 +334,7 @@ export async function executeSbTicketPush(
         offerIndex: enriched.offerIndex,
         ok: false,
         skipped: true,
-        summary: enriched.summary,
+        summary,
         listingFingerprint: fingerprint,
         error: "Already pushed to SeatsBrokers (duplicate listing).",
       });
@@ -333,7 +348,7 @@ export async function executeSbTicketPush(
       httpStatus: res.status,
       sbTicketId,
       fields,
-      summary: enriched.summary,
+      summary,
       response: res.ok ? res.data : res.raw,
       error: res.ok ? undefined : res.error,
     });
@@ -346,7 +361,7 @@ export async function executeSbTicketPush(
         ok: true,
         status: res.status,
         fields,
-        summary: enriched.summary,
+        summary,
         response: res.data,
         listingFingerprint: fingerprint,
         sbTicketId,
@@ -359,7 +374,7 @@ export async function executeSbTicketPush(
         ok: false,
         status: res.status,
         fields,
-        summary: enriched.summary,
+        summary,
         error: res.error,
         response: res.raw,
         listingFingerprint: fingerprint,
@@ -373,6 +388,123 @@ export async function executeSbTicketPush(
   }
 
   return { created, failed, skipped, results };
+}
+
+export type PushSingleSbOfferResult =
+  | {
+      ok: true;
+      sbTicketId: string | null;
+      logId?: number;
+      offerIndex: number;
+      httpStatus?: number;
+      listingFingerprint: string;
+      fields?: Record<string, string>;
+      summary: MappedSeatsBrokersTicket["summary"];
+      response?: unknown;
+    }
+  | {
+      ok: false;
+      error: string;
+      offerIndex?: number;
+      skipped?: boolean;
+      httpStatus?: number;
+      listingFingerprint?: string;
+      response?: unknown;
+    };
+
+/** Push one transformed offer by index (per-row UI). */
+export async function pushSingleSbOfferForEvent(
+  eventId: number,
+  offerIndex: number,
+  options?: { ticketType?: string | null; sourceSeatIds?: string[] },
+): Promise<PushSingleSbOfferResult> {
+  const configBase = getSeatsBrokersConfig();
+  if (!configBase) {
+    return { ok: false, error: "SeatsBrokers not configured." };
+  }
+
+  const config = configWithTicketType(configBase, options?.ticketType ?? null);
+
+  const loaded = await loadTransformedSeatOffersForEvent(eventId, {
+    kind: SEATS_BROKERS_PUSH_INVENTORY_KIND,
+    markupPercent: "persisted",
+  });
+  if (!loaded) return { ok: false, error: "Event not found." };
+
+  const matchId = loaded.event.sbEventId?.trim();
+  if (!matchId) {
+    return { ok: false, error: "Event has no SB match id. Add it via Add SB ID first." };
+  }
+
+  const offers = loaded.transform.offers.filter((o) => o.kind === SEATS_BROKERS_PUSH_INVENTORY_KIND);
+  const selectedOffer = offers[offerIndex];
+  if (!selectedOffer) {
+    return { ok: false, error: `Offer index ${offerIndex} is out of range.`, offerIndex };
+  }
+
+  const dateToShip = computeDateToShip(loaded.event.eventDate);
+  const catalog = await loadSbMatchCatalogForOffers(matchId, offers, config);
+  const mapped = mapOffersToSeatsBrokersCreateTickets(offers, matchId, config, dateToShip, catalog);
+  const rawTicket = mapped.find((m) => m.offerIndex === offerIndex);
+  if (!rawTicket) {
+    return { ok: false, error: "This listing cannot be mapped for SeatsBrokers push.", offerIndex };
+  }
+
+  const sourceSeats = sourceSeatsForPush(selectedOffer, options?.sourceSeatIds);
+  const ticket: typeof rawTicket = {
+    ...rawTicket,
+    summary: {
+      ...rawTicket.summary,
+      ...sourceSeats,
+    },
+  };
+
+  const { created, failed, skipped, results } = await executeSbTicketPush({
+    eventId,
+    matchId,
+    offers,
+    tickets: [ticket],
+    config,
+    dateToShip,
+    catalog,
+    trigger: "MANUAL",
+  });
+
+  const row = results[0];
+  if (!row) {
+    return { ok: false, error: "Push did not run.", offerIndex };
+  }
+  if (row.skipped) {
+    return {
+      ok: false,
+      error: row.error ?? "Already pushed to SeatsBrokers.",
+      offerIndex,
+      skipped: true,
+      listingFingerprint: row.listingFingerprint,
+    };
+  }
+  if (row.ok) {
+    return {
+      ok: true,
+      sbTicketId: row.sbTicketId ?? null,
+      logId: row.logId,
+      offerIndex,
+      httpStatus: row.status,
+      listingFingerprint: row.listingFingerprint,
+      fields: row.fields,
+      summary: row.summary,
+      response: row.response,
+    };
+  }
+
+  return {
+    ok: false,
+    error: row.error ?? `Push failed (${failed} failed, ${skipped} skipped, ${created} created).`,
+    offerIndex,
+    httpStatus: row.status,
+    listingFingerprint: row.listingFingerprint,
+    response: row.response,
+  };
 }
 
 export type SbAutoPushRunResult = {

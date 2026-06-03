@@ -35,6 +35,10 @@ export type TransformedSeatOffer = {
   transformedCount: number;
   /** How many contiguous / single groups contributed seats at this price. */
   sourceGroupCount: number;
+  /** All FIFA seat ids in this price bucket (before quantity pick) — for UI row ↔ SB listing lookup. */
+  allSeatIds: string[];
+  /** Seat numbers in this bucket (for block/row/seat-span lookup). */
+  allSeatNumbers: string[];
   seats: TransformedSeatRef[];
 };
 
@@ -375,6 +379,21 @@ export function transformSeatOffersFromSockRows(rows: SockAvailableRowLike[]): T
       continue;
     }
 
+    const allSeatIds = [
+      ...new Set(
+        bucket.groups
+          .flatMap((g) => g.seats.map((s) => s.seatId.trim()))
+          .filter(Boolean),
+      ),
+    ].sort();
+    const allSeatNumbers = [
+      ...new Set(
+        bucket.groups
+          .flatMap((g) => g.seats.map((s) => s.seatNumber.trim()))
+          .filter(Boolean),
+      ),
+    ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
     const seats = pickSeatsFromGroups(bucket.groups, mappedCount);
     if (seats.length === 0) {
       skippedEmptyBuckets++;
@@ -420,6 +439,8 @@ export function transformSeatOffersFromSockRows(rows: SockAvailableRowLike[]): T
       originalCount: bucket.originalCount,
       transformedCount: seatsSent,
       sourceGroupCount: bucket.groups.length,
+      allSeatIds,
+      allSeatNumbers,
       seats,
     });
   }

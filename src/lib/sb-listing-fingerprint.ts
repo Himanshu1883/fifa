@@ -55,6 +55,22 @@ export function listingDedupeKeysForMappedTicket(
   return [listingFingerprintForMappedTicket(offer, ticket)];
 }
 
+/** Seat numbers on the UI row when quantity was reduced (e.g. 9,10,11,12). */
+export function sourceSeatNumbersFromPushSummary(summary: unknown): string[] {
+  if (summary === null || typeof summary !== "object") return [];
+  const s = summary as { sourceSeatNumbers?: unknown };
+  if (!Array.isArray(s.sourceSeatNumbers)) return [];
+  return s.sourceSeatNumbers.map((n) => String(n).trim()).filter(Boolean).sort();
+}
+
+/** UI row seat ids stored on push (e.g. 9–12 together when SB payload sends 1 seat). */
+export function sourceSeatIdsFromPushSummary(summary: unknown): string[] {
+  if (summary === null || typeof summary !== "object") return [];
+  const s = summary as { sourceSeatIds?: unknown };
+  if (!Array.isArray(s.sourceSeatIds)) return [];
+  return s.sourceSeatIds.map((id) => String(id).trim()).filter(Boolean).sort();
+}
+
 /** Extract seat ids from a stored push log summary. */
 export function seatIdsFromPushSummary(summary: unknown): string[] {
   if (summary === null || typeof summary !== "object") return [];

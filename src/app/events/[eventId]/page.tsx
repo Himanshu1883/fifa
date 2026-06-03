@@ -162,7 +162,9 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
   ]);
 
   const hasSeatListings = seatListingsCount > 0;
-  const effectivePanel: PanelKey = hasSeatListings ? panel : "sock";
+  // Resale marketplace uses sock_available (SB push); always show that panel for ?kind=RESALE.
+  const effectivePanel: PanelKey =
+    initialSockKind === "RESALE" ? "sock" : hasSeatListings ? panel : "sock";
   if (!hasSeatListings && panel === "listings") {
     redirect(`/events/${event.id}`);
   }
@@ -393,7 +395,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                       </span>
                     </Link>
                     <Link
-                      href={`/events/${event.id}?kind=RESALE`}
+                      href={`/events/${event.id}?kind=RESALE&panel=sock`}
                       className={
                         resaleCtaActive
                           ? "inline-flex min-h-10 items-center justify-center rounded-xl border border-[color:color-mix(in_oklab,var(--ticketing-accent)_52%,transparent)] bg-[color:var(--ticketing-accent)] px-4 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter] hover:brightness-[1.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
@@ -543,6 +545,8 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                   embedInParentCard
                   initialKind={initialSockKind}
                   latestDiffNewKeysByKind={latestDiffNewKeysByKind}
+                  eventId={event.id}
+                  sbEventId={event.sbEventId}
                 />
               ) : (
                 <SeatListingsPanel

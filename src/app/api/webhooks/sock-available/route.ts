@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { CataloguePayloadError } from "@/lib/price-range-catalogue";
 import { parseSockAvailableGeojsonBody } from "@/lib/parse-sock-available-geojson-webhook";
 import { computeSockAvailableDiffInTx, maybeNotifySockAvailableDiff } from "@/lib/notify-sock-available-diff";
+import { reconcileSbListingsAfterSockSync } from "@/lib/sb-listing-reconcile";
 import { runSbAutoPushForEvent } from "@/lib/seatsbrokers-push-service";
 import { syncSockAvailableForEvent } from "@/lib/sync-sock-available";
 
@@ -189,7 +190,21 @@ export async function POST(req: NextRequest) {
     }
 
     let sbAutoPush: Awaited<ReturnType<typeof runSbAutoPushForEvent>> | undefined;
+    let sbReconcile: Awaited<ReturnType<typeof reconcileSbListingsAfterSockSync>> | undefined;
     if (kind === "RESALE") {
+      try {
+        sbReconcile = await reconcileSbListingsAfterSockSync(txn.result.eventId);
+      } catch (reconcileErr) {
+        console.warn("[sock-available webhook] SB listing reconcile failed", reconcileErr);
+        sbReconcile = {
+          ran: false,
+          skippedReason: "error",
+          currentOfferCount: 0,
+          markedRemoved: 0,
+          deletedFromSb: 0,
+          deleteFailed: 0,
+        };
+      }
       try {
         sbAutoPush = await runSbAutoPushForEvent(txn.result.eventId);
       } catch (autoErr) {
@@ -204,6 +219,7 @@ export async function POST(req: NextRequest) {
       lookup: "pref-or-resale",
       prefId,
       eventId: txn.result.eventId,
+      sbReconcile,
       sbAutoPush,
       featureCount,
       rowCount: rows.length,

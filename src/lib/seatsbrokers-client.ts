@@ -94,6 +94,18 @@ export async function sbCreateTicket(
   return postForm(config ?? requireSeatsBrokersConfig(), "ticket/create", fields);
 }
 
+/** Remove a listing from SeatsBrokers when it no longer appears in scraped inventory. */
+export async function sbDeleteTicket(
+  ticketId: string,
+  matchId: string,
+  config?: SeatsBrokersConfig,
+): Promise<SeatsBrokersApiResult> {
+  return postForm(config ?? requireSeatsBrokersConfig(), "ticket/delete", {
+    ticket_id: ticketId,
+    match_id: matchId,
+  });
+}
+
 export async function sbGetTicketDropdown(matchId: string, config?: SeatsBrokersConfig) {
   return postForm(config ?? requireSeatsBrokersConfig(), "ticket_dropdown", { match_id: matchId });
 }
