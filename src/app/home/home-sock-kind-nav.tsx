@@ -103,23 +103,11 @@ export function HomeSockKindSwitcher({
 
   return (
     <div
-      className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center"
+      className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-center"
       role="group"
       aria-label="Ticket source"
     >
       <div className="inline-flex w-full rounded-full border border-white/[0.12] bg-black/30 p-1 shadow-inner shadow-black/40 ring-1 ring-white/[0.05] sm:w-auto">
-        <button
-          type="button"
-          className={tabClass("LAST_MINUTE", activeKind === "LAST_MINUTE")}
-          aria-pressed={activeKind === "LAST_MINUTE"}
-          disabled={isSwitching && switchingTo === "LAST_MINUTE"}
-          onClick={() => {
-            if (activeKind !== "LAST_MINUTE") navigateToKind("LAST_MINUTE", lastMinuteHref);
-          }}
-        >
-          {isSwitching && switchingTo === "LAST_MINUTE" ? <Spinner /> : null}
-          <span>Last Minute Sales</span>
-        </button>
         <button
           type="button"
           className={tabClass("RESALE", activeKind === "RESALE")}
@@ -131,6 +119,18 @@ export function HomeSockKindSwitcher({
         >
           {isSwitching && switchingTo === "RESALE" ? <Spinner /> : null}
           <span>Resale Marketplace</span>
+        </button>
+        <button
+          type="button"
+          className={tabClass("LAST_MINUTE", activeKind === "LAST_MINUTE")}
+          aria-pressed={activeKind === "LAST_MINUTE"}
+          disabled={isSwitching && switchingTo === "LAST_MINUTE"}
+          onClick={() => {
+            if (activeKind !== "LAST_MINUTE") navigateToKind("LAST_MINUTE", lastMinuteHref);
+          }}
+        >
+          {isSwitching && switchingTo === "LAST_MINUTE" ? <Spinner /> : null}
+          <span>Last Minute Sales</span>
         </button>
       </div>
       {isSwitching && switchingTo ? (

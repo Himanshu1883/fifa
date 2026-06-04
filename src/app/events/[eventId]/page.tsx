@@ -127,7 +127,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
   const panel = normalizePanelKey(readFirstStringParam(query.panel));
   const initialSockKind = normalizeSockKind(readFirstStringParam(query.kind));
   const resaleCtaActive = initialSockKind === "RESALE";
-  const lastMinuteCtaActive = initialSockKind === "LAST_MINUTE" || initialSockKind === "";
+  const lastMinuteCtaActive = initialSockKind === "LAST_MINUTE";
 
   const trimmed = rawId.trim();
   if (!trimmed) notFound();
@@ -144,11 +144,11 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
     redirect(`/events/${canonical}${suffix}`);
   }
 
-  // Default to LAST_MINUTE when `kind` is missing.
+  // Default to RESALE marketplace when `kind` is missing.
   if (!initialSockKind) {
     const sp = new URLSearchParams();
-    if (panel !== "sock") sp.set("panel", panel);
-    sp.set("kind", "LAST_MINUTE");
+    sp.set("panel", "sock");
+    sp.set("kind", "RESALE");
     redirect(`/events/${event.id}?${sp.toString()}`);
   }
 
@@ -376,7 +376,7 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                       sbEventId={event.sbEventId}
                     />
                     <Link
-                      href={`/events/${event.id}?kind=LAST_MINUTE`}
+                      href={`/events/${event.id}?kind=LAST_MINUTE&panel=sock`}
                       className={
                         lastMinuteCtaActive
                           ? "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[color:color-mix(in_oklab,var(--ticketing-accent)_52%,transparent)] bg-[color:var(--ticketing-accent)] px-4 text-sm font-semibold text-zinc-950 shadow-sm shadow-black/35 transition-[filter] hover:brightness-[1.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"

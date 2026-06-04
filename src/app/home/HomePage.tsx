@@ -228,15 +228,15 @@ function parseHomeCountryFilter(q: { country?: string | string[] }): string {
 
 export function parseHomeSockKindFilter(q: { kind?: string | string[] }): HomeSockKind {
   const raw = (firstQs(q.kind) ?? "").trim().toLowerCase();
-  if (!raw) return "LAST_MINUTE";
+  if (!raw) return "RESALE";
   if (raw === "resale") return "RESALE";
   if (raw === "last_minute" || raw === "last-minute" || raw === "lastminute" || raw === "lm" || raw === "shop")
     return "LAST_MINUTE";
-  return "LAST_MINUTE";
+  return "RESALE";
 }
 
-export function homeBasePathForKind(kind: HomeSockKind): "/" | "/resale" {
-  return kind === "RESALE" ? "/resale" : "/";
+export function homeBasePathForKind(kind: HomeSockKind): "/" | "/last-minute" {
+  return kind === "RESALE" ? "/" : "/last-minute";
 }
 
 export function homeQueryStringFrom(q: HomeSearchParams): string {
@@ -737,8 +737,8 @@ export async function HomePage({
             aria-hidden
           />
           <header className="relative w-full border-b border-white/[0.06] px-4 py-4 sm:px-5 sm:py-5 lg:px-6">
-            <div className="flex w-full flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
-              <div className="min-w-0 flex-1 space-y-2">
+            <div className="grid w-full gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,22rem)] lg:items-start lg:gap-6">
+              <div className="min-w-0 space-y-3">
                 <p className="inline-flex items-center gap-2 rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-100 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)]">
                   2026 FIFA WORLD CUP{" "}
                   <span className="text-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,white_40%)]">·</span> Live
@@ -753,76 +753,51 @@ export async function HomePage({
                   Browse resale marketplace listings and official face-value Last Minute Sales drops across every match.
                   Sort by price and filter by stage, venue, or country.
                 </p>
+
+                <dl
+                  className="grid w-full max-w-xl grid-cols-3 divide-x divide-white/[0.10] overflow-hidden rounded-xl border border-white/[0.08] bg-black/25 py-2.5 shadow-inner shadow-black/35 ring-1 ring-white/[0.05] sm:py-3"
+                  aria-label="Schedule totals"
+                >
+                  <div className="px-3 text-center sm:px-4">
+                    <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">
+                      Tickets{sockKind === "RESALE" ? " (Resale)" : " (Shop)"}
+                    </dt>
+                    <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-[color:color-mix(in_oklab,var(--ticketing-accent)_88%,white_8%)] sm:text-2xl lg:text-3xl">
+                      {totalTickets.toLocaleString("en-US")}
+                    </dd>
+                  </div>
+                  <div className="px-3 text-center sm:px-4">
+                    <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">
+                      Matches
+                    </dt>
+                    <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-white sm:text-2xl lg:text-3xl">
+                      {events.length.toLocaleString("en-US")}
+                    </dd>
+                  </div>
+                  <div className="px-3 text-center sm:px-4">
+                    <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">
+                      Sources
+                    </dt>
+                    <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-white sm:text-2xl lg:text-3xl">
+                      1
+                    </dd>
+                  </div>
+                </dl>
               </div>
 
-              <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Link
-                    href="/buying-criteria"
-                    className="rounded-md bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-3 py-1.5 text-xs font-medium text-zinc-100 ring-1 ring-white/10 hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)]"
-                  >
-                    Buying criteria
-                  </Link>
-                  <Link
-                    href="/sb-listings"
-                    className="rounded-md bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-3 py-1.5 text-xs font-semibold text-zinc-100 ring-1 ring-white/10 hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)]"
-                  >
-                    SB Listings
-                  </Link>
-                  <Link
-                    href="/listing-changes"
-                    className="rounded-md bg-sky-500/15 px-3 py-1.5 text-xs font-medium text-sky-100 ring-1 ring-white/10 hover:bg-sky-500/20"
-                  >
-                    Changes
-                  </Link>
-                  <Link
-                    href="/undetectable"
-                    className="rounded-md bg-sky-500/15 px-3 py-1.5 text-xs font-medium text-sky-100 ring-1 ring-white/10 hover:bg-sky-500/20"
-                  >
-                    Undetectable
-                  </Link>
-                  <Link
-                    href="/gmail"
-                    className="rounded-md bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-3 py-1.5 text-xs font-medium text-zinc-100 ring-1 ring-white/10 hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)]"
-                  >
-                    Gmail
-                  </Link>
+              {showBoxofficeControls ? (
+                <div className="w-full lg:max-w-[22rem] lg:justify-self-end">
+                  <BoxofficeControlsClient port={boxofficePort} />
                 </div>
-                {showBoxofficeControls ? <BoxofficeControlsClient port={boxofficePort} /> : null}
-              </div>
+              ) : null}
             </div>
 
-            <dl
-              className="mt-4 grid w-full grid-cols-3 divide-x divide-white/[0.10] overflow-hidden rounded-xl border border-white/[0.08] bg-black/25 py-2.5 shadow-inner shadow-black/35 ring-1 ring-white/[0.05] sm:mt-5 sm:py-3"
-              aria-label="Schedule totals"
-            >
-              <div className="px-3 text-center sm:px-4">
-                <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">
-                  Tickets{sockKind === "RESALE" ? " (Resale)" : " (Shop)"}
-                </dt>
-                <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-[color:color-mix(in_oklab,var(--ticketing-accent)_88%,white_8%)] sm:text-2xl lg:text-3xl">
-                  {totalTickets.toLocaleString("en-US")}
-                </dd>
-              </div>
-              <div className="px-3 text-center sm:px-4">
-                <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">Matches</dt>
-                <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-white sm:text-2xl lg:text-3xl">
-                  {events.length.toLocaleString("en-US")}
-                </dd>
-              </div>
-              <div className="px-3 text-center sm:px-4">
-                <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">Sources</dt>
-                <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-white sm:text-2xl lg:text-3xl">1</dd>
-              </div>
-            </dl>
-
-            <div className="mt-4 flex w-full flex-col gap-3 border-t border-white/[0.06] pt-4 sm:gap-4">
+            <div className="mt-4 flex w-full flex-col gap-3 border-t border-white/[0.06] pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2.5">
               <HomeSockKindSwitcher
                 activeKind={sockKind}
                 lastMinuteHref={homeKindHref("LAST_MINUTE")}
                 resaleHref={homeKindHref("RESALE")}
               />
-              <div className="flex w-full flex-wrap items-center gap-2 sm:gap-2.5">
               <Link
                 href={homeBuyingCriteriaMeetHref(!buyingCriteriaMeetActive)}
                 className={
@@ -852,7 +827,6 @@ export async function HomePage({
                   sbEventId: e.sbEventId,
                 }))}
               />
-              </div>
             </div>
           </header>
 
@@ -983,7 +957,7 @@ export async function HomePage({
                                     {event.matchLabel}
                                   </span>
                                   <h3 className="min-w-0 text-base font-semibold leading-snug tracking-tight text-white">
-                                    <Link href={`/events/${event.id}?kind=LAST_MINUTE`} className={eventNameLinkClass}>
+                                    <Link href={`/events/${event.id}?kind=RESALE&panel=sock`} className={eventNameLinkClass}>
                                       {event.name}
                                     </Link>
                                   </h3>
@@ -1208,7 +1182,7 @@ export async function HomePage({
                                   <div className="min-w-0 space-y-2">
                                     <div className="flex min-w-0 flex-wrap items-center gap-2">
                                       <Link
-                                        href={`/events/${event.id}?kind=LAST_MINUTE`}
+                                        href={`/events/${event.id}?kind=RESALE&panel=sock`}
                                         className={`${eventNameLinkClass} min-w-0 truncate`}
                                       >
                                         {event.name}

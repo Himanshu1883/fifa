@@ -1,12 +1,5 @@
 import { redirect } from "next/navigation";
-import {
-  HomePage,
-  firstQs,
-  homeBasePathForKind,
-  homeQueryStringFrom,
-  parseHomeSockKindFilter,
-  type HomeSearchParams,
-} from "@/app/home/HomePage";
+import { homeQueryStringFrom, type HomeSearchParams } from "@/app/home/HomePage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,22 +8,9 @@ type Props = {
   searchParams: Promise<HomeSearchParams>;
 };
 
+/** Legacy /resale URL → home (resale is now the default at /). */
 export default async function ResalePage({ searchParams }: Props) {
   const q = await searchParams;
-  const kindRaw = (firstQs(q.kind) ?? "").trim();
-  if (kindRaw && parseHomeSockKindFilter(q) === "LAST_MINUTE") {
-    const qs = homeQueryStringFrom(q);
-    redirect(`${homeBasePathForKind("LAST_MINUTE")}${qs ? `?${qs}` : ""}`);
-  }
-  const onlyBuyingCriteriaMeet = firstQs(q.bc) === "1";
-  const onlyMissingPrice = firstQs(q.mp) === "1";
-  return (
-    <HomePage
-      searchParams={Promise.resolve(q)}
-      kind="RESALE"
-      onlyBuyingCriteriaMeet={onlyBuyingCriteriaMeet}
-      onlyMissingPrice={onlyMissingPrice}
-    />
-  );
+  const qs = homeQueryStringFrom(q);
+  redirect(`/${qs ? `?${qs}` : ""}`);
 }
-

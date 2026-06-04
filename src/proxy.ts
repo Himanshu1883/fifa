@@ -107,11 +107,15 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     "/",
+    "/last-minute",
     "/events/:path*",
     "/gmail/:path*",
     "/settings/:path*",
     "/buying-criteria/:path*",
     "/resale/:path*",
+    "/sb-listings/:path*",
+    "/sb-push-settings/:path*",
+    "/listing-changes/:path*",
     "/undetectable/:path*",
     "/admin/:path*",
     "/pending-approval",

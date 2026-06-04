@@ -15,20 +15,19 @@ type Props = {
   searchParams: Promise<HomeSearchParams>;
 };
 
-/** Default home: Resale Marketplace. */
-export default async function Home({ searchParams }: Props) {
+export default async function LastMinutePage({ searchParams }: Props) {
   const q = await searchParams;
   const kindRaw = (firstQs(q.kind) ?? "").trim();
-  if (kindRaw && parseHomeSockKindFilter(q) === "LAST_MINUTE") {
+  if (kindRaw && parseHomeSockKindFilter(q) === "RESALE") {
     const qs = homeQueryStringFrom(q);
-    redirect(`${homeBasePathForKind("LAST_MINUTE")}${qs ? `?${qs}` : ""}`);
+    redirect(`${homeBasePathForKind("RESALE")}${qs ? `?${qs}` : ""}`);
   }
   const onlyBuyingCriteriaMeet = firstQs(q.bc) === "1";
   const onlyMissingPrice = firstQs(q.mp) === "1";
   return (
     <HomePage
       searchParams={Promise.resolve(q)}
-      kind="RESALE"
+      kind="LAST_MINUTE"
       onlyBuyingCriteriaMeet={onlyBuyingCriteriaMeet}
       onlyMissingPrice={onlyMissingPrice}
     />
