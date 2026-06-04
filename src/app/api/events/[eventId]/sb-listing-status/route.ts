@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSeatsBrokersConfig } from "@/lib/seatsbrokers-config";
+import { repairStaleSbDeleteLogs } from "@/lib/sb-listing-delete";
 import { reconcileSbListingsAfterSockSync } from "@/lib/sb-listing-reconcile";
 import { loadSbListingStatusForEvent } from "@/lib/sb-listing-status";
 
@@ -20,12 +21,20 @@ export async function GET(_req: Request, ctx: { params: Promise<{ eventId: strin
       console.warn("[sb-listing-status] reconcile failed", reconcileErr);
     }
 
+    let repair: Awaited<ReturnType<typeof repairStaleSbDeleteLogs>> | undefined;
+    try {
+      repair = await repairStaleSbDeleteLogs({ eventId: id });
+    } catch (repairErr) {
+      console.warn("[sb-listing-status] stale delete repair failed", repairErr);
+    }
+
     const status = await loadSbListingStatusForEvent(id);
     return NextResponse.json({
       ok: true,
       configured: Boolean(getSeatsBrokersConfig()),
       ...status,
       reconcile,
+      repair,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

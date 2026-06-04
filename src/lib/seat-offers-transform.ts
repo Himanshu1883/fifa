@@ -1,11 +1,25 @@
 import { priceToNumber, sockAmountToUsd } from "@/lib/format-usd";
 import { applyMarkupPercentToCents } from "@/lib/markup";
 import {
+  DEFAULT_SB_PUSH_SINGLE_RULES,
+  DEFAULT_SB_PUSH_TOGETHER_RULES,
+  mapQuantityWithRules,
+  runtimeFromConfig,
+  type SbPushRulesRuntime,
+} from "@/lib/sb-push-rules-settings-types";
+import {
   groupSockAvailableRows,
   listingKeyForSockRow,
   type SockAvailableRowLike,
   type SockAvailableSeatGroup,
 } from "@/lib/sock-available-grouping";
+
+const DEFAULT_PUSH_RUNTIME = runtimeFromConfig({
+  togetherRules: DEFAULT_SB_PUSH_TOGETHER_RULES,
+  singleRules: DEFAULT_SB_PUSH_SINGLE_RULES,
+  autoDeleteOnScrapeRemoval: true,
+  updatedAt: null,
+});
 
 /** Single seat vs consecutive-seat block (domain: togetherCount >= 2). */
 export type SeatOfferType = "single" | "together";
@@ -102,54 +116,16 @@ type PriceBucket = {
   originalCount: number;
 };
 
-/** Contiguous runs in same block + price (togetherCount >= 2). */
-const TOGETHER_QUANTITY_MAP: Readonly<Record<number, number>> = {
-  4: 1,
-  5: 2,
-  6: 2,
-  7: 4,
-  10: 4,
-};
-
-/** Non-contiguous seats in same block + price (togetherCount === 1 per group). */
-const SINGLE_QUANTITY_MAP: Readonly<Record<number, number>> = {
-  4: 1,
-  5: 2,
-  6: 2,
-  7: 2,
-};
-
 /**
  * Quantity transform for aggregated seat offers at one price + type.
- *
- * Together (contiguous seats, same block, same price):
- *
- * | Input N | Output |
- * |---------|--------|
- * | 4       | 1      |
- * | 5       | 2      |
- * | 6       | 2      |
- * | 7       | 4      |
- * | 10      | 4      |
- *
- * Single (single seats in block, same price):
- *
- * | Input N | Output |
- * |---------|--------|
- * | 4       | 1      |
- * | 5       | 2      |
- * | 6       | 2      |
- * | 7       | 2      |
- *
- * Offer type comes from sock-available grouping: consecutive runs are "together";
- * isolated seats are "single". Unlisted counts pass through unchanged.
- * Buckets with transformedCount <= 0 are omitted from the API response.
+ * Rules come from Push rules settings (or defaults when runtime omitted).
  */
-export function mapAggregatedSeatOfferQuantity(inputCount: number, offerType: SeatOfferType): number {
-  if (!Number.isFinite(inputCount) || inputCount <= 0) return 0;
-
-  const table = offerType === "together" ? TOGETHER_QUANTITY_MAP : SINGLE_QUANTITY_MAP;
-  return table[inputCount] ?? inputCount;
+export function mapAggregatedSeatOfferQuantity(
+  inputCount: number,
+  offerType: SeatOfferType,
+  runtime: SbPushRulesRuntime = DEFAULT_PUSH_RUNTIME,
+): number {
+  return mapQuantityWithRules(inputCount, offerType, runtime);
 }
 
 function amountToUsd(amount: string | null): number | null {
@@ -347,7 +323,10 @@ export function applyMarkupPercentToTransformResult(
   };
 }
 
-export function transformSeatOffersFromSockRows(rows: SockAvailableRowLike[]): TransformSeatOffersResult {
+export function transformSeatOffersFromSockRows(
+  rows: SockAvailableRowLike[],
+  runtime: SbPushRulesRuntime = DEFAULT_PUSH_RUNTIME,
+): TransformSeatOffersResult {
   const grouped = groupSockAvailableRows(rows);
   const buckets = aggregateGroups(grouped);
   const offers: TransformedSeatOffer[] = [];
@@ -355,7 +334,7 @@ export function transformSeatOffersFromSockRows(rows: SockAvailableRowLike[]): T
   let skippedEmptyBuckets = 0;
 
   for (const bucket of buckets) {
-    const mappedCount = mapAggregatedSeatOfferQuantity(bucket.originalCount, bucket.offerType);
+    const mappedCount = mapAggregatedSeatOfferQuantity(bucket.originalCount, bucket.offerType, runtime);
     const priceUsd = amountToUsd(bucket.priceRaw);
     const wasTransformed = bucket.originalCount !== mappedCount;
 

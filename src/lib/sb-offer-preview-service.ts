@@ -3,7 +3,7 @@ import {
   SEATS_BROKERS_PUSH_INVENTORY_KIND,
 } from "@/lib/event-seat-offers-service";
 import { resolveOfferForSeatIds } from "@/lib/sb-offer-match";
-import { describeQuantityRule } from "@/lib/sb-push-transform-rules";
+import { describeQuantityRule } from "@/lib/sb-push-transform-rules-server";
 import {
   listingDedupeKeysForMappedTicket,
   listingFingerprintForOffer,
@@ -166,7 +166,7 @@ export async function loadSbOfferPreviewForSeatIds(
         categoryName: s.categoryName,
       })),
     },
-    quantityRule: describeQuantityRule(offer.offerType, offer.originalCount, offer.transformedCount),
+    quantityRule: await describeQuantityRule(offer.offerType, offer.originalCount, offer.transformedCount),
     ticket: toSbTicketPreviewPayload(ticket),
     warnings,
     alreadyPushed,

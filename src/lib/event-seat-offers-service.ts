@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { parseMarkupPercentInput } from "@/lib/markup";
 import { getPersistedMarkupPercent } from "@/lib/markup-settings";
+import { getSbPushRulesRuntime } from "@/lib/sb-push-rules-settings";
 import {
   applyMarkupPercentToTransformResult,
   transformSeatOffersFromSockRows,
@@ -94,7 +95,8 @@ export async function loadTransformedSeatOffersForEvent(
     kind: r.kind,
   }));
 
-  const transformed = transformSeatOffersFromSockRows(payload);
+  const pushRules = await getSbPushRulesRuntime();
+  const transformed = transformSeatOffersFromSockRows(payload, pushRules);
   const markupPercent = await resolveMarkupPercentForOffers(options.markupPercent ?? "persisted");
   const withMarkup = applyMarkupPercentToTransformResult(transformed, markupPercent);
 

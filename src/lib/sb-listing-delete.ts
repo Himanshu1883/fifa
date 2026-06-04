@@ -4,9 +4,16 @@ import {
 } from "@/lib/sb-listing-push-log-query";
 import type { SbListingStatusEntry } from "@/lib/sb-listing-status";
 import { prisma } from "@/lib/prisma";
-import { sbDeleteTicket } from "@/lib/seatsbrokers-client";
-import { getSeatsBrokersConfig } from "@/lib/seatsbrokers-config";
-import { extractSbTicketId } from "@/lib/sb-ticket-id";
+import { sbDeleteTicket, sbListTickets } from "@/lib/seatsbrokers-client";
+import { getSeatsBrokersConfig, type SeatsBrokersConfig } from "@/lib/seatsbrokers-config";
+import {
+  collectSbTicketIdsFromListResponse,
+  extractSbTicketId,
+  isSbDeleteAlreadyGoneError,
+  isSbTicketOnMatch,
+  sbTicketIdVariants,
+  sbTicketIdsMatch,
+} from "@/lib/sb-ticket-id";
 
 const SB_PUSH_CLAIM_MARKER = "__sb_push_claim__";
 
@@ -73,18 +80,71 @@ function entryFromDeletedLog(log: {
   };
 }
 
-function ticketIdVariants(ticketId: string): string[] {
-  const t = ticketId.trim();
-  if (!t) return [];
-  const out = new Set<string>([t]);
-  if (/^\d+$/.test(t)) out.add(String(Number.parseInt(t, 10)));
-  return [...out];
+const ticketIdVariants = sbTicketIdVariants;
+const ticketIdsMatch = sbTicketIdsMatch;
+
+const matchTicketCache = new Map<string, Promise<Set<string> | null>>();
+
+async function ticketIdsOnSbMatch(matchId: string, config: SeatsBrokersConfig): Promise<Set<string> | null> {
+  const key = matchId.trim();
+  if (!key) return null;
+  let pending = matchTicketCache.get(key);
+  if (!pending) {
+    pending = (async () => {
+      const res = await sbListTickets(key, config);
+      if (!res.ok) return null;
+      return collectSbTicketIdsFromListResponse(res.data);
+    })();
+    matchTicketCache.set(key, pending);
+    pending.finally(() => {
+      matchTicketCache.delete(key);
+    });
+  }
+  return pending;
 }
 
-function ticketIdsMatch(a: string, b: string): boolean {
-  const va = ticketIdVariants(a);
-  const vb = ticketIdVariants(b);
-  return va.some((x) => vb.includes(x));
+async function isTicketStillOnSb(
+  ticketId: string,
+  matchId: string,
+  config: SeatsBrokersConfig,
+): Promise<boolean | null> {
+  const ids = await ticketIdsOnSbMatch(matchId, config);
+  if (ids === null) return null;
+  return isSbTicketOnMatch(ticketId, ids);
+}
+
+async function markLogDeletedOnSb(
+  logId: number,
+  httpStatus: number | null,
+): Promise<{
+  id: number;
+  sbTicketId: string | null;
+  listingFingerprint: string;
+  requestSummary: unknown;
+  inventoryRemovedAt: Date | null;
+  sbDeletedAt: Date | null;
+  sbDeleteError: string | null;
+  createdAt: Date;
+}> {
+  const now = new Date();
+  return prisma.sbListingPushLog.update({
+    where: { id: logId },
+    data: {
+      sbDeletedAt: now,
+      sbDeleteHttpStatus: httpStatus,
+      sbDeleteError: null,
+    },
+    select: {
+      id: true,
+      sbTicketId: true,
+      listingFingerprint: true,
+      requestSummary: true,
+      inventoryRemovedAt: true,
+      sbDeletedAt: true,
+      sbDeleteError: true,
+      createdAt: true,
+    },
+  });
 }
 
 const pushLogSelect = {
@@ -251,6 +311,17 @@ export async function deleteSbListingForEvent(
 
   const now = new Date();
 
+  const stillOnSb = await isTicketStillOnSb(ticketId, matchId, config);
+  if (stillOnSb === false) {
+    const updated = await markLogDeletedOnSb(log.id, null);
+    return {
+      ok: true,
+      logId: updated.id,
+      sbTicketId: ticketId,
+      entry: entryFromDeletedLog(updated),
+    };
+  }
+
   if (options.markInventoryRemoved && !log.inventoryRemovedAt) {
     try {
       await prisma.sbListingPushLog.update({
@@ -300,6 +371,20 @@ export async function deleteSbListingForEvent(
         },
       });
     } else {
+      const goneOnSb =
+        isSbDeleteAlreadyGoneError(deleteRes.error, deleteRes.status) ||
+        (await isTicketStillOnSb(ticketId, matchId, config)) === false;
+
+      if (goneOnSb) {
+        updated = await markLogDeletedOnSb(log.id, deleteRes.status || null);
+        return {
+          ok: true,
+          logId: updated.id,
+          sbTicketId: ticketId,
+          entry: entryFromDeletedLog(updated),
+        };
+      }
+
       updated = await prisma.sbListingPushLog.update({
         where: { id: log.id },
         data: {
@@ -336,4 +421,43 @@ export async function deleteSbListingForEvent(
     sbTicketId: ticketId,
     entry: entryFromDeletedLog(updated),
   };
+}
+
+/**
+ * Fix stale `delete_failed` rows when the listing is already gone on SeatsBrokers
+ * (e.g. sandbox was down, then deleted manually or on a later retry).
+ */
+export async function repairStaleSbDeleteLogs(options?: {
+  eventId?: number;
+}): Promise<{ checked: number; markedDeleted: number }> {
+  const config = getSeatsBrokersConfig();
+  if (!config) return { checked: 0, markedDeleted: 0 };
+
+  const stale = await prisma.sbListingPushLog.findMany({
+    where: {
+      ok: true,
+      sbDeletedAt: null,
+      inventoryRemovedAt: { not: null },
+      sbDeleteError: { not: null },
+      sbTicketId: { not: null },
+      ...sbPushLogExcludingClaimWhere(),
+      ...(options?.eventId != null ? { eventId: options.eventId } : {}),
+    },
+    select: { id: true, sbTicketId: true, matchId: true },
+  });
+
+  let markedDeleted = 0;
+  for (const row of stale) {
+    const ticketId = row.sbTicketId?.trim();
+    const matchId = row.matchId?.trim();
+    if (!ticketId || !matchId) continue;
+
+    const onSb = await isTicketStillOnSb(ticketId, matchId, config);
+    if (onSb !== false) continue;
+
+    await markLogDeletedOnSb(row.id, null);
+    markedDeleted++;
+  }
+
+  return { checked: stale.length, markedDeleted };
 }

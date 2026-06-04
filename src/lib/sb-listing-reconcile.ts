@@ -14,6 +14,7 @@ import {
 } from "@/lib/sb-listing-fingerprint";
 import type { TransformedSeatOffer } from "@/lib/seat-offers-transform";
 import { deleteSbListingForEvent } from "@/lib/sb-listing-delete";
+import { getSbPushRulesRuntime } from "@/lib/sb-push-rules-settings";
 import { getSeatsBrokersConfig } from "@/lib/seatsbrokers-config";
 
 const SB_PUSH_CLAIM_MARKER = "__sb_push_claim__";
@@ -77,6 +78,11 @@ export async function reconcileSbListingsAfterSockSync(eventId: number): Promise
   const config = getSeatsBrokersConfig();
   if (!config) {
     return { ran: false, skippedReason: "sb_not_configured", ...empty };
+  }
+
+  const pushRules = await getSbPushRulesRuntime();
+  if (!pushRules.autoDeleteOnScrapeRemoval) {
+    return { ran: false, skippedReason: "auto_delete_disabled", ...empty };
   }
 
   const loaded = await loadTransformedSeatOffersForEvent(eventId, {

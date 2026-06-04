@@ -1,6 +1,8 @@
 import "server-only";
 
+import { repairStaleSbDeleteLogs } from "@/lib/sb-listing-delete";
 import { findAllSbListingPushLogsForCatalog } from "@/lib/sb-listing-push-log-query";
+import { getSeatsBrokersConfig } from "@/lib/seatsbrokers-config";
 import { sourceSeatNumbersFromPushSummary } from "@/lib/sb-listing-fingerprint";
 import type { SbCatalogListing, SbCatalogMatch } from "@/lib/sb-listings-catalog-types";
 import type { SbListingUiStatus } from "@/lib/sb-listing-status";
@@ -91,6 +93,14 @@ function listingFromLog(row: {
 
 /** All SB listing push logs grouped by match (event), for the global catalog UI. */
 export async function loadSbListingsCatalog(): Promise<SbCatalogMatch[]> {
+  if (getSeatsBrokersConfig()) {
+    try {
+      await repairStaleSbDeleteLogs();
+    } catch (e) {
+      console.warn("[sb-listings-catalog] stale delete repair failed", e);
+    }
+  }
+
   const logs = await findAllSbListingPushLogsForCatalog();
 
   const eventIds = [...new Set(logs.map((l) => l.eventId))];

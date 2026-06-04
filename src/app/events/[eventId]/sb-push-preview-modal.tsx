@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { ModalPortal } from "@/app/modal-portal";
 import {
-  SB_PUSH_SINGLE_QUANTITY_RULES,
-  SB_PUSH_TOGETHER_QUANTITY_RULES,
-  SB_PUSH_TRANSFORM_RULES_DOC,
-} from "@/lib/sb-push-transform-rules";
+  DEFAULT_SB_PUSH_SINGLE_RULES,
+  DEFAULT_SB_PUSH_TOGETHER_RULES,
+  SB_PUSH_POLICY_DOC,
+  type SbPushQuantityRule,
+} from "@/lib/sb-push-rules-settings-types";
 import type { SbPushSuccessResult } from "@/app/events/[eventId]/sb-push-result-types";
 import { extractSbTicketId } from "@/lib/sb-ticket-id";
 import type { SbOfferPreviewResult } from "@/lib/sb-offer-preview-service";
@@ -79,6 +81,28 @@ export function SbPushPreviewModal(props: Props) {
   const [preview, setPreview] = useState<Extract<SbOfferPreviewResult, { ok: true }> | null>(null);
   const [pushSuccess, setPushSuccess] = useState<SbPushSuccessResult | null>(null);
   const [showRules, setShowRules] = useState(false);
+  const [liveQuantityRules, setLiveQuantityRules] = useState<{
+    together: SbPushQuantityRule[];
+    single: SbPushQuantityRule[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (!showRules) return;
+    let cancelled = false;
+    void fetch("/api/sb-push-rules-settings", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j: { config?: { togetherRules: SbPushQuantityRule[]; singleRules: SbPushQuantityRule[] } }) => {
+        if (cancelled || !j.config) return;
+        setLiveQuantityRules({
+          together: j.config.togetherRules,
+          single: j.config.singleRules,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [showRules]);
   const [showRaw, setShowRaw] = useState(false);
 
   const seatIdsKey = seatIdsKeyFrom(seatIds);
@@ -430,13 +454,28 @@ export function SbPushPreviewModal(props: Props) {
                 </button>
                 {showRules ? (
                   <div className="mt-3 space-y-3 rounded-xl border border-white/[0.08] bg-black/25 p-3 text-[11px] leading-relaxed text-zinc-400">
+                    <p>
+                      <Link
+                        href="/sb-push-settings"
+                        className="font-semibold text-[color:var(--ticketing-accent)] hover:underline"
+                      >
+                        Edit push rules
+                      </Link>{" "}
+                      (saved settings apply to this preview after reload).
+                    </p>
                     <ul className="list-disc space-y-1 pl-4">
-                      {Object.values(SB_PUSH_TRANSFORM_RULES_DOC).map((line) => (
+                      {Object.values(SB_PUSH_POLICY_DOC).map((line) => (
                         <li key={line}>{line}</li>
                       ))}
                     </ul>
-                    <RulesTable title="Together (consecutive, same block + price)" rows={SB_PUSH_TOGETHER_QUANTITY_RULES} />
-                    <RulesTable title="Single (non-consecutive, same block + price)" rows={SB_PUSH_SINGLE_QUANTITY_RULES} />
+                    <RulesTable
+                      title="Together (consecutive, same block + price)"
+                      rows={liveQuantityRules?.together ?? DEFAULT_SB_PUSH_TOGETHER_RULES}
+                    />
+                    <RulesTable
+                      title="Single (non-consecutive, same block + price)"
+                      rows={liveQuantityRules?.single ?? DEFAULT_SB_PUSH_SINGLE_RULES}
+                    />
                   </div>
                 ) : null}
               </div>

@@ -296,6 +296,17 @@ model SbAutoPushSettings {
   @@map("sb_auto_push_settings")
 }
 
+/// Singleton row `id = 1`: SB push quantity rules and scrape-delete behavior.
+model SbPushRulesSettings {
+  id                        Int      @id
+  togetherRules             Json     @map("together_rules")
+  singleRules               Json     @map("single_rules")
+  autoDeleteOnScrapeRemoval Boolean  @default(true) @map("auto_delete_on_scrape_removal")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  @@map("sb_push_rules_settings")
+}
+
 /// Events that have had at least one manual SB push — eligible for auto-push when global toggle is on.
 model SbEventAutoPush {
   eventId        Int      @id @map("event_id")

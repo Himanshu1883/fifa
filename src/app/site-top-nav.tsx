@@ -4,10 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const links = [
-  { href: "/", label: "Matches", exact: true },
+  { href: "/", label: "Matches", exact: true as const },
   { href: "/sb-listings", label: "SB Listings" },
+  { href: "/sb-push-settings", label: "Push rules" },
   { href: "/listing-changes", label: "Changes" },
 ] as const;
+
+function navLinkActive(pathname: string, href: string, exact?: boolean): boolean {
+  return exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
+}
 
 export function SiteTopNav() {
   const pathname = usePathname();
@@ -15,7 +20,7 @@ export function SiteTopNav() {
   return (
     <nav className="flex flex-wrap items-center gap-2" aria-label="Main">
       {links.map((link) => {
-        const active = link.exact ? pathname === link.href : pathname.startsWith(link.href);
+        const active = navLinkActive(pathname, link.href, "exact" in link ? link.exact : false);
         return (
           <Link
             key={link.href}
