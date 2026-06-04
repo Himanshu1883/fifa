@@ -33,6 +33,10 @@ export const SB_PUSH_POLICY_DOC = {
   seatSelection:
     "After quantity is reduced, seats are picked from the bucket (largest consecutive runs first for together).",
   markup: "Prices use persisted markup % from the home page unless overridden in the SB API panel.",
+  faceValue:
+    "face_value is sent on ticket/create (whole USD) from shop_event_category (block price, else category), else event_category_block_prices or prisma/catalogues snapshot, matched by FIFA category × block id or name. When lookup misses, face_value defaults to the SB listing price (after markup). Push is blocked only if both lookup and listing price are unavailable.",
+  restricted:
+    "Offers with “restricted” in the FIFA category name are never pushed (preview and live push return an error).",
   dedupe: "Same physical seat ids cannot be pushed twice to SB for this event.",
   removal:
     "When a pushed listing disappears from the next resale scrape, it is deleted on SB and shown as removed in the UI (when enabled below).",

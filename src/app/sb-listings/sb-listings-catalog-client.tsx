@@ -2,6 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  SbCatalogListingDetailsModal,
+  SbCatalogListingInfoButton,
+} from "@/app/sb-listings/sb-catalog-listing-details-modal";
 import type { SbCatalogListing, SbCatalogMatch } from "@/lib/sb-listings-catalog-types";
 import { formatMatchDate } from "@/lib/sb-listings-catalog-types";
 import type { SbListingUiStatus } from "@/lib/sb-listing-status";
@@ -119,6 +123,10 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [detailsListing, setDetailsListing] = useState<{
+    listing: SbCatalogListing;
+    eventName: string;
+  } | null>(null);
 
   const refreshCatalog = useCallback(async () => {
     setLoading(true);
@@ -489,6 +497,9 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
                               <th className="px-4 py-3 font-medium">Status</th>
                               <th className="px-4 py-3 font-medium">Timeline</th>
                               <th className="px-4 py-3 text-right font-medium">Actions</th>
+                              <th className="w-12 px-2 py-3 text-center font-medium">
+                                <span className="sr-only">Details</span>
+                              </th>
                             </tr>
                           </thead>
                           <tbody>
@@ -555,6 +566,13 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
                                       <span className="text-xs text-zinc-600">—</span>
                                     )}
                                   </td>
+                                  <td className="whitespace-nowrap px-2 py-3 text-center">
+                                    <SbCatalogListingInfoButton
+                                      onClick={() =>
+                                        setDetailsListing({ listing, eventName: match.eventName })
+                                      }
+                                    />
+                                  </td>
                                 </tr>
                               );
                             })}
@@ -569,6 +587,13 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
           </div>
         )}
       </div>
+
+      <SbCatalogListingDetailsModal
+        open={detailsListing != null}
+        listing={detailsListing?.listing ?? null}
+        eventName={detailsListing?.eventName ?? ""}
+        onClose={() => setDetailsListing(null)}
+      />
     </div>
   );
 }

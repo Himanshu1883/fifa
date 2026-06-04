@@ -19,7 +19,9 @@ import {
 } from "@/lib/sb-listing-fingerprint";
 import { sbPushLogExcludingClaimWhere } from "@/lib/sb-listing-push-log-query";
 import { computeDateToShip } from "@/lib/sb-date-to-ship";
+import { formatSbMissingFaceValueWarning, loadSbFaceValueLookup } from "@/lib/sb-face-value";
 import { loadSbMatchCatalogForOffers } from "@/lib/seatsbrokers-catalog";
+import { offerContainsRestrictedSeat, SB_RESTRICTED_TICKET_ERROR } from "@/lib/sb-restricted-tickets";
 import { sbCreateTicket } from "@/lib/seatsbrokers-client";
 import {
   configWithTicketType,
@@ -60,6 +62,7 @@ export type ExecuteSbPushOptions = {
   config: SeatsBrokersConfig;
   dateToShip: string | null;
   catalog: Awaited<ReturnType<typeof loadSbMatchCatalogForOffers>>;
+  faceValueLookup: Awaited<ReturnType<typeof loadSbFaceValueLookup>>;
   trigger: "MANUAL" | "AUTO";
 };
 
@@ -311,6 +314,7 @@ export async function executeSbTicketPush(
     config,
     dateToShip,
     catalog,
+    faceValueLookup,
     trigger,
   } = options;
 
@@ -323,8 +327,43 @@ export async function executeSbTicketPush(
   const seenInBatch = new Set<string>();
 
   for (const raw of tickets) {
-    const enriched = enrichMappedTicketForPush(raw, offers, matchId, config, dateToShip, catalog);
-    if (!enriched) continue;
+    const offerForRaw = offers[raw.offerIndex];
+    if (offerForRaw && offerContainsRestrictedSeat(offerForRaw)) {
+      failed++;
+      const summary = raw.summary;
+      const fingerprint = listingFingerprintForMappedTicket(offerForRaw, raw);
+      results.push({
+        offerIndex: raw.offerIndex,
+        ok: false,
+        summary,
+        listingFingerprint: fingerprint,
+        error: SB_RESTRICTED_TICKET_ERROR,
+      });
+      continue;
+    }
+
+    const enriched = enrichMappedTicketForPush(
+      raw,
+      offers,
+      matchId,
+      config,
+      dateToShip,
+      catalog,
+      faceValueLookup,
+    );
+    if (!enriched) {
+      if (offerForRaw && offerContainsRestrictedSeat(offerForRaw)) {
+        failed++;
+        results.push({
+          offerIndex: raw.offerIndex,
+          ok: false,
+          summary: raw.summary,
+          listingFingerprint: listingFingerprintForMappedTicket(offerForRaw, raw),
+          error: SB_RESTRICTED_TICKET_ERROR,
+        });
+      }
+      continue;
+    }
 
     const offer = offers[enriched.offerIndex];
     const sourceSeats = sourceSeatsForPush(offer);
@@ -361,6 +400,37 @@ export async function executeSbTicketPush(
       match_id: enriched.fields.match_id?.trim() || matchId,
     });
     const category = fields.ticket_category?.trim() ?? "";
+
+    const priceStr = fields.price?.trim() ?? "";
+    if (!fields.face_value?.trim() && priceStr && priceStr !== "0") {
+      fields.face_value = priceStr;
+    }
+    const faceValue = fields.face_value?.trim() ?? "";
+    if (!faceValue) {
+      failed++;
+      const error = formatSbMissingFaceValueWarning(faceValueLookup);
+      const logId = await writePushLog({
+        eventId,
+        matchId,
+        offerIndex: enriched.offerIndex,
+        listingFingerprint: fingerprint,
+        trigger,
+        ok: false,
+        fields,
+        summary,
+        error,
+      });
+      results.push({
+        offerIndex: enriched.offerIndex,
+        ok: false,
+        fields,
+        summary,
+        error,
+        listingFingerprint: fingerprint,
+        logId,
+      });
+      continue;
+    }
 
     if (!category || isLikelyFifaSnowflakeId(category)) {
       failed++;
@@ -517,10 +587,23 @@ export async function pushSingleSbOfferForEvent(
   if (!selectedOffer) {
     return { ok: false, error: `Offer index ${offerIndex} is out of range.`, offerIndex };
   }
+  if (offerContainsRestrictedSeat(selectedOffer)) {
+    return { ok: false, error: SB_RESTRICTED_TICKET_ERROR, offerIndex };
+  }
 
   const dateToShip = computeDateToShip(loaded.event.eventDate);
-  const catalog = await loadSbMatchCatalogForOffers(matchId, offers, config);
-  const mapped = mapOffersToSeatsBrokersCreateTickets(offers, matchId, config, dateToShip, catalog);
+  const [catalog, faceValueLookup] = await Promise.all([
+    loadSbMatchCatalogForOffers(matchId, offers, config),
+    loadSbFaceValueLookup(eventId),
+  ]);
+  const mapped = mapOffersToSeatsBrokersCreateTickets(
+    offers,
+    matchId,
+    config,
+    dateToShip,
+    catalog,
+    faceValueLookup,
+  );
   const rawTicket = mapped.find((m) => m.offerIndex === offerIndex);
   if (!rawTicket) {
     return { ok: false, error: "This listing cannot be mapped for SeatsBrokers push.", offerIndex };
@@ -543,6 +626,7 @@ export async function pushSingleSbOfferForEvent(
     config,
     dateToShip,
     catalog,
+    faceValueLookup,
     trigger: "MANUAL",
   });
 
@@ -633,8 +717,18 @@ export async function runSbAutoPushForEvent(eventId: number): Promise<SbAutoPush
 
   const offers = loaded.transform.offers.filter((o) => o.kind === SEATS_BROKERS_PUSH_INVENTORY_KIND);
   const dateToShip = computeDateToShip(loaded.event.eventDate);
-  const catalog = await loadSbMatchCatalogForOffers(matchId, offers, config);
-  const allMapped = mapOffersToSeatsBrokersCreateTickets(offers, matchId, config, dateToShip, catalog);
+  const [catalog, faceValueLookup] = await Promise.all([
+    loadSbMatchCatalogForOffers(matchId, offers, config),
+    loadSbFaceValueLookup(eventId),
+  ]);
+  const allMapped = mapOffersToSeatsBrokersCreateTickets(
+    offers,
+    matchId,
+    config,
+    dateToShip,
+    catalog,
+    faceValueLookup,
+  );
 
   const existing = await getPushedListingDedupeKeys(eventId);
   const toPush = allMapped.filter((m) => {
@@ -655,6 +749,7 @@ export async function runSbAutoPushForEvent(eventId: number): Promise<SbAutoPush
     config,
     dateToShip,
     catalog,
+    faceValueLookup,
     trigger: "AUTO",
   });
 

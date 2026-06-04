@@ -7,7 +7,11 @@ export type SeatsBrokersApiResult<T = unknown> =
 
 const SB_FETCH_TIMEOUT_MS = 25_000;
 
-function resolveUrl(config: SeatsBrokersConfig, path: string): string {
+export const SEATS_BROKERS_PATH_TICKET_CREATE = "ticket/create";
+export const SEATS_BROKERS_PATH_TICKET_DELETE = "ticket/delete";
+
+/** Full URL for a SeatsBrokers API path (same resolution as push/delete calls). */
+export function resolveSeatsBrokersUrl(config: SeatsBrokersConfig, path: string): string {
   const clean = path.replace(/^\//, "");
   return new URL(clean, config.baseUrl).toString();
 }
@@ -35,7 +39,7 @@ async function parseResponse(res: Response): Promise<SeatsBrokersApiResult> {
 
 async function sbFetch(config: SeatsBrokersConfig, path: string, init: RequestInit): Promise<SeatsBrokersApiResult> {
   try {
-    const res = await fetch(resolveUrl(config, path), {
+    const res = await fetch(resolveSeatsBrokersUrl(config, path), {
       ...init,
       cache: "no-store",
       signal: init.signal ?? AbortSignal.timeout(SB_FETCH_TIMEOUT_MS),
@@ -91,7 +95,7 @@ export async function sbCreateTicket(
   fields: Record<string, string>,
   config?: SeatsBrokersConfig,
 ): Promise<SeatsBrokersApiResult> {
-  return postForm(config ?? requireSeatsBrokersConfig(), "ticket/create", fields);
+  return postForm(config ?? requireSeatsBrokersConfig(), SEATS_BROKERS_PATH_TICKET_CREATE, fields);
 }
 
 /** Remove a listing from SeatsBrokers when it no longer appears in scraped inventory. */
@@ -100,7 +104,7 @@ export async function sbDeleteTicket(
   matchId: string,
   config?: SeatsBrokersConfig,
 ): Promise<SeatsBrokersApiResult> {
-  return postForm(config ?? requireSeatsBrokersConfig(), "ticket/delete", {
+  return postForm(config ?? requireSeatsBrokersConfig(), SEATS_BROKERS_PATH_TICKET_DELETE, {
     ticket_id: ticketId,
     match_id: matchId,
   });

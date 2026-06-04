@@ -193,6 +193,12 @@
               "type": "text"
             },
             {
+              "key": "face_value",
+              "value": "80",
+              "type": "text",
+              "description": "Face value in USD (whole dollars). App resolves from shop_event_category webhook."
+            },
+            {
               "key": "ticket_details",
               "value": "1,2",
               "type": "text",

@@ -1,4 +1,10 @@
 import { sockAmountToUsd } from "@/lib/format-usd";
+import {
+  formatFaceValueForSb,
+  resolveFaceValueUsdForSb,
+  type SbFaceValueLookup,
+} from "@/lib/sb-face-value";
+import { offerContainsRestrictedSeat } from "@/lib/sb-restricted-tickets";
 import type { SbCategoryNum } from "@/lib/sb-category";
 import {
   isValidSbTicketBlockValue,
@@ -40,6 +46,10 @@ export type MappedSeatsBrokersTicket = {
     sourceSeatIds?: string[];
     /** Seat numbers on that UI row (e.g. 9,10,11,12) for table lookup. */
     sourceSeatNumbers?: string[];
+    /** Face value USD from shop/catalogue lookup, or listing price when lookup missed. */
+    faceValueUsd?: number | null;
+    /** True when face_value was set from listing price because lookup missed. */
+    faceValueDefaultedToPrice?: boolean;
   };
 };
 
@@ -63,10 +73,22 @@ export function mapOfferToSeatsBrokersCreateTicket(
   offerIndex: number,
   dateToShip: string | null = null,
   catalog: SbMatchCatalog | null = null,
+  faceValueLookup: SbFaceValueLookup | null = null,
 ): MappedSeatsBrokersTicket | null {
   if (offer.transformedCount <= 0 || offer.seats.length === 0) return null;
+  if (offerContainsRestrictedSeat(offer)) return null;
 
   const first = offer.seats[0]!;
+  const priceUsd = resolveOfferPriceUsd(offer);
+  const { faceValueUsd, defaultedToListingPrice } = resolveFaceValueUsdForSb(
+    faceValueLookup,
+    first.categoryId,
+    first.blockId,
+    first.categoryName,
+    first.blockName,
+    priceUsd,
+  );
+  const faceValueField = formatFaceValueForSb(faceValueUsd);
   const seatNumbers = offer.seats.map((s) => s.seatNumber.trim()).filter(Boolean);
   const ticketDetails = seatNumbers.join(",");
   const splitType =
@@ -90,11 +112,14 @@ export function mapOfferToSeatsBrokersCreateTicket(
     ticket_category: sbCategoryId,
     home_town: config.defaultHomeTown,
     price_type: config.priceType,
-    price: formatPriceUsdForSb(resolveOfferPriceUsd(offer)),
+    price: formatPriceUsdForSb(priceUsd),
     ticket_details: ticketDetails,
     split_type: splitType,
   };
   if (dateToShip) fields.date_to_ship = dateToShip;
+  if (priceUsd != null && Number.isFinite(priceUsd) && priceUsd > 0) {
+    fields.face_value = faceValueField ?? formatPriceUsdForSb(priceUsd);
+  }
 
   return {
     offerIndex,
@@ -117,6 +142,8 @@ export function mapOfferToSeatsBrokersCreateTicket(
       row: first.row,
       seatNumbers,
       seatIds: offer.seats.map((s) => s.seatId.trim()).filter(Boolean),
+      faceValueUsd,
+      faceValueDefaultedToPrice: defaultedToListingPrice,
     },
   };
 }
@@ -127,10 +154,19 @@ export function mapOffersToSeatsBrokersCreateTickets(
   config: SeatsBrokersConfig,
   dateToShip: string | null = null,
   catalog: SbMatchCatalog | null = null,
+  faceValueLookup: SbFaceValueLookup | null = null,
 ): MappedSeatsBrokersTicket[] {
   const out: MappedSeatsBrokersTicket[] = [];
   for (let i = 0; i < offers.length; i++) {
-    const mapped = mapOfferToSeatsBrokersCreateTicket(offers[i]!, matchId, config, i, dateToShip, catalog);
+    const mapped = mapOfferToSeatsBrokersCreateTicket(
+      offers[i]!,
+      matchId,
+      config,
+      i,
+      dateToShip,
+      catalog,
+      faceValueLookup,
+    );
     if (mapped) out.push(mapped);
   }
   return out;
@@ -200,9 +236,11 @@ export function enrichMappedTicketForPush(
   config: SeatsBrokersConfig,
   dateToShip: string | null,
   catalog: SbMatchCatalog | null,
+  faceValueLookup: SbFaceValueLookup | null = null,
 ): MappedSeatsBrokersTicket | null {
   const offer = offers[ticket.offerIndex];
   if (!offer) return null;
+  if (offerContainsRestrictedSeat(offer)) return null;
 
   const baseline = mapOfferToSeatsBrokersCreateTicket(
     offer,
@@ -211,6 +249,7 @@ export function enrichMappedTicketForPush(
     ticket.offerIndex,
     dateToShip,
     catalog,
+    faceValueLookup,
   );
   if (!baseline) return null;
 
@@ -235,6 +274,7 @@ export function enrichMappedTicketForPush(
   const sbBlockCode = sbBlockCodeForRowId(ticketBlock, baseline.summary.sbBlockOptions);
 
   const clientPrice = clientFields.price?.trim();
+  const clientFaceValue = clientFields.face_value?.trim();
   const clientTicketType = clientFields.ticket_type?.trim();
   const clientSplitType = clientFields.split_type?.trim();
   const clientDateToShip = clientFields.date_to_ship?.trim();
@@ -244,10 +284,19 @@ export function enrichMappedTicketForPush(
     match_id: matchId,
     ticket_category: ticketCategory,
     ...(clientPrice ? { price: clientPrice } : {}),
+    ...(clientFaceValue ? { face_value: clientFaceValue } : {}),
     ...(clientTicketType ? { ticket_type: clientTicketType } : {}),
     ...(clientSplitType ? { split_type: clientSplitType } : {}),
     ...(clientDateToShip ? { date_to_ship: clientDateToShip } : {}),
   };
+  if (!fields.face_value?.trim()) {
+    if (baseline.fields.face_value) {
+      fields.face_value = baseline.fields.face_value;
+    } else {
+      const priceStr = fields.price?.trim() ?? "";
+      if (priceStr && priceStr !== "0") fields.face_value = priceStr;
+    }
+  }
 
   const sbBlockMatched =
     Boolean(ticketBlock) &&

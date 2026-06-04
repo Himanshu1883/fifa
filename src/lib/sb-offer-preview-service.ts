@@ -10,7 +10,9 @@ import {
 } from "@/lib/sb-listing-fingerprint";
 import { resolveAlreadyPushedOnSb } from "@/lib/seatsbrokers-push-service";
 import { computeDateToShip } from "@/lib/sb-date-to-ship";
+import { formatSbFaceValueDefaultedToPriceNote, formatSbMissingFaceValueWarning, loadSbFaceValueLookup } from "@/lib/sb-face-value";
 import { loadSbMatchCatalogForOffers } from "@/lib/seatsbrokers-catalog";
+import { offerContainsRestrictedSeat, SB_RESTRICTED_TICKET_ERROR } from "@/lib/sb-restricted-tickets";
 import { configWithTicketType, getSeatsBrokersConfig } from "@/lib/seatsbrokers-config";
 import {
   enrichMappedTicketForPush,
@@ -88,16 +90,32 @@ export async function loadSbOfferPreviewForSeatIds(
 
   const { offerIndex, matchKind, clickedSeatIds } = resolved;
   const offer = offers[offerIndex]!;
+
+  if (offerContainsRestrictedSeat(offer)) {
+    return { ok: false, error: SB_RESTRICTED_TICKET_ERROR };
+  }
+
   const dateToShip = computeDateToShip(loaded.event.eventDate);
-  const catalog = await loadSbMatchCatalogForOffers(matchId, offers, config);
-  const mapped = mapOffersToSeatsBrokersCreateTickets(offers, matchId, config, dateToShip, catalog);
+  const [catalog, faceValueLookup] = await Promise.all([
+    loadSbMatchCatalogForOffers(matchId, offers, config),
+    loadSbFaceValueLookup(eventId),
+  ]);
+  const mapped = mapOffersToSeatsBrokersCreateTickets(
+    offers,
+    matchId,
+    config,
+    dateToShip,
+    catalog,
+    faceValueLookup,
+  );
   const rawTicket = mapped.find((m) => m.offerIndex === offerIndex);
   if (!rawTicket) {
     return { ok: false, error: "Cannot map this offer to SeatsBrokers (block/category/price)." };
   }
 
   const ticket =
-    enrichMappedTicketForPush(rawTicket, offers, matchId, config, dateToShip, catalog) ?? rawTicket;
+    enrichMappedTicketForPush(rawTicket, offers, matchId, config, dateToShip, catalog, faceValueLookup) ??
+    rawTicket;
 
   const warnings: string[] = [];
   const price = ticket.summary.priceUsd;
@@ -114,6 +132,11 @@ export async function loadSbOfferPreviewForSeatIds(
   }
   if (!String(ticket.fields.date_to_ship ?? "").trim()) {
     warnings.push("date_to_ship is missing — set the event date on this match.");
+  }
+  if (ticket.summary.faceValueDefaultedToPrice) {
+    warnings.push(formatSbFaceValueDefaultedToPriceNote());
+  } else if (!String(ticket.fields.face_value ?? "").trim()) {
+    warnings.push(formatSbMissingFaceValueWarning(faceValueLookup));
   }
 
   const dedupeKeys = listingDedupeKeysForMappedTicket(offer, ticket);

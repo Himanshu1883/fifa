@@ -259,7 +259,11 @@ export function SbPushPreviewModal(props: Props) {
   const existingListingId =
     pushSuccess?.sbTicketId ?? preview?.existingSbTicketId ?? null;
   const showListingPanel = Boolean(pushSuccess || (alreadyOnSb && existingListingId));
-  const canPush = Boolean(preview && !alreadyOnSb && !pushSuccess);
+  const hasValidPrice = (() => {
+    const price = preview?.offer.priceUsd ?? preview?.ticket.summary.priceUsd;
+    return price != null && Number.isFinite(price) && price > 0;
+  })();
+  const canPush = Boolean(preview && !alreadyOnSb && !pushSuccess && hasValidPrice);
 
   const handleDone = () => {
     setPushSuccess(null);

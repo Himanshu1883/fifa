@@ -3,6 +3,11 @@ import "server-only";
 import { repairStaleSbDeleteLogs } from "@/lib/sb-listing-delete";
 import { findAllSbListingPushLogsForCatalog } from "@/lib/sb-listing-push-log-query";
 import { getSeatsBrokersConfig } from "@/lib/seatsbrokers-config";
+import {
+  resolveSeatsBrokersUrl,
+  SEATS_BROKERS_PATH_TICKET_CREATE,
+  SEATS_BROKERS_PATH_TICKET_DELETE,
+} from "@/lib/seatsbrokers-client";
 import { sourceSeatNumbersFromPushSummary } from "@/lib/sb-listing-fingerprint";
 import type { SbCatalogListing, SbCatalogMatch } from "@/lib/sb-listings-catalog-types";
 import type { SbListingUiStatus } from "@/lib/sb-listing-status";
@@ -46,6 +51,11 @@ function fieldsFromLog(requestFields: unknown): Record<string, string> {
   return out;
 }
 
+function summaryRecord(summary: unknown): Record<string, unknown> {
+  if (summary === null || typeof summary !== "object" || Array.isArray(summary)) return {};
+  return summary as Record<string, unknown>;
+}
+
 function listingFromLog(row: {
   id: number;
   matchId: string;
@@ -54,9 +64,14 @@ function listingFromLog(row: {
   requestFields: unknown;
   requestSummary: unknown;
   responseBody: unknown;
+  httpStatus: number | null;
+  errorMessage: string | null;
+  offerIndex: number | null;
+  listingFingerprint: string;
   inventoryRemovedAt?: Date | null;
   sbDeletedAt?: Date | null;
   sbDeleteError?: string | null;
+  sbDeleteHttpStatus?: number | null;
   createdAt: Date;
 }): SbCatalogListing {
   const fields = fieldsFromLog(row.requestFields);
@@ -65,6 +80,18 @@ function listingFromLog(row: {
   const seatNumbers = summarySeatNumbers(summary);
   const nums = seatNumbers.length > 0 ? seatNumbers : sourceNums;
   const sbTicketId = row.sbTicketId?.trim() || extractSbTicketId(row.responseBody) || null;
+  const config = getSeatsBrokersConfig();
+  const sbApiBaseUrl = config?.baseUrl ?? null;
+  const pushEndpoint = SEATS_BROKERS_PATH_TICKET_CREATE;
+  const pushApiUrl = config ? resolveSeatsBrokersUrl(config, pushEndpoint) : null;
+  const hasDeleteActivity =
+    row.inventoryRemovedAt != null ||
+    row.sbDeletedAt != null ||
+    row.sbDeleteError != null ||
+    row.sbDeleteHttpStatus != null;
+  const deleteEndpoint = hasDeleteActivity ? SEATS_BROKERS_PATH_TICKET_DELETE : null;
+  const deleteApiUrl =
+    config && deleteEndpoint ? resolveSeatsBrokersUrl(config, deleteEndpoint) : null;
 
   return {
     logId: row.id,
@@ -88,6 +115,19 @@ function listingFromLog(row: {
     categoryLabel: summaryField(summary, "categoryLabel"),
     seatNumbers: nums,
     offerType: summaryField(summary, "offerType"),
+    sbApiBaseUrl,
+    pushEndpoint,
+    pushApiUrl,
+    deleteEndpoint,
+    deleteApiUrl,
+    requestFields: fields,
+    requestSummary: summaryRecord(summary),
+    responseBody: row.responseBody ?? null,
+    httpStatus: row.httpStatus,
+    errorMessage: row.errorMessage,
+    offerIndex: row.offerIndex,
+    listingFingerprint: row.listingFingerprint,
+    sbDeleteHttpStatus: row.sbDeleteHttpStatus ?? null,
   };
 }
 

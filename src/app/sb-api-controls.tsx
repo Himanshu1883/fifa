@@ -118,6 +118,7 @@ type TicketPayload = {
     blockName?: string;
     row: string;
     seatNumbers: string[];
+    faceValueDefaultedToPrice?: boolean;
   };
 };
 
@@ -1175,6 +1176,12 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                       !t.summary.sbBlockMatched &&
                       !String(t.fields.ticket_block ?? "").trim();
                     const shipDateWarn = !String(t.fields.date_to_ship ?? "").trim();
+                    const faceValueWarn =
+                      !String(t.fields.face_value ?? "").trim() &&
+                      (t.summary.priceUsd == null ||
+                        !Number.isFinite(t.summary.priceUsd) ||
+                        t.summary.priceUsd <= 0);
+                    const faceValueDefaultedNote = Boolean(t.summary.faceValueDefaultedToPrice);
                     return (
                       <article
                         key={row.id}
@@ -1244,12 +1251,25 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                             again.
                           </p>
                         ) : null}
+                        {faceValueWarn ? (
+                          <p className="mb-2 rounded border border-amber-500/30 bg-amber-950/20 px-2 py-1 text-[10px] text-amber-200">
+                            Missing <strong>face_value</strong> — listing price is zero and no shop/catalogue match;
+                            set a valid price or sync face-value sources, then refresh preview.
+                          </p>
+                        ) : null}
+                        {faceValueDefaultedNote ? (
+                          <p className="mb-2 rounded border border-sky-500/25 bg-sky-950/20 px-2 py-1 text-[10px] text-sky-100">
+                            <strong>face_value</strong> defaulted to listing price (no shop/catalogue match for this
+                            category × block).
+                          </p>
+                        ) : null}
                         {row.editing ? (
                           <div className="mb-2 grid gap-2 sm:grid-cols-2">
                             {(
                               [
                                 ["date_to_ship", "date_to_ship (YYYY-MM-DD)"],
                                 ["ticket_category", "SB ticket_category id"],
+                                ["face_value", "Face value (USD)"],
                                 ["price", "Price (USD)"],
                                 ["quantity", "Quantity"],
                                 ["ticket_row", "Row"],
@@ -1317,6 +1337,7 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                           <FieldRow label="date_to_ship" value={t.fields.date_to_ship ?? ""} />
                           <FieldRow label="quantity" value={t.fields.quantity ?? ""} />
                           <FieldRow label="price" value={`${t.fields.price ?? ""} ${t.fields.price_type ?? ""}`} />
+                          <FieldRow label="face_value" value={t.fields.face_value ?? ""} />
                           <FieldRow label="SB ticket_category" value={t.fields.ticket_category ?? ""} />
                           <FieldRow
                             label="FIFA category"

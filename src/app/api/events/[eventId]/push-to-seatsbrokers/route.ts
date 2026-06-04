@@ -11,6 +11,7 @@ import { parseSbTicketTypeId } from "@/lib/sb-ticket-types";
 import { executeSbTicketPush } from "@/lib/seatsbrokers-push-service";
 import type { SbCategoryNum } from "@/lib/sb-category";
 import { computeDateToShip } from "@/lib/sb-date-to-ship";
+import { loadSbFaceValueLookup } from "@/lib/sb-face-value";
 import { loadSbMatchCatalogForOffers, serializeSbCatalogBlocks } from "@/lib/seatsbrokers-catalog";
 import { enrichMappedTicketForPush, mapOffersToSeatsBrokersCreateTickets } from "@/lib/seatsbrokers-offer-map";
 
@@ -133,8 +134,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ eventId: strin
     const offers = loaded.transform.offers.filter((o) => o.kind === inventoryKind);
     const eventDateIso = loaded.event.eventDate?.toISOString().slice(0, 10) ?? null;
     const dateToShip = computeDateToShip(loaded.event.eventDate);
-    const catalog = await loadSbMatchCatalogForOffers(matchId, offers, sbConfig);
-    const allMapped = mapOffersToSeatsBrokersCreateTickets(offers, matchId, sbConfig, dateToShip, catalog);
+    const [catalog, faceValueLookup] = await Promise.all([
+      loadSbMatchCatalogForOffers(matchId, offers, sbConfig),
+      loadSbFaceValueLookup(id),
+    ]);
+    const allMapped = mapOffersToSeatsBrokersCreateTickets(
+      offers,
+      matchId,
+      sbConfig,
+      dateToShip,
+      catalog,
+      faceValueLookup,
+    );
     const mappableCount = allMapped.length;
     const rawOfferCount = offers.length;
     const limitParam = parsedQuery.data.limit;
@@ -254,7 +265,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ eventId: strin
 
     const enrichedTickets: typeof pushSlice = [];
     for (const raw of rawTicketsToPush) {
-      const enriched = enrichMappedTicketForPush(raw, offers, matchId, sbConfig, dateToShip, catalog);
+      const enriched = enrichMappedTicketForPush(
+        raw,
+        offers,
+        matchId,
+        sbConfig,
+        dateToShip,
+        catalog,
+        faceValueLookup,
+      );
       if (enriched) enrichedTickets.push(enriched);
     }
 
@@ -266,6 +285,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ eventId: strin
       config: sbConfig,
       dateToShip,
       catalog,
+      faceValueLookup,
       trigger: "MANUAL",
     });
 

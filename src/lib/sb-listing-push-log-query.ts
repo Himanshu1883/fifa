@@ -61,10 +61,15 @@ const catalogLogSelectFull = {
   requestFields: true,
   requestSummary: true,
   responseBody: true,
+  httpStatus: true,
+  errorMessage: true,
+  offerIndex: true,
+  listingFingerprint: true,
   createdAt: true,
   inventoryRemovedAt: true,
   sbDeletedAt: true,
   sbDeleteError: true,
+  sbDeleteHttpStatus: true,
 } as const;
 
 const catalogLogSelectBase = {
@@ -76,6 +81,10 @@ const catalogLogSelectBase = {
   requestFields: true,
   requestSummary: true,
   responseBody: true,
+  httpStatus: true,
+  errorMessage: true,
+  offerIndex: true,
+  listingFingerprint: true,
   createdAt: true,
 } as const;
 
@@ -88,10 +97,15 @@ export type SbListingPushLogCatalogRow = {
   requestFields: unknown;
   requestSummary: unknown;
   responseBody: unknown;
+  httpStatus: number | null;
+  errorMessage: string | null;
+  offerIndex: number | null;
+  listingFingerprint: string;
   createdAt: Date;
   inventoryRemovedAt?: Date | null;
   sbDeletedAt?: Date | null;
   sbDeleteError?: string | null;
+  sbDeleteHttpStatus?: number | null;
 };
 
 /** All successful SB push logs (every event) for the global listings catalog. */
