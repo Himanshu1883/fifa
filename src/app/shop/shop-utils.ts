@@ -26,6 +26,26 @@ export const SHOP_MAIN_CATEGORIES = ["1", "2", "3", "4"] as const;
 export type ShopMainCategoryKey = (typeof SHOP_MAIN_CATEGORIES)[number];
 export type ShopCategoryFilter = "all" | ShopMainCategoryKey;
 
+/** Final / Fan marketplace slots (excluded when hide Final/Fan is on). */
+export const SHOP_FINAL_FAN_CATEGORIES = ["f1", "f2", "f3"] as const;
+export type ShopFinalFanCategoryKey = (typeof SHOP_FINAL_FAN_CATEGORIES)[number];
+
+export function isShopMainCategoryKey(categoryKey: string): categoryKey is ShopMainCategoryKey {
+  return (SHOP_MAIN_CATEGORIES as readonly string[]).includes(categoryKey);
+}
+
+export function isShopFinalFanCategoryKey(categoryKey: string): boolean {
+  return (SHOP_FINAL_FAN_CATEGORIES as readonly string[]).includes(categoryKey);
+}
+
+export function filterEventListings(
+  event: ShopMarketEvent,
+  hideFinalFan: boolean,
+): ShopMarketListing[] {
+  if (!hideFinalFan) return event.listings;
+  return event.listings.filter((l) => isShopMainCategoryKey(l.categoryKey));
+}
+
 export const SHOP_CATEGORY_SHORT: Record<ShopMainCategoryKey, string> = {
   "1": "Cat 1",
   "2": "Cat 2",
@@ -97,6 +117,30 @@ export function countEventsWithAvailableCategory(
   return events.filter((e) => eventHasAvailableCategory(e, categoryKey)).length;
 }
 
+export function eventHasAnyAvailability(event: ShopMarketEvent): boolean {
+  return event.availableCount > 0;
+}
+
+export function eventHasMainCategoryAvailability(event: ShopMarketEvent): boolean {
+  return SHOP_MAIN_CATEGORIES.some((cat) => eventHasAvailableCategory(event, cat));
+}
+
+export function eventHasAvailabilityInScope(
+  event: ShopMarketEvent,
+  hideFinalFan: boolean,
+): boolean {
+  return hideFinalFan ? eventHasMainCategoryAvailability(event) : eventHasAnyAvailability(event);
+}
+
+export function filterShopEventsAvailableOnly(
+  events: ShopMarketEvent[],
+  onlyAvailable: boolean,
+  hideFinalFan = false,
+): ShopMarketEvent[] {
+  if (!onlyAvailable) return events;
+  return events.filter((e) => eventHasAvailabilityInScope(e, hideFinalFan));
+}
+
 export function filterShopEventsByCategory(
   events: ShopMarketEvent[],
   filter: ShopCategoryFilter,
@@ -140,9 +184,12 @@ export function applyShopListFilters(
   events: ShopMarketEvent[],
   query: string,
   categoryFilter: ShopCategoryFilter,
+  availableOnly: boolean,
+  hideFinalFan = false,
 ): ShopMarketEvent[] {
   const searched = filterShopEvents(events, query);
-  const byCat = filterShopEventsByCategory(searched, categoryFilter);
+  const pool = filterShopEventsAvailableOnly(searched, availableOnly, hideFinalFan);
+  const byCat = filterShopEventsByCategory(pool, categoryFilter);
   if (categoryFilter === "all") return byCat;
   return sortShopEventsByCategoryPrice(byCat, categoryFilter);
 }

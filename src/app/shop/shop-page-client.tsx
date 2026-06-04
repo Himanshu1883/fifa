@@ -9,6 +9,7 @@ import { ShopCategoryFilterBar } from "@/app/shop/shop-category-filter";
 import {
   applyShopListFilters,
   filterShopEvents,
+  filterShopEventsAvailableOnly,
   SHOP_CATEGORY_SHORT,
   type ShopCategoryFilter,
 } from "@/app/shop/shop-utils";
@@ -21,6 +22,8 @@ export function ShopPageClient() {
   const { events, scannedAt, loading, error, isLive, stats, retry, scrollRootRef } = useShopData();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<ShopCategoryFilter>("all");
+  const [availableOnly, setAvailableOnly] = useState(true);
+  const [hideFinalFan, setHideFinalFan] = useState(true);
   const [openMatchNums, setOpenMatchNums] = useState<Set<number>>(() => new Set());
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -31,19 +34,37 @@ export function ShopPageClient() {
 
   const searchFilteredEvents = useMemo(() => filterShopEvents(events, search), [events, search]);
 
+  const filterPoolEvents = useMemo(
+    () => filterShopEventsAvailableOnly(searchFilteredEvents, availableOnly, hideFinalFan),
+    [searchFilteredEvents, availableOnly, hideFinalFan],
+  );
+
   const filteredEvents = useMemo(
-    () => applyShopListFilters(events, search, categoryFilter),
-    [events, search, categoryFilter],
+    () => applyShopListFilters(events, search, categoryFilter, availableOnly, hideFinalFan),
+    [events, search, categoryFilter, availableOnly, hideFinalFan],
   );
 
   const emptyMessage = useMemo(() => {
     if (events.length === 0) return "No marketplace listings found.";
     if (searchFilteredEvents.length === 0) return "No events match your search.";
+    if (availableOnly && filterPoolEvents.length === 0) {
+      if (hideFinalFan) {
+        return "No matches with Cat 1–4 available. Turn off Available only or Hide Final/Fan to see more.";
+      }
+      return "No matches with tickets available. Turn off Available only to see all fixtures.";
+    }
     if (categoryFilter !== "all") {
       return `No matches with ${SHOP_CATEGORY_SHORT[categoryFilter]} available.`;
     }
     return "No marketplace listings found.";
-  }, [events.length, searchFilteredEvents.length, categoryFilter]);
+  }, [
+    events.length,
+    searchFilteredEvents.length,
+    availableOnly,
+    hideFinalFan,
+    filterPoolEvents.length,
+    categoryFilter,
+  ]);
 
   const onToggle = useCallback((matchNum: number) => {
     setOpenMatchNums((prev) => {
@@ -69,9 +90,13 @@ export function ShopPageClient() {
         />
         <ShopSearch value={search} onChange={setSearch} />
         <ShopCategoryFilterBar
-          events={searchFilteredEvents}
+          events={filterPoolEvents}
           value={categoryFilter}
           onChange={setCategoryFilter}
+          availableOnly={availableOnly}
+          onAvailableOnlyChange={setAvailableOnly}
+          hideFinalFan={hideFinalFan}
+          onHideFinalFanChange={setHideFinalFan}
           resultCount={filteredEvents.length}
         />
       </div>
@@ -98,6 +123,7 @@ export function ShopPageClient() {
             events={filteredEvents}
             openMatchNums={openMatchNums}
             categoryFilter={categoryFilter}
+            hideFinalFan={hideFinalFan}
             emptyMessage={emptyMessage}
             onToggle={onToggle}
           />

@@ -14,6 +14,10 @@ type Props = {
   events: ShopMarketEvent[];
   value: ShopCategoryFilter;
   onChange: (value: ShopCategoryFilter) => void;
+  availableOnly: boolean;
+  onAvailableOnlyChange: (value: boolean) => void;
+  hideFinalFan: boolean;
+  onHideFinalFanChange: (value: boolean) => void;
   resultCount: number;
 };
 
@@ -29,7 +33,16 @@ function pillClass(active: boolean, hasStock: boolean): string {
   return `${base} border-white/[0.1] bg-white/[0.04] text-zinc-300 hover:border-white/[0.16]`;
 }
 
-function ShopCategoryFilterBarInner({ events, value, onChange, resultCount }: Props) {
+function ShopCategoryFilterBarInner({
+  events,
+  value,
+  onChange,
+  availableOnly,
+  onAvailableOnlyChange,
+  hideFinalFan,
+  onHideFinalFanChange,
+  resultCount,
+}: Props) {
   const counts = useMemo(() => {
     const cats = Object.fromEntries(
       SHOP_MAIN_CATEGORIES.map((c) => [c, countEventsWithAvailableCategory(events, c)]),
@@ -42,8 +55,24 @@ function ShopCategoryFilterBarInner({ events, value, onChange, resultCount }: Pr
       <div
         className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]"
         role="group"
-        aria-label="Category filter"
+        aria-label="Filters"
       >
+        <button
+          type="button"
+          aria-pressed={availableOnly}
+          onClick={() => onAvailableOnlyChange(!availableOnly)}
+          className={pillClass(availableOnly, true)}
+        >
+          Available only
+        </button>
+        <button
+          type="button"
+          aria-pressed={hideFinalFan}
+          onClick={() => onHideFinalFanChange(!hideFinalFan)}
+          className={pillClass(hideFinalFan, true)}
+        >
+          Hide Final/Fan
+        </button>
         <button
           type="button"
           aria-pressed={value === "all"}

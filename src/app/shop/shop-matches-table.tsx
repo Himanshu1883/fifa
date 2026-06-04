@@ -4,6 +4,7 @@ import Link from "next/link";
 import { memo, useCallback, type ReactNode } from "react";
 import {
   computeBestOffer,
+  filterEventListings,
   formatShopPrice,
   getEventCategoryListing,
   SHOP_TABLE_CATEGORIES,
@@ -153,9 +154,28 @@ function DetailCategoryRow({ listing, event }: { listing: ShopMarketListing; eve
   );
 }
 
-function DetailPanel({ event }: { event: ShopMarketEvent }) {
+function listingPriceStats(listings: ShopMarketListing[]) {
+  const prices = listings
+    .filter((l) => l.available && l.price !== null)
+    .map((l) => l.price as number);
+  if (prices.length === 0) {
+    return { lowest: null, highest: null, average: null, availableCount: 0, listingsCount: listings.length };
+  }
+  const sum = prices.reduce((a, b) => a + b, 0);
+  return {
+    lowest: Math.min(...prices),
+    highest: Math.max(...prices),
+    average: Math.round(sum / prices.length),
+    availableCount: listings.filter((l) => l.available).length,
+    listingsCount: listings.length,
+  };
+}
+
+function DetailPanel({ event, hideFinalFan }: { event: ShopMarketEvent; hideFinalFan: boolean }) {
   const { catalogue } = event;
-  const sortedListings = [...event.listings].sort((a, b) =>
+  const scopedListings = filterEventListings(event, hideFinalFan);
+  const stats = listingPriceStats(scopedListings);
+  const sortedListings = [...scopedListings].sort((a, b) =>
     a.categoryKey.localeCompare(b.categoryKey, undefined, { numeric: true }),
   );
 
@@ -176,25 +196,25 @@ function DetailPanel({ event }: { event: ShopMarketEvent }) {
         <div>
           <dt className="text-[9px] uppercase tracking-wide text-zinc-500">Lowest</dt>
           <dd className={`font-semibold tabular-nums ${priceClass}`}>
-            {formatShopPrice(event.lowestPrice, event.currency)}
+            {formatShopPrice(stats.lowest, event.currency)}
           </dd>
         </div>
         <div>
           <dt className="text-[9px] uppercase tracking-wide text-zinc-500">Highest</dt>
           <dd className="font-semibold tabular-nums text-zinc-300">
-            {formatShopPrice(event.highestPrice, event.currency)}
+            {formatShopPrice(stats.highest, event.currency)}
           </dd>
         </div>
         <div>
           <dt className="text-[9px] uppercase tracking-wide text-zinc-500">Average</dt>
           <dd className="font-semibold tabular-nums text-zinc-300">
-            {formatShopPrice(event.averagePrice, event.currency)}
+            {formatShopPrice(stats.average, event.currency)}
           </dd>
         </div>
         <div>
           <dt className="text-[9px] uppercase tracking-wide text-zinc-500">In stock</dt>
           <dd className="font-semibold tabular-nums text-zinc-300">
-            {event.availableCount} / {event.listingsCount}
+            {stats.availableCount} / {stats.listingsCount}
           </dd>
         </div>
         {catalogue.linkedEventId !== null ? (
@@ -240,10 +260,11 @@ type RowProps = {
   zebra: boolean;
   isOpen: boolean;
   categoryFilter: ShopCategoryFilter;
+  hideFinalFan: boolean;
   onToggle: (matchNum: number) => void;
 };
 
-function MatchRow({ event, zebra, isOpen, categoryFilter, onToggle }: RowProps) {
+function MatchRow({ event, zebra, isOpen, categoryFilter, hideFinalFan, onToggle }: RowProps) {
   const { catalogue } = event;
   const title = catalogue.eventName || `Match ${event.matchNum}`;
   const venue = catalogue.venue?.trim();
@@ -307,7 +328,7 @@ function MatchRow({ event, zebra, isOpen, categoryFilter, onToggle }: RowProps) 
       {isOpen ? (
         <tr className={zebra ? "bg-white/[0.02]" : ""}>
           <td colSpan={8} className="p-0">
-            <DetailPanel event={event} />
+            <DetailPanel event={event} hideFinalFan={hideFinalFan} />
           </td>
         </tr>
       ) : null}
@@ -321,11 +342,19 @@ type Props = {
   events: ShopMarketEvent[];
   openMatchNums: Set<number>;
   categoryFilter: ShopCategoryFilter;
+  hideFinalFan: boolean;
   emptyMessage: string;
   onToggle: (matchNum: number) => void;
 };
 
-function ShopMatchesTableInner({ events, openMatchNums, categoryFilter, emptyMessage, onToggle }: Props) {
+function ShopMatchesTableInner({
+  events,
+  openMatchNums,
+  categoryFilter,
+  hideFinalFan,
+  emptyMessage,
+  onToggle,
+}: Props) {
   if (events.length === 0) {
     return (
       <p className="px-2 py-8 text-center text-xs text-zinc-500">{emptyMessage}</p>
@@ -355,6 +384,7 @@ function ShopMatchesTableInner({ events, openMatchNums, categoryFilter, emptyMes
               zebra={idx % 2 === 1}
               isOpen={openMatchNums.has(event.matchNum)}
               categoryFilter={categoryFilter}
+              hideFinalFan={hideFinalFan}
               onToggle={onToggle}
             />
           ))}
