@@ -13,7 +13,6 @@ import { MarkupControls } from "@/app/markup-controls";
 import { SbApiControls } from "@/app/sb-api-controls";
 import { EventImportantToggle } from "@/app/event-important-toggle";
 import { EventPrefsEditCell } from "@/app/event-prefs-edit-cell";
-import { BoxofficeControlsClient } from "@/app/boxoffice-controls-client";
 import type { HomeImportantFilter, HomeSortKey } from "@/app/home-event-sort-controls";
 import { HomeEventSortControls } from "@/app/home-event-sort-controls";
 import {
@@ -461,11 +460,6 @@ export async function HomePage({
   const importantFilter = parseImportantFilter(q);
   const venueFilter = parseHomeVenueFilter(q);
   const countryFilter = parseHomeCountryFilter(q);
-  const boxofficePort = process.env.BOXOFFICE_WS_PORT ?? "3020";
-  const showBoxofficeControls =
-    process.env.NODE_ENV === "development" ||
-    /^(1|true|yes)$/i.test((process.env.BOXOFFICE_WS_SHOW_IN_PROD ?? "").trim());
-
   let dbErr: string | undefined;
   let eventsAll: HomeEventRow[];
   let events: HomeEventRow[];
@@ -737,57 +731,56 @@ export async function HomePage({
             aria-hidden
           />
           <header className="relative w-full border-b border-white/[0.06] px-4 py-4 sm:px-5 sm:py-5 lg:px-6">
-            <div className="grid w-full gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,22rem)] lg:items-start lg:gap-6">
-              <div className="min-w-0 space-y-2">
-                <p className="inline-flex items-center gap-2 rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-100 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)]">
-                  2026 FIFA WORLD CUP{" "}
-                  <span className="text-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,white_40%)]">·</span> Live
-                  ticket tracker
-                </p>
+            <div className="w-full space-y-2">
+              <p className="inline-flex items-center gap-2 rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-100 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)]">
+                2026 FIFA WORLD CUP{" "}
+                <span className="text-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,white_40%)]">·</span> Live
+                ticket tracker
+              </p>
 
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4 lg:gap-6">
-                  <h1 className="min-w-0 flex-1 text-balance text-2xl font-semibold tracking-tight text-white sm:text-3xl lg:text-[2.125rem] lg:leading-[1.12]">
-                    All World Cup tickets, <span className="text-[color:var(--ticketing-accent)]">in one place.</span>
-                  </h1>
+              <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+                <h1 className="min-w-0 flex-1 text-balance text-2xl font-semibold tracking-tight text-white sm:text-3xl lg:text-[2.125rem] lg:leading-[1.12]">
+                  All World Cup tickets, <span className="text-[color:var(--ticketing-accent)]">in one place.</span>
+                </h1>
 
-                  <dl
-                    className="grid w-full shrink-0 grid-cols-3 divide-x divide-white/[0.10] overflow-hidden rounded-xl border border-white/[0.08] bg-black/25 py-2 shadow-inner shadow-black/35 ring-1 ring-white/[0.05] sm:max-w-md sm:py-2.5 lg:max-w-lg"
-                    aria-label="Schedule totals"
-                  >
-                    <div className="px-2.5 text-center sm:px-3">
-                      <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">
-                        Tickets{sockKind === "RESALE" ? " (Resale)" : " (Shop)"}
-                      </dt>
-                      <dd className="mt-0.5 text-lg font-semibold tabular-nums tracking-tight text-[color:color-mix(in_oklab,var(--ticketing-accent)_88%,white_8%)] sm:mt-1 sm:text-xl lg:text-2xl">
-                        {totalTickets.toLocaleString("en-US")}
-                      </dd>
-                    </div>
-                    <div className="px-2.5 text-center sm:px-3">
-                      <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">
-                        Matches
-                      </dt>
-                      <dd className="mt-0.5 text-lg font-semibold tabular-nums tracking-tight text-white sm:mt-1 sm:text-xl lg:text-2xl">
-                        {events.length.toLocaleString("en-US")}
-                      </dd>
-                    </div>
-                    <div className="px-2.5 text-center sm:px-3">
-                      <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">
-                        Sources
-                      </dt>
-                      <dd className="mt-0.5 text-lg font-semibold tabular-nums tracking-tight text-white sm:mt-1 sm:text-xl lg:text-2xl">
-                        1
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
+                <dl
+                  className="grid w-full shrink-0 grid-cols-3 divide-x divide-white/[0.10] overflow-hidden rounded-xl border border-white/[0.08] bg-black/25 py-2 shadow-inner shadow-black/35 ring-1 ring-white/[0.05] sm:ml-auto sm:w-auto sm:max-w-md sm:py-2.5 lg:max-w-lg"
+                  aria-label="Schedule totals"
+                >
+                  <div className="px-2.5 text-center sm:px-3">
+                    <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">
+                      Tickets{sockKind === "RESALE" ? " (Resale)" : " (Shop)"}
+                    </dt>
+                    <dd className="mt-0.5 text-lg font-semibold tabular-nums tracking-tight text-[color:color-mix(in_oklab,var(--ticketing-accent)_88%,white_8%)] sm:mt-1 sm:text-xl lg:text-2xl">
+                      {totalTickets.toLocaleString("en-US")}
+                    </dd>
+                  </div>
+                  <div className="px-2.5 text-center sm:px-3">
+                    <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">
+                      Matches
+                    </dt>
+                    <dd className="mt-0.5 text-lg font-semibold tabular-nums tracking-tight text-white sm:mt-1 sm:text-xl lg:text-2xl">
+                      {events.length.toLocaleString("en-US")}
+                    </dd>
+                  </div>
+                  <div className="px-2.5 text-center sm:px-3">
+                    <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">
+                      Sources
+                    </dt>
+                    <dd className="mt-0.5 text-lg font-semibold tabular-nums tracking-tight text-white sm:mt-1 sm:text-xl lg:text-2xl">
+                      1
+                    </dd>
+                  </div>
+                </dl>
+              </div>
 
-                <div className="-mt-0.5 flex w-full flex-col gap-2.5 sm:mt-0 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
-              <HomeSockKindSwitcher
-                activeKind={sockKind}
-                lastMinuteHref={homeKindHref("LAST_MINUTE")}
-                resaleHref={homeKindHref("RESALE")}
-              />
-              <Link
+              <div className="-mt-0.5 flex w-full flex-col gap-2.5 sm:mt-0 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+                <HomeSockKindSwitcher
+                  activeKind={sockKind}
+                  lastMinuteHref={homeKindHref("LAST_MINUTE")}
+                  resaleHref={homeKindHref("RESALE")}
+                />
+                <Link
                 href={homeBuyingCriteriaMeetHref(!buyingCriteriaMeetActive)}
                 className={
                   buyingCriteriaMeetActive
@@ -807,23 +800,16 @@ export async function HomePage({
               >
                 Missing price
               </Link>
-              <MarkupControls />
-              <ApiDocumentationControls sampleEventId={events[0]?.id ?? 1} />
-              <SbApiControls
-                eventOptions={events.map((e) => ({
-                  id: e.id,
-                  name: e.name,
-                  sbEventId: e.sbEventId,
-                }))}
-              />
-                </div>
+                <MarkupControls />
+                <ApiDocumentationControls sampleEventId={events[0]?.id ?? 1} />
+                <SbApiControls
+                  eventOptions={events.map((e) => ({
+                    id: e.id,
+                    name: e.name,
+                    sbEventId: e.sbEventId,
+                  }))}
+                />
               </div>
-
-              {showBoxofficeControls ? (
-                <div className="w-full lg:max-w-[22rem] lg:justify-self-end">
-                  <BoxofficeControlsClient port={boxofficePort} />
-                </div>
-              ) : null}
             </div>
           </header>
 
