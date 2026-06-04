@@ -243,6 +243,8 @@ export async function deleteSbListingForEvent(
     matchId?: string;
     /** When true (scrape reconcile), mark inventory_removed_at before calling SB. */
     markInventoryRemoved?: boolean;
+    /** Optional UI row context for orphan deletes (no push log). */
+    rowMeta?: { blockName?: string | null; row?: string | null; seatIds?: string[] };
   },
 ): Promise<DeleteSbListingResult> {
   const config = getSeatsBrokersConfig();

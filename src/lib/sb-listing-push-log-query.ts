@@ -12,7 +12,7 @@ export function sbPushLogExcludingClaimWhere() {
       { errorMessage: null },
       { errorMessage: { not: SB_PUSH_CLAIM_MARKER } },
     ],
-  } as const;
+  };
 }
 
 /** True when DB is missing sb_listing_push_logs removal-tracking columns (migration not applied). */

@@ -170,7 +170,7 @@ async function main() {
   if (!args.post) {
     console.log("\nAdd --post to POST to webhook, or:");
     console.log(
-      `curl -sS -X POST "${baseUrl}/api/webhooks/sock-available?prefId=${prefId}" -H "Content-Type: application/json" --data-binary @${out} | jq .sbReconcile`,
+      `curl -sS -X POST "${args.baseUrl}/api/webhooks/sock-available?prefId=${prefId}" -H "Content-Type: application/json" --data-binary @${out} | jq .sbReconcile`,
     );
     return;
   }

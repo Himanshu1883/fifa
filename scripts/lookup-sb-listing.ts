@@ -26,7 +26,13 @@ async function main() {
       const sock = await prisma.sockAvailable.findFirst({
         where: { eventId: log.eventId, seatId: sid, kind: "RESALE" },
       });
-      console.log("sock", sid, sock ? { block: sock.block, row: sock.row, seatNumber: sock.seatNumber } : "MISSING");
+      console.log(
+        "sock",
+        sid,
+        sock
+          ? { blockName: sock.blockName, blockId: sock.blockId, row: sock.row, seatNumber: sock.seatNumber }
+          : "MISSING",
+      );
     }
   }
   const resaleCount = await prisma.sockAvailable.count({

@@ -95,6 +95,23 @@ export function mapQuantityWithRules(
   return table[inputCount] ?? inputCount;
 }
 
+export function describeQuantityRuleSync(
+  offerType: SeatOfferType,
+  originalCount: number,
+  transformedCount: number,
+  runtime?: SbPushRulesRuntime,
+): string {
+  const rt =
+    runtime ??
+    runtimeFromConfig({
+      togetherRules: DEFAULT_SB_PUSH_TOGETHER_RULES,
+      singleRules: DEFAULT_SB_PUSH_SINGLE_RULES,
+      autoDeleteOnScrapeRemoval: true,
+      updatedAt: null,
+    });
+  return describeQuantityRuleWithRuntime(offerType, originalCount, transformedCount, rt);
+}
+
 export function describeQuantityRuleWithRuntime(
   offerType: SeatOfferType,
   originalCount: number,

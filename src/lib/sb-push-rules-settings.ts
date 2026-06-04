@@ -76,7 +76,11 @@ export async function getSbPushRulesRuntime(): Promise<SbPushRulesRuntime> {
 }
 
 export async function setSbPushRulesConfig(
-  input: Partial<Pick<SbPushRulesConfig, "togetherRules" | "singleRules" | "autoDeleteOnScrapeRemoval">>,
+  input: Partial<{
+    togetherRules: unknown;
+    singleRules: unknown;
+    autoDeleteOnScrapeRemoval: boolean;
+  }>,
 ): Promise<SbPushRulesConfig> {
   const current = await getSbPushRulesConfig();
   const togetherRules = input.togetherRules
