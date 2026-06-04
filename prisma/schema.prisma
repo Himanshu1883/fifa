@@ -451,3 +451,38 @@ model GmailMessage {
   @@index([gmailAccountId])
   @@map("gmail_messages")
 }
+
+/// Live LMS marketplace data from vivalafifa (per match, upserted on poll).
+model ShopMarketplaceEventRecord {
+  matchNum        Int       @id @map("match_num")
+  externalEventId String    @map("external_event_id")
+  linkedEventId   Int?      @map("linked_event_id")
+  eventName       String    @map("event_name")
+  stage           String?   @db.Text
+  venue           String?   @db.Text
+  country         String?   @db.Text
+  eventDate       DateTime? @map("event_date")
+  marketData      Json      @map("market_data")
+  lowestPrice     Int?      @map("lowest_price")
+  highestPrice    Int?      @map("highest_price")
+  averagePrice    Int?      @map("average_price")
+  availableCount  Int       @default(0) @map("available_count")
+  listingsCount   Int       @default(0) @map("listings_count")
+  rawPayload      Json      @map("raw_payload")
+  scannedAt       DateTime  @map("scanned_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([linkedEventId])
+  @@index([scannedAt])
+  @@map("shop_marketplace_events")
+}
+
+/// Latest full API payload + scan timestamp (singleton row id = 1).
+model ShopMarketplaceSyncMeta {
+  id         Int      @id @default(1)
+  scannedAt  DateTime @map("scanned_at")
+  rawPayload Json     @map("raw_payload")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("shop_marketplace_sync_meta")
+}

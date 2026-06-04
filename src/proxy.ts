@@ -108,6 +108,7 @@ export const config = {
   matcher: [
     "/",
     "/last-minute",
+    "/shop",
     "/events/:path*",
     "/gmail/:path*",
     "/settings/:path*",

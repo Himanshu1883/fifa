@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const links = [
   { href: "/", label: "Matches", exact: true as const },
+  { href: "/shop", label: "SHOP" },
   { href: "/sb-listings", label: "SB Listings" },
   { href: "/sb-push-settings", label: "Push rules" },
   { href: "/listing-changes", label: "Changes" },
