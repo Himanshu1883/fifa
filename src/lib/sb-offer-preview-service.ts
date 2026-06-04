@@ -12,7 +12,6 @@ import { resolveAlreadyPushedOnSb } from "@/lib/seatsbrokers-push-service";
 import { computeDateToShip } from "@/lib/sb-date-to-ship";
 import { formatSbFaceValueDefaultedToPriceNote, formatSbMissingFaceValueWarning, loadSbFaceValueLookup } from "@/lib/sb-face-value";
 import { loadSbMatchCatalogForOffers } from "@/lib/seatsbrokers-catalog";
-import { offerContainsRestrictedSeat, SB_RESTRICTED_TICKET_ERROR } from "@/lib/sb-restricted-tickets";
 import { configWithTicketType, getSeatsBrokersConfig } from "@/lib/seatsbrokers-config";
 import {
   enrichMappedTicketForPush,
@@ -90,10 +89,6 @@ export async function loadSbOfferPreviewForSeatIds(
 
   const { offerIndex, matchKind, clickedSeatIds } = resolved;
   const offer = offers[offerIndex]!;
-
-  if (offerContainsRestrictedSeat(offer)) {
-    return { ok: false, error: SB_RESTRICTED_TICKET_ERROR };
-  }
 
   const dateToShip = computeDateToShip(loaded.event.eventDate);
   const [catalog, faceValueLookup] = await Promise.all([

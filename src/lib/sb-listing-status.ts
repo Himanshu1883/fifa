@@ -105,7 +105,7 @@ function deriveUiStatus(row: {
   sbDeleteError?: string | null;
 }): SbListingUiStatus {
   if (row.sbDeletedAt) return "deleted";
-  if (row.inventoryRemovedAt && row.sbDeleteError) return "delete_failed";
+  if (row.sbDeleteError) return "delete_failed";
   if (row.inventoryRemovedAt) return "removed";
   return "pushed";
 }

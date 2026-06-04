@@ -21,7 +21,6 @@ import { sbPushLogExcludingClaimWhere } from "@/lib/sb-listing-push-log-query";
 import { computeDateToShip } from "@/lib/sb-date-to-ship";
 import { formatSbMissingFaceValueWarning, loadSbFaceValueLookup } from "@/lib/sb-face-value";
 import { loadSbMatchCatalogForOffers } from "@/lib/seatsbrokers-catalog";
-import { offerContainsRestrictedSeat, SB_RESTRICTED_TICKET_ERROR } from "@/lib/sb-restricted-tickets";
 import { sbCreateTicket } from "@/lib/seatsbrokers-client";
 import {
   configWithTicketType,
@@ -327,21 +326,6 @@ export async function executeSbTicketPush(
   const seenInBatch = new Set<string>();
 
   for (const raw of tickets) {
-    const offerForRaw = offers[raw.offerIndex];
-    if (offerForRaw && offerContainsRestrictedSeat(offerForRaw)) {
-      failed++;
-      const summary = raw.summary;
-      const fingerprint = listingFingerprintForMappedTicket(offerForRaw, raw);
-      results.push({
-        offerIndex: raw.offerIndex,
-        ok: false,
-        summary,
-        listingFingerprint: fingerprint,
-        error: SB_RESTRICTED_TICKET_ERROR,
-      });
-      continue;
-    }
-
     const enriched = enrichMappedTicketForPush(
       raw,
       offers,
@@ -351,19 +335,7 @@ export async function executeSbTicketPush(
       catalog,
       faceValueLookup,
     );
-    if (!enriched) {
-      if (offerForRaw && offerContainsRestrictedSeat(offerForRaw)) {
-        failed++;
-        results.push({
-          offerIndex: raw.offerIndex,
-          ok: false,
-          summary: raw.summary,
-          listingFingerprint: listingFingerprintForMappedTicket(offerForRaw, raw),
-          error: SB_RESTRICTED_TICKET_ERROR,
-        });
-      }
-      continue;
-    }
+    if (!enriched) continue;
 
     const offer = offers[enriched.offerIndex];
     const sourceSeats = sourceSeatsForPush(offer);
@@ -587,10 +559,6 @@ export async function pushSingleSbOfferForEvent(
   if (!selectedOffer) {
     return { ok: false, error: `Offer index ${offerIndex} is out of range.`, offerIndex };
   }
-  if (offerContainsRestrictedSeat(selectedOffer)) {
-    return { ok: false, error: SB_RESTRICTED_TICKET_ERROR, offerIndex };
-  }
-
   const dateToShip = computeDateToShip(loaded.event.eventDate);
   const [catalog, faceValueLookup] = await Promise.all([
     loadSbMatchCatalogForOffers(matchId, offers, config),

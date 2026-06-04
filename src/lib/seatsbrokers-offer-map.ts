@@ -4,7 +4,6 @@ import {
   resolveFaceValueUsdForSb,
   type SbFaceValueLookup,
 } from "@/lib/sb-face-value";
-import { offerContainsRestrictedSeat } from "@/lib/sb-restricted-tickets";
 import type { SbCategoryNum } from "@/lib/sb-category";
 import {
   isValidSbTicketBlockValue,
@@ -76,7 +75,6 @@ export function mapOfferToSeatsBrokersCreateTicket(
   faceValueLookup: SbFaceValueLookup | null = null,
 ): MappedSeatsBrokersTicket | null {
   if (offer.transformedCount <= 0 || offer.seats.length === 0) return null;
-  if (offerContainsRestrictedSeat(offer)) return null;
 
   const first = offer.seats[0]!;
   const priceUsd = resolveOfferPriceUsd(offer);
@@ -240,7 +238,6 @@ export function enrichMappedTicketForPush(
 ): MappedSeatsBrokersTicket | null {
   const offer = offers[ticket.offerIndex];
   if (!offer) return null;
-  if (offerContainsRestrictedSeat(offer)) return null;
 
   const baseline = mapOfferToSeatsBrokersCreateTicket(
     offer,

@@ -150,12 +150,17 @@ export function SbListingRowActions(props: Props) {
 
   const handleDelete = useCallback(async () => {
     const ticketId = displayEntry?.sbTicketId?.trim();
-    if (!ticketId || displayEntry?.status !== "pushed") return;
+    const canDelete =
+      displayEntry?.status === "pushed" || displayEntry?.status === "delete_failed";
+    if (!ticketId || !canDelete || !displayEntry) return;
 
+    const isRetry = displayEntry.status === "delete_failed";
     const label = ticketId;
     if (
       !window.confirm(
-        `Delete SB listing ${label}?\n\nThis calls SeatsBrokers ticket/delete and marks the listing removed in this app.`,
+        isRetry
+          ? `Retry deleting SB listing ${label}?\n\nThis calls SeatsBrokers ticket/delete again.`
+          : `Delete SB listing ${label}?\n\nThis calls SeatsBrokers ticket/delete and marks the listing deleted here only after SB confirms.`,
       )
     ) {
       return;
@@ -183,8 +188,27 @@ export function SbListingRowActions(props: Props) {
         error?: string;
         entry?: SbListingStatusEntry;
       };
-      if (!res.ok || !json.ok || !json.entry) {
-        setDeleteError(json.error ?? `Delete failed (${res.status})`);
+      if (!res.ok || !json.ok) {
+        const errorMsg = json.error ?? `Delete failed (${res.status})`;
+        setDeleteError(errorMsg);
+        if (json.entry) {
+          setInstantEntry(json.entry);
+          onStatusChange(json.entry, rowMeta);
+        } else {
+          const failedEntry: SbListingStatusEntry = {
+            ...displayEntry,
+            status: "delete_failed",
+            sbDeleteError: errorMsg,
+            inventoryRemovedAt: displayEntry.inventoryRemovedAt ?? new Date().toISOString(),
+          };
+          setInstantEntry(failedEntry);
+          onStatusChange(failedEntry, rowMeta);
+        }
+        return;
+      }
+
+      if (!json.entry) {
+        setDeleteError("Delete succeeded but server returned no status entry.");
         return;
       }
 
@@ -253,6 +277,18 @@ export function SbListingRowActions(props: Props) {
       <div className="flex min-w-0 flex-col items-end gap-1.5">
         <div className="flex flex-wrap items-center justify-end gap-2">
           {statusBadge(displayEntry.status)}
+          {displayEntry.status === "delete_failed" && displayEntry.sbTicketId && sbConfigured ? (
+            <button
+              type="button"
+              className={deleteBtnClass}
+              disabled={deleting}
+              title="Retry delete on SeatsBrokers"
+              aria-label={`Retry delete SB listing ${displayEntry.sbTicketId}`}
+              onClick={() => void handleDelete()}
+            >
+              {deleting ? "Retrying…" : "Retry delete"}
+            </button>
+          ) : null}
         </div>
         {displayEntry.sbTicketId ? (
           <code className="max-w-[10rem] truncate font-mono text-[11px] text-zinc-400" title={displayEntry.sbTicketId}>
@@ -262,6 +298,11 @@ export function SbListingRowActions(props: Props) {
         {displayEntry.status === "delete_failed" && displayEntry.sbDeleteError ? (
           <span className="max-w-[12rem] truncate text-[10px] text-rose-300/90" title={displayEntry.sbDeleteError}>
             {displayEntry.sbDeleteError}
+          </span>
+        ) : null}
+        {deleteError ? (
+          <span className="max-w-[12rem] truncate text-[10px] text-rose-300/90" title={deleteError}>
+            {deleteError}
           </span>
         ) : null}
       </div>

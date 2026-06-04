@@ -19,7 +19,7 @@ const SB_PUSH_CLAIM_MARKER = "__sb_push_claim__";
 
 export type DeleteSbListingResult =
   | { ok: true; logId: number; sbTicketId: string; entry: SbListingStatusEntry }
-  | { ok: false; error: string; httpStatus?: number };
+  | { ok: false; error: string; httpStatus?: number; entry?: SbListingStatusEntry };
 
 function summaryField(summary: unknown, key: string): string | null {
   if (summary === null || typeof summary !== "object") return null;
@@ -408,6 +408,7 @@ export async function deleteSbListingForEvent(
         ok: false,
         error: deleteRes.error || "SeatsBrokers delete failed.",
         httpStatus: deleteRes.status,
+        entry: entryFromDeletedLog(updated),
       };
     }
   } catch (e) {

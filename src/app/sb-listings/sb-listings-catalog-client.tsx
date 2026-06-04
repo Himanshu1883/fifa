@@ -199,13 +199,70 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
   const expandAll = () => setOpenIds(new Set(filteredMatches.map((m) => m.eventId)));
   const collapseAll = () => setOpenIds(new Set());
 
+  const applyListingDeleteResult = useCallback(
+    (
+      match: SbCatalogMatch,
+      listing: SbCatalogListing,
+      json: {
+        ok?: boolean;
+        error?: string;
+        entry?: {
+          status: SbListingUiStatus;
+          sbDeletedAt?: string | null;
+          sbDeleteError?: string | null;
+          inventoryRemovedAt?: string | null;
+        };
+      },
+      failed: boolean,
+    ) => {
+      setMatches((prev) =>
+        prev.map((m) => {
+          if (m.eventId !== match.eventId) return m;
+          const listings = m.listings.map((l) => {
+            if (l.logId !== listing.logId) return l;
+            if (failed) {
+              const err = json.error ?? json.entry?.sbDeleteError ?? "Delete failed";
+              return {
+                ...l,
+                status: (json.entry?.status ?? "delete_failed") as SbListingUiStatus,
+                sbDeletedAt: json.entry?.sbDeletedAt ?? null,
+                sbDeleteError: json.entry?.sbDeleteError ?? err,
+                inventoryRemovedAt:
+                  json.entry?.inventoryRemovedAt ?? l.inventoryRemovedAt ?? new Date().toISOString(),
+              };
+            }
+            return {
+              ...l,
+              status: (json.entry?.status ?? "deleted") as SbListingUiStatus,
+              sbDeletedAt: json.entry?.sbDeletedAt ?? new Date().toISOString(),
+              sbDeleteError: null,
+            };
+          });
+          return {
+            ...m,
+            listings,
+            activeCount: listings.filter((x) => x.status === "pushed").length,
+            deletedCount: listings.filter((x) => x.status === "deleted").length,
+            failedCount: listings.filter((x) => x.status === "delete_failed").length,
+            pendingCount: listings.filter((x) => x.status === "removed").length,
+          };
+        }),
+      );
+    },
+    [],
+  );
+
   const handleDelete = useCallback(
     async (match: SbCatalogMatch, listing: SbCatalogListing) => {
       const ticketId = listing.sbTicketId?.trim();
-      if (!ticketId || listing.status !== "pushed") return;
+      const canDelete = listing.status === "pushed" || listing.status === "delete_failed";
+      if (!ticketId || !canDelete) return;
+      const isRetry = listing.status === "delete_failed";
       if (
         !window.confirm(
-          `Delete SB listing ${ticketId} for ${match.eventName}?\n\nThis removes it from SeatsBrokers and marks it deleted here.`,
+          isRetry
+            ? `Retry deleting SB listing ${ticketId} for ${match.eventName}?\n\nThis calls SeatsBrokers ticket/delete again.`
+            : `Delete SB listing ${ticketId} for ${match.eventName}?\n\nThis removes it from SeatsBrokers and marks it deleted here only after SB confirms.`,
         )
       ) {
         return;
@@ -228,42 +285,27 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
         const json = (await res.json()) as {
           ok?: boolean;
           error?: string;
-          entry?: { status: SbListingUiStatus; sbDeletedAt?: string | null; sbDeleteError?: string | null };
+          entry?: {
+            status: SbListingUiStatus;
+            sbDeletedAt?: string | null;
+            sbDeleteError?: string | null;
+            inventoryRemovedAt?: string | null;
+          };
         };
         if (!res.ok || !json.ok) {
           setDeleteError(json.error ?? `Delete failed (${res.status})`);
+          applyListingDeleteResult(match, listing, json, true);
           return;
         }
 
-        setMatches((prev) =>
-          prev.map((m) => {
-            if (m.eventId !== match.eventId) return m;
-            const listings = m.listings.map((l) => {
-              if (l.logId !== listing.logId) return l;
-              return {
-                ...l,
-                status: "deleted" as const,
-                sbDeletedAt: json.entry?.sbDeletedAt ?? new Date().toISOString(),
-                sbDeleteError: null,
-              };
-            });
-            return {
-              ...m,
-              listings,
-              activeCount: listings.filter((x) => x.status === "pushed").length,
-              deletedCount: listings.filter((x) => x.status === "deleted").length,
-              failedCount: listings.filter((x) => x.status === "delete_failed").length,
-              pendingCount: listings.filter((x) => x.status === "removed").length,
-            };
-          }),
-        );
+        applyListingDeleteResult(match, listing, json, false);
       } catch (e) {
         setDeleteError(e instanceof Error ? e.message : String(e));
       } finally {
         setDeletingId(null);
       }
     },
-    [],
+    [applyListingDeleteResult],
   );
 
   const filterChip = (key: StatusFilter, label: string, count?: number) => {
@@ -553,14 +595,20 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
                                     ) : null}
                                   </td>
                                   <td className="whitespace-nowrap px-4 py-3 text-right">
-                                    {listing.status === "pushed" && listing.sbTicketId && sbConfigured ? (
+                                    {(listing.status === "pushed" || listing.status === "delete_failed") &&
+                                    listing.sbTicketId &&
+                                    sbConfigured ? (
                                       <button
                                         type="button"
                                         disabled={deletingId === listing.logId}
                                         onClick={() => void handleDelete(match, listing)}
                                         className="rounded-lg border border-rose-400/40 bg-rose-500/10 px-2.5 py-1 text-xs font-semibold text-rose-100 hover:bg-rose-500/18 disabled:opacity-50"
                                       >
-                                        {deletingId === listing.logId ? "…" : "Delete"}
+                                        {deletingId === listing.logId
+                                          ? "…"
+                                          : listing.status === "delete_failed"
+                                            ? "Retry"
+                                            : "Delete"}
                                       </button>
                                     ) : (
                                       <span className="text-xs text-zinc-600">—</span>

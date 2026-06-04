@@ -65,7 +65,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ eventId: strin
 
     if (!result.ok) {
       const status = result.httpStatus && result.httpStatus >= 400 ? 502 : 422;
-      return NextResponse.json(result, { status });
+      return NextResponse.json(
+        {
+          ok: false,
+          error: result.error,
+          httpStatus: result.httpStatus,
+          ...(result.entry ? { entry: result.entry } : {}),
+        },
+        { status },
+      );
     }
 
     return NextResponse.json({
