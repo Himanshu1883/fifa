@@ -1,7 +1,7 @@
 export function HomePageLoadingSkeleton() {
   return (
-    <div className="min-h-screen bg-[color:var(--ticketing-surface)] font-sans text-zinc-100">
-      <div className="flex min-h-screen w-full flex-col gap-3 px-3 pb-12 pt-3 sm:px-4 sm:pt-4 lg:px-5">
+    <div className="bg-[color:var(--ticketing-surface)] font-sans text-zinc-100">
+      <div className="flex w-full flex-col gap-3 px-3 pb-4 pt-3 sm:px-4 sm:pb-5 sm:pt-4 lg:px-5">
         <div className="relative w-full overflow-hidden rounded-2xl border border-white/[0.07] bg-zinc-900/35 ring-1 ring-white/[0.04]">
           <div className="space-y-4 border-b border-white/[0.06] px-4 py-5 sm:px-6">
             <div className="h-4 w-48 animate-pulse rounded-full bg-white/[0.08]" />

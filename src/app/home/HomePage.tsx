@@ -711,13 +711,13 @@ export async function HomePage({
     "rounded-xl border border-red-400/30 bg-[color:color-mix(in_oklab,red_12%,transparent)] px-4 py-3 text-sm text-red-200 shadow-sm shadow-black/30 ring-1 ring-red-500/15";
 
   return (
-    <div className="min-h-screen bg-[color:var(--ticketing-surface)] font-sans text-zinc-100">
+    <div className="bg-[color:var(--ticketing-surface)] font-sans text-zinc-100">
       <div
         className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_85%_55%_at_50%_-18%,var(--ticketing-accent-dim),transparent_52%),radial-gradient(ellipse_55%_45%_at_100%_0%,color-mix(in_oklab,var(--ticketing-accent)_10%,transparent),transparent_45%),radial-gradient(ellipse_50%_40%_at_0%_100%,rgba(255,255,255,0.03),transparent_50%)]"
         aria-hidden
       />
 
-      <div className="flex min-h-screen w-full max-w-none flex-col gap-3 px-3 pb-12 pt-3 sm:gap-4 sm:px-4 sm:pb-14 sm:pt-4 lg:px-5">
+      <div className="flex w-full max-w-none flex-col gap-3 px-3 pb-4 pt-3 sm:gap-4 sm:px-4 sm:pb-5 sm:pt-4 lg:px-5">
         {prefsErr ? (
           <p className={alertShell} role="alert">
             {prefsErr}
@@ -738,61 +738,50 @@ export async function HomePage({
           />
           <header className="relative w-full border-b border-white/[0.06] px-4 py-4 sm:px-5 sm:py-5 lg:px-6">
             <div className="grid w-full gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,22rem)] lg:items-start lg:gap-6">
-              <div className="min-w-0 space-y-3">
+              <div className="min-w-0 space-y-2">
                 <p className="inline-flex items-center gap-2 rounded-full border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-100 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)]">
                   2026 FIFA WORLD CUP{" "}
                   <span className="text-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,white_40%)]">·</span> Live
                   ticket tracker
                 </p>
 
-                <h1 className="text-balance text-2xl font-semibold tracking-tight text-white sm:text-3xl lg:text-[2.125rem] lg:leading-[1.12]">
-                  All World Cup tickets, <span className="text-[color:var(--ticketing-accent)]">in one place.</span>
-                </h1>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4 lg:gap-6">
+                  <h1 className="min-w-0 flex-1 text-balance text-2xl font-semibold tracking-tight text-white sm:text-3xl lg:text-[2.125rem] lg:leading-[1.12]">
+                    All World Cup tickets, <span className="text-[color:var(--ticketing-accent)]">in one place.</span>
+                  </h1>
 
-                <p className="max-w-3xl text-pretty text-sm leading-snug text-zinc-400 sm:leading-relaxed">
-                  Browse resale marketplace listings and official face-value Last Minute Sales drops across every match.
-                  Sort by price and filter by stage, venue, or country.
-                </p>
-
-                <dl
-                  className="grid w-full max-w-xl grid-cols-3 divide-x divide-white/[0.10] overflow-hidden rounded-xl border border-white/[0.08] bg-black/25 py-2.5 shadow-inner shadow-black/35 ring-1 ring-white/[0.05] sm:py-3"
-                  aria-label="Schedule totals"
-                >
-                  <div className="px-3 text-center sm:px-4">
-                    <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">
-                      Tickets{sockKind === "RESALE" ? " (Resale)" : " (Shop)"}
-                    </dt>
-                    <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-[color:color-mix(in_oklab,var(--ticketing-accent)_88%,white_8%)] sm:text-2xl lg:text-3xl">
-                      {totalTickets.toLocaleString("en-US")}
-                    </dd>
-                  </div>
-                  <div className="px-3 text-center sm:px-4">
-                    <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">
-                      Matches
-                    </dt>
-                    <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-white sm:text-2xl lg:text-3xl">
-                      {events.length.toLocaleString("en-US")}
-                    </dd>
-                  </div>
-                  <div className="px-3 text-center sm:px-4">
-                    <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">
-                      Sources
-                    </dt>
-                    <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-white sm:text-2xl lg:text-3xl">
-                      1
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-
-              {showBoxofficeControls ? (
-                <div className="w-full lg:max-w-[22rem] lg:justify-self-end">
-                  <BoxofficeControlsClient port={boxofficePort} />
+                  <dl
+                    className="grid w-full shrink-0 grid-cols-3 divide-x divide-white/[0.10] overflow-hidden rounded-xl border border-white/[0.08] bg-black/25 py-2 shadow-inner shadow-black/35 ring-1 ring-white/[0.05] sm:max-w-md sm:py-2.5 lg:max-w-lg"
+                    aria-label="Schedule totals"
+                  >
+                    <div className="px-2.5 text-center sm:px-3">
+                      <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">
+                        Tickets{sockKind === "RESALE" ? " (Resale)" : " (Shop)"}
+                      </dt>
+                      <dd className="mt-0.5 text-lg font-semibold tabular-nums tracking-tight text-[color:color-mix(in_oklab,var(--ticketing-accent)_88%,white_8%)] sm:mt-1 sm:text-xl lg:text-2xl">
+                        {totalTickets.toLocaleString("en-US")}
+                      </dd>
+                    </div>
+                    <div className="px-2.5 text-center sm:px-3">
+                      <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">
+                        Matches
+                      </dt>
+                      <dd className="mt-0.5 text-lg font-semibold tabular-nums tracking-tight text-white sm:mt-1 sm:text-xl lg:text-2xl">
+                        {events.length.toLocaleString("en-US")}
+                      </dd>
+                    </div>
+                    <div className="px-2.5 text-center sm:px-3">
+                      <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-[10px] sm:tracking-[0.16em]">
+                        Sources
+                      </dt>
+                      <dd className="mt-0.5 text-lg font-semibold tabular-nums tracking-tight text-white sm:mt-1 sm:text-xl lg:text-2xl">
+                        1
+                      </dd>
+                    </div>
+                  </dl>
                 </div>
-              ) : null}
-            </div>
 
-            <div className="mt-4 flex w-full flex-col gap-3 border-t border-white/[0.06] pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2.5">
+                <div className="-mt-0.5 flex w-full flex-col gap-2.5 sm:mt-0 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
               <HomeSockKindSwitcher
                 activeKind={sockKind}
                 lastMinuteHref={homeKindHref("LAST_MINUTE")}
@@ -827,10 +816,18 @@ export async function HomePage({
                   sbEventId: e.sbEventId,
                 }))}
               />
+                </div>
+              </div>
+
+              {showBoxofficeControls ? (
+                <div className="w-full lg:max-w-[22rem] lg:justify-self-end">
+                  <BoxofficeControlsClient port={boxofficePort} />
+                </div>
+              ) : null}
             </div>
           </header>
 
-          <div className="w-full px-4 pb-6 pt-4 sm:px-5 sm:pb-8 sm:pt-5 lg:px-6">
+          <div className="w-full px-4 pb-3 pt-4 sm:px-5 sm:pb-4 sm:pt-5 lg:px-6">
             <HomeSockKindLoadingOverlay>
             <section aria-labelledby="home-events-heading" className="flex w-full flex-col gap-4">
               <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -1117,7 +1114,7 @@ export async function HomePage({
                   </p>
 
                   <div className="hidden overflow-hidden rounded-xl border border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface)_55%,transparent)] ring-1 ring-white/[0.04] lg:block">
-                    <div className="relative max-h-[min(70vh,52rem)] overflow-auto overscroll-contain">
+                    <div className="relative max-h-[80vh] overflow-auto overscroll-contain">
                       <table className="w-full min-w-[72rem] border-collapse text-left text-sm">
                         <thead className="sticky top-0 z-20 border-b border-white/[0.1] bg-[color:color-mix(in_oklab,var(--ticketing-surface)_94%,white_3%)] text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 shadow-[0_1px_0_0_rgba(255,255,255,0.06)] backdrop-blur-md supports-[backdrop-filter]:bg-[color:color-mix(in_oklab,var(--ticketing-surface)_88%,transparent)]">
                           <tr>

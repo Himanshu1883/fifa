@@ -310,13 +310,13 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
   }
 
   return (
-    <div className="min-h-screen bg-[color:var(--ticketing-surface)] font-sans text-zinc-100">
+    <div className="bg-[color:var(--ticketing-surface)] font-sans text-zinc-100">
       <div
         className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_85%_55%_at_50%_-18%,var(--ticketing-accent-dim),transparent_52%),radial-gradient(ellipse_55%_45%_at_100%_0%,color-mix(in_oklab,var(--ticketing-accent)_10%,transparent),transparent_45%),radial-gradient(ellipse_50%_40%_at_0%_100%,rgba(255,255,255,0.03),transparent_50%)]"
         aria-hidden
       />
-      <div className="flex min-h-screen w-full flex-col gap-4 px-4 pb-12 pt-6 sm:gap-5 sm:px-6 sm:pb-14 sm:pt-7">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 sm:gap-5">
+      <div className="flex w-full max-w-none flex-col gap-3 px-3 pb-4 pt-3 sm:gap-4 sm:px-4 sm:pb-5 sm:pt-4 lg:px-5">
+        <div className="flex w-full max-w-none flex-col gap-3 sm:gap-4">
           <nav aria-label="Breadcrumb" className="shrink-0">
             <Link
               href="/"

@@ -146,7 +146,7 @@ export function HomeSockKindLoadingOverlay({ children }: { children: ReactNode }
   const { isSwitching, switchingTo } = useHomeSockKindNav();
 
   return (
-    <div className="relative min-h-[12rem]">
+    <div className="relative min-h-0">
       {children}
       {isSwitching ? (
         <div
