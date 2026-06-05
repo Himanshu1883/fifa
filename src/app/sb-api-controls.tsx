@@ -153,9 +153,6 @@ function applyTicketFieldUpdate(ticket: TicketPayload, field: string, value: str
     const n = Number.parseInt(value, 10);
     if (Number.isFinite(n)) summary.quantity = n;
   }
-  if (field === "ticket_details") {
-    summary.seatNumbers = value.split(",").map((s) => s.trim()).filter(Boolean);
-  }
   if (field === "ticket_row") summary.row = value;
   if (field === "ticket_block") {
     const opt = ticket.sbBlockOptions?.find((b) => b.rowId === value || b.blockId === value);
@@ -1273,7 +1270,6 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                                 ["price", "Price (USD)"],
                                 ["quantity", "Quantity"],
                                 ["ticket_row", "Row"],
-                                ["ticket_details", "Seats (comma-separated)"],
                                 ["split_type", "Split type"],
                               ] as const
                             ).map(([field, label]) => (
@@ -1355,7 +1351,12 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                             <FieldRow label="Block name" value={t.summary.blockName} />
                           ) : null}
                           <FieldRow label="ticket_row" value={t.fields.ticket_row ?? ""} />
-                          <FieldRow label="ticket_details" value={t.fields.ticket_details ?? ""} />
+                          {t.summary.seatNumbers?.length ? (
+                            <FieldRow
+                              label="Seats (not sent to SB)"
+                              value={t.summary.seatNumbers.join(", ")}
+                            />
+                          ) : null}
                           <FieldRow label="split_type" value={t.fields.split_type ?? ""} />
                           <FieldRow label="ticket_type" value={t.fields.ticket_type ?? ""} />
                         </dl>

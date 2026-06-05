@@ -88,7 +88,6 @@ export function mapOfferToSeatsBrokersCreateTicket(
   );
   const faceValueField = formatFaceValueForSb(faceValueUsd);
   const seatNumbers = offer.seats.map((s) => s.seatNumber.trim()).filter(Boolean);
-  const ticketDetails = seatNumbers.join(",");
   const splitType =
     offer.offerType === "together" ? config.defaultSplitTypeTogether : config.defaultSplitTypeSingle;
   const { sbCategoryId, categoryNum, categoryLabel } = resolveSbCategoryFromCatalog(
@@ -111,7 +110,6 @@ export function mapOfferToSeatsBrokersCreateTicket(
     home_town: config.defaultHomeTown,
     price_type: config.priceType,
     price: formatPriceUsdForSb(priceUsd),
-    ticket_details: ticketDetails,
     split_type: splitType,
   };
   if (dateToShip) fields.date_to_ship = dateToShip;
@@ -175,8 +173,8 @@ export function isLikelyFifaSnowflakeId(value: string): boolean {
   return /^\d{12,}$/.test(value.trim());
 }
 
-/** SB ticket/create fields we intentionally omit (block/row live in ticket_details + category). */
-const SB_CREATE_OMITTED_FIELD_KEYS = new Set(["ticket_row", "ticket_block"]);
+/** SB ticket/create fields we intentionally omit (block/row/category only; seat numbers stay in summary). */
+const SB_CREATE_OMITTED_FIELD_KEYS = new Set(["ticket_row", "ticket_block", "ticket_details"]);
 
 /** Strip row/block before POST ticket/create — kept in summary for UI only. */
 export function fieldsForSbTicketCreate(fields: Record<string, string>): Record<string, string> {
@@ -223,8 +221,8 @@ export function toSbTicketPreviewPayload(ticket: MappedSeatsBrokersTicket): SbTi
 
 /**
  * Re-apply SB catalog mapping on push so ticket_category is never a FIFA id.
- * Row/block are not sent on ticket/create; seat numbers go in ticket_details.
- * Seat fields (ticket_details, quantity) always come from current inventory — stale preview
+ * Row/block/ticket_details are not sent on ticket/create.
+ * Quantity always comes from current inventory — stale preview
  * payloads cannot re-push an old seat after offers refresh.
  */
 export function enrichMappedTicketForPush(

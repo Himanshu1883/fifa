@@ -152,7 +152,7 @@ export async function loadSbOfferPreviewForSeatIds(
 
   let bundledOfferNote: string | null = null;
   if (matchKind === "quantity_reduced") {
-    bundledOfferNote = `Quantity rule for ${offer.offerType} (${offer.originalCount} seats in bucket): SB listing quantity is ${offer.transformedCount}, so only ${offer.seats.length} seat(s) are sent in ticket_details — not all ${clickedSeatIds.length} seats on this row.`;
+    bundledOfferNote = `Quantity rule for ${offer.offerType} (${offer.originalCount} seats in bucket): SB listing quantity is ${offer.transformedCount} (${offer.seats.length} seat(s) in this offer) — not all ${clickedSeatIds.length} seats on this row.`;
     warnings.push(bundledOfferNote);
   } else if (matchKind === "bundled") {
     bundledOfferNote = `You clicked ${clickedSeatIds.length} seat(s), but SB push uses the full aggregated offer (${offer.seats.length} seat(s) in payload, quantity ${offer.transformedCount}). Same block + same price are merged across rows/groups.`;
