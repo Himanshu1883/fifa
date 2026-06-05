@@ -15,7 +15,12 @@ import {
   type SbMatchCatalog,
 } from "@/lib/seatsbrokers-catalog";
 import type { SeatsBrokersConfig } from "@/lib/seatsbrokers-config";
-import type { TransformedSeatOffer } from "@/lib/seat-offers-transform";
+import type { SeatOfferType, TransformedSeatOffer } from "@/lib/seat-offers-transform";
+
+/** SB split_type: single seats → 5; pairs / together buckets → 2. */
+export function resolveSbSplitTypeForOffer(offerType: SeatOfferType): string {
+  return offerType === "single" ? "5" : "2";
+}
 
 export type MappedSeatsBrokersTicket = {
   offerIndex: number;
@@ -88,8 +93,7 @@ export function mapOfferToSeatsBrokersCreateTicket(
   );
   const faceValueField = formatFaceValueForSb(faceValueUsd);
   const seatNumbers = offer.seats.map((s) => s.seatNumber.trim()).filter(Boolean);
-  const splitType =
-    offer.offerType === "together" ? config.defaultSplitTypeTogether : config.defaultSplitTypeSingle;
+  const splitType = resolveSbSplitTypeForOffer(offer.offerType);
   const { sbCategoryId, categoryNum, categoryLabel } = resolveSbCategoryFromCatalog(
     catalog,
     first.categoryName,
@@ -111,6 +115,7 @@ export function mapOfferToSeatsBrokersCreateTicket(
     price_type: config.priceType,
     price: formatPriceUsdForSb(priceUsd),
     split_type: splitType,
+    ...(sbBlockRowId ? { ticket_block: sbBlockRowId } : {}),
   };
   if (dateToShip) fields.date_to_ship = dateToShip;
   if (priceUsd != null && Number.isFinite(priceUsd) && priceUsd > 0) {
@@ -173,10 +178,10 @@ export function isLikelyFifaSnowflakeId(value: string): boolean {
   return /^\d{12,}$/.test(value.trim());
 }
 
-/** SB ticket/create fields we intentionally omit (block/row/category only; seat numbers stay in summary). */
-const SB_CREATE_OMITTED_FIELD_KEYS = new Set(["ticket_row", "ticket_block", "ticket_details"]);
+/** SB ticket/create fields we intentionally omit (row/seat numbers stay in summary only). */
+const SB_CREATE_OMITTED_FIELD_KEYS = new Set(["ticket_row", "ticket_details"]);
 
-/** Strip row/block before POST ticket/create — kept in summary for UI only. */
+/** Strip omitted fields before POST ticket/create. */
 export function fieldsForSbTicketCreate(fields: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(fields)) {
@@ -271,17 +276,17 @@ export function enrichMappedTicketForPush(
   const clientPrice = clientFields.price?.trim();
   const clientFaceValue = clientFields.face_value?.trim();
   const clientTicketType = clientFields.ticket_type?.trim();
-  const clientSplitType = clientFields.split_type?.trim();
   const clientDateToShip = clientFields.date_to_ship?.trim();
 
   const fields: Record<string, string> = {
     ...fieldsForSbTicketCreate(baseline.fields),
     match_id: matchId,
     ticket_category: ticketCategory,
+    split_type: resolveSbSplitTypeForOffer(offer.offerType),
+    ...(ticketBlock ? { ticket_block: ticketBlock } : {}),
     ...(clientPrice ? { price: clientPrice } : {}),
     ...(clientFaceValue ? { face_value: clientFaceValue } : {}),
     ...(clientTicketType ? { ticket_type: clientTicketType } : {}),
-    ...(clientSplitType ? { split_type: clientSplitType } : {}),
     ...(clientDateToShip ? { date_to_ship: clientDateToShip } : {}),
   };
   if (!fields.face_value?.trim()) {

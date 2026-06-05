@@ -15,6 +15,7 @@ import {
   enrichMappedTicketForPush,
   isLikelyFifaSnowflakeId,
   mapOfferToSeatsBrokersCreateTicket,
+  resolveSbSplitTypeForOffer,
 } from "../src/lib/seatsbrokers-offer-map";
 import { getSeatsBrokersConfig } from "../src/lib/seatsbrokers-config";
 import { sbCreateTicket, sbGetTicketBlocks, sbListTickets } from "../src/lib/seatsbrokers-client";
@@ -88,6 +89,10 @@ section("isLikelyFifaSnowflakeId");
 assert(isLikelyFifaSnowflakeId("10229531540407"), "FIFA id detected");
 assert(!isLikelyFifaSnowflakeId("1060776"), "SB row id not FIFA");
 assert(!isLikelyFifaSnowflakeId("111c"), "section code not FIFA");
+
+section("resolveSbSplitTypeForOffer");
+assert(resolveSbSplitTypeForOffer("single") === "5", "single → split_type 5");
+assert(resolveSbSplitTypeForOffer("together") === "2", "together → split_type 2");
 
 section("mapOfferToSeatsBrokersCreateTicket");
 const mockOffer: TransformedSeatOffer = {
@@ -186,6 +191,7 @@ if (!config) {
   if (mapped) {
     assert(mapped.fields.ticket_block === "1060776", "ticket_block is row id 1060776");
     assert(mapped.fields.ticket_block !== "111c", "ticket_block is not section code");
+    assert(mapped.fields.split_type === "5", "single offer → split_type 5");
     assert(mapped.fields.ticket_category === "16", "ticket_category is SB 16");
     assert(mapped.summary.sbBlockCode === "111c", "sbBlockCode is section");
     assert(mapped.summary.fifaBlockId === "10229531540407", "fifa block preserved in summary");
@@ -212,6 +218,30 @@ if (!config) {
       mockCatalog,
     );
     assert(enriched2?.fields.ticket_block === "1060776", "enrich replaces FIFA id with row id");
+    assert(enriched?.fields.split_type === "5", "enrich keeps single split_type 5");
+    const togetherOffer: TransformedSeatOffer = { ...mockOffer, offerType: "together", originalCount: 2 };
+    const togetherMapped = mapOfferToSeatsBrokersCreateTicket(
+      togetherOffer,
+      "5680",
+      config,
+      0,
+      "2026-06-11",
+      mockCatalog,
+    );
+    assert(togetherMapped?.fields.split_type === "2", "together offer → split_type 2");
+    const staleSplit = {
+      ...mapped,
+      fields: { ...mapped.fields, split_type: "2" },
+    };
+    const enrichedSplit = enrichMappedTicketForPush(
+      staleSplit,
+      [mockOffer],
+      "5680",
+      config,
+      "2026-06-11",
+      mockCatalog,
+    );
+    assert(enrichedSplit?.fields.split_type === "5", "enrich fixes stale split_type for single");
   }
 }
 
