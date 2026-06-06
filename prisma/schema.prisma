@@ -95,6 +95,8 @@ model Event {
   sockAvailableWebhookDiffLogs SockAvailableWebhookDiffLog[]
   sbAutoPushRegistration SbEventAutoPush?
   sbListingPushLogs      SbListingPushLog[]
+  sbBulkPushJobs         SbBulkPushJob[]
+  sbBulkDeleteJobs       SbBulkDeleteJob[]
 
   @@index([sortOrder])
   @@index([prefId])
@@ -322,6 +324,18 @@ enum SbListingPushTrigger {
   AUTO
 }
 
+enum SbBulkPushJobStatus {
+  RUNNING
+  COMPLETE
+  FAILED
+}
+
+enum SbBulkDeleteJobStatus {
+  RUNNING
+  COMPLETE
+  FAILED
+}
+
 model SbListingPushLog {
   id                 Int                  @id @default(autoincrement())
   eventId            Int                  @map("event_id")
@@ -347,6 +361,48 @@ model SbListingPushLog {
   @@index([eventId, listingFingerprint])
   @@index([eventId, inventoryRemovedAt])
   @@map("sb_listing_push_logs")
+}
+
+model SbBulkPushJob {
+  id           Int                  @id @default(autoincrement())
+  eventId      Int                  @map("event_id")
+  event        Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  status       SbBulkPushJobStatus  @default(RUNNING)
+  items        Json
+  current      Int                  @default(0)
+  total        Int
+  succeeded    Int                  @default(0)
+  failed       Int                  @default(0)
+  lastError    String?              @map("last_error") @db.Text
+  currentLabel String?              @map("current_label")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  updatedAt    DateTime             @updatedAt @map("updated_at")
+  completedAt  DateTime?            @map("completed_at")
+
+  @@index([eventId, status])
+  @@index([eventId, createdAt(sort: Desc)])
+  @@map("sb_bulk_push_jobs")
+}
+
+model SbBulkDeleteJob {
+  id           Int                    @id @default(autoincrement())
+  eventId      Int                    @map("event_id")
+  event        Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  status       SbBulkDeleteJobStatus  @default(RUNNING)
+  items        Json
+  current      Int                    @default(0)
+  total        Int
+  succeeded    Int                    @default(0)
+  failed       Int                    @default(0)
+  lastError    String?                @map("last_error") @db.Text
+  currentLabel String?                @map("current_label")
+  createdAt    DateTime               @default(now()) @map("created_at")
+  updatedAt    DateTime               @updatedAt @map("updated_at")
+  completedAt  DateTime?              @map("completed_at")
+
+  @@index([eventId, status])
+  @@index([eventId, createdAt(sort: Desc)])
+  @@map("sb_bulk_delete_jobs")
 }
 
 model SockAvailable {

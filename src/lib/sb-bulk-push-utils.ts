@@ -11,8 +11,26 @@ export type SbBulkPushItem = {
   label: string;
 };
 
+export type SbBulkDeleteItem = {
+  key: string;
+  sbTicketId: string;
+  logId?: number;
+  seatIds: string[];
+  blockName: string;
+  rowLabel: string;
+  seatSpan: string;
+  label: string;
+};
+
 export function isSbRowPushable(entry: Pick<SbListingStatusEntry, "status"> | null | undefined): boolean {
   return !entry || entry.status !== "pushed";
+}
+
+export function isSbRowDeletable(
+  entry: Pick<SbListingStatusEntry, "status" | "sbTicketId"> | null | undefined,
+): boolean {
+  if (!entry?.sbTicketId?.trim()) return false;
+  return entry.status === "pushed" || entry.status === "delete_failed";
 }
 
 export function seatNumbersFromSpan(seatSpan: string): string[] {

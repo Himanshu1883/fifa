@@ -5,8 +5,9 @@ import { SbRemovedListingsSection } from "@/app/events/[eventId]/sb-removed-list
 import { SbBulkPushBar, type SbBulkPushQueueState } from "@/app/events/[eventId]/sb-bulk-push-bar";
 import { SbListingRowActions } from "@/app/events/[eventId]/sb-listing-row-actions";
 import {
+  isSbRowDeletable,
   isSbRowPushable,
-  sbListingEntryFromPushResponse,
+  type SbBulkDeleteItem,
   type SbBulkPushItem,
 } from "@/lib/sb-bulk-push-utils";
 import type { SbListingStatusEntry, SbListingStatusPayload } from "@/lib/sb-listing-status";
@@ -22,7 +23,7 @@ import {
   type SbRowLookupMeta,
 } from "@/lib/sb-listing-row-index";
 import { resolvePlainSbCategoryNum, type SbCategoryNum } from "@/lib/sb-category";
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { formatUsd, priceToNumber } from "@/lib/format-usd";
 
 const SB_CATEGORY_FILTER_NUMS = [1, 2, 3, 4] as const satisfies readonly SbCategoryNum[];
@@ -377,6 +378,10 @@ export function SockAvailablePanel(props: {
   const [selectedPushKeys, setSelectedPushKeys] = useState<Set<string>>(() => new Set());
   const [omitBlockKeys, setOmitBlockKeys] = useState<Set<string>>(() => new Set());
   const [bulkPushQueue, setBulkPushQueue] = useState<SbBulkPushQueueState | null>(null);
+  const [bulkPushJobId, setBulkPushJobId] = useState<number | null>(null);
+  const [bulkDeleteQueue, setBulkDeleteQueue] = useState<SbBulkPushQueueState | null>(null);
+  const [bulkDeleteJobId, setBulkDeleteJobId] = useState<number | null>(null);
+  const bulkDeleteStartedKeysRef = useRef<Set<string>>(new Set());
 
   const refreshSbConfigured = useCallback(async () => {
     try {
@@ -964,16 +969,71 @@ export function SockAvailablePanel(props: {
 
   const pushableKeySet = useMemo(() => new Set(pushableItems.map((i) => i.key)), [pushableItems]);
 
+  const deletableItems = useMemo((): SbBulkDeleteItem[] => {
+    if (!bulkPushEnabled) return [];
+    const items: SbBulkDeleteItem[] = [];
+    if (viewMode === "raw") {
+      for (const r of rawSorted) {
+        if (r.kind !== "RESALE") continue;
+        const entry = lookupSbEntry([r.seatId], {
+          blockName: r.blockName,
+          row: r.row,
+          seatSpan: r.seatNumber,
+        });
+        if (!isSbRowDeletable(entry) || !entry?.sbTicketId?.trim()) continue;
+        items.push({
+          key: `raw|${r.id}`,
+          sbTicketId: entry.sbTicketId.trim(),
+          ...(entry.logId > 0 ? { logId: entry.logId } : {}),
+          seatIds: [r.seatId],
+          blockName: r.blockName,
+          rowLabel: r.row,
+          seatSpan: r.seatNumber,
+          label: `${r.blockName} · R${r.row} · ${r.seatNumber}`,
+        });
+      }
+      return items;
+    }
+    for (const g of groupedSorted) {
+      if (g.kind !== "RESALE") continue;
+      const entry = lookupSbEntry(
+        g.seats.map((s) => s.seatId),
+        { blockName: g.blockName, row: g.row, seatSpan: g.seatSpan },
+      );
+      if (!isSbRowDeletable(entry) || !entry?.sbTicketId?.trim()) continue;
+      items.push({
+        key: g.id,
+        sbTicketId: entry.sbTicketId.trim(),
+        ...(entry.logId > 0 ? { logId: entry.logId } : {}),
+        seatIds: g.seats.map((s) => s.seatId),
+        blockName: g.blockName,
+        rowLabel: g.row,
+        seatSpan: g.seatSpan,
+        label: `${g.blockName} · R${g.row} · ${g.seatSpan}`,
+      });
+    }
+    return items;
+  }, [bulkPushEnabled, viewMode, rawSorted, groupedSorted, lookupSbEntry]);
+
+  const deletableKeySet = useMemo(() => new Set(deletableItems.map((i) => i.key)), [deletableItems]);
+
+  const selectableKeySet = useMemo(() => {
+    const keys = new Set<string>();
+    for (const k of pushableKeySet) keys.add(k);
+    for (const k of deletableKeySet) keys.add(k);
+    return keys;
+  }, [pushableKeySet, deletableKeySet]);
+
   useEffect(() => {
     setSelectedPushKeys((prev) => {
-      const next = new Set([...prev].filter((k) => pushableKeySet.has(k)));
+      const next = new Set([...prev].filter((k) => selectableKeySet.has(k)));
       return next.size === prev.size ? prev : next;
     });
     setOmitBlockKeys((prev) => {
       const next = new Set([...prev].filter((k) => pushableKeySet.has(k)));
       return next.size === prev.size ? prev : next;
     });
-  }, [pushableKeySet]);
+  }, [selectableKeySet, pushableKeySet]);
 
   const selectedPushCount = useMemo(() => {
     let n = 0;
@@ -982,6 +1042,22 @@ export function SockAvailablePanel(props: {
     }
     return n;
   }, [selectedPushKeys, pushableKeySet]);
+
+  const selectedDeletableCount = useMemo(() => {
+    let n = 0;
+    for (const k of selectedPushKeys) {
+      if (deletableKeySet.has(k)) n++;
+    }
+    return n;
+  }, [selectedPushKeys, deletableKeySet]);
+
+  const selectedBulkCount = useMemo(() => {
+    let n = 0;
+    for (const k of selectedPushKeys) {
+      if (selectableKeySet.has(k)) n++;
+    }
+    return n;
+  }, [selectedPushKeys, selectableKeySet]);
 
   const togglePushSelection = useCallback((key: string) => {
     setSelectedPushKeys((prev) => {
@@ -1010,15 +1086,29 @@ export function SockAvailablePanel(props: {
   }, [selectedPushKeys, omitBlockKeys, pushableKeySet]);
 
   const selectAllPushable = useCallback(() => {
-    setSelectedPushKeys(new Set(pushableItems.map((i) => i.key)));
+    setSelectedPushKeys((prev) => {
+      const next = new Set(prev);
+      for (const item of pushableItems) next.add(item.key);
+      return next;
+    });
   }, [pushableItems]);
+
+  const selectAllDeletable = useCallback(() => {
+    setSelectedPushKeys((prev) => {
+      const next = new Set(prev);
+      for (const item of deletableItems) next.add(item.key);
+      return next;
+    });
+  }, [deletableItems]);
 
   const clearPushSelection = useCallback(() => {
     setSelectedPushKeys(new Set());
   }, []);
 
+  const bulkActionRunning = Boolean(bulkPushQueue?.running || bulkDeleteQueue?.running);
+
   const runBulkPushQueue = useCallback(async () => {
-    if (!eventId || !bulkPushEnabled || bulkPushQueue?.running) return;
+    if (!eventId || !bulkPushEnabled || bulkActionRunning) return;
     const items = pushableItems.filter((i) => selectedPushKeys.has(i.key));
     if (items.length === 0) return;
     if (
@@ -1028,10 +1118,6 @@ export function SockAvailablePanel(props: {
     ) {
       return;
     }
-
-    let succeeded = 0;
-    let failed = 0;
-    let lastError: string | null = null;
 
     setBulkPushQueue({
       running: true,
@@ -1043,89 +1129,74 @@ export function SockAvailablePanel(props: {
       lastError: null,
     });
 
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i]!;
-      setBulkPushQueue({
-        running: true,
-        current: i + 1,
-        total: items.length,
-        label: item.label,
-        succeeded,
-        failed,
-        lastError,
+    try {
+      const res = await fetch(`/api/events/${eventId}/sb-bulk-push`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: items.map((item) => ({
+            seatIds: item.seatIds,
+            blockName: item.blockName,
+            rowLabel: item.rowLabel,
+            seatSpan: item.seatSpan,
+            label: item.label,
+            ...(omitBlockKeys.has(item.key) ? { omitTicketBlock: true } : {}),
+          })),
+        }),
       });
-
-      const meta: SbRowLookupMeta = {
-        seatIds: item.seatIds,
-        blockName: item.blockName,
-        row: item.rowLabel,
-        seatSpan: item.seatSpan,
+      const json = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        jobId?: number;
+        alreadyRunning?: boolean;
+        job?: {
+          status?: "running" | "complete" | "failed";
+          current?: number;
+          total?: number;
+          succeeded?: number;
+          failed?: number;
+          lastError?: string | null;
+          label?: string;
+        };
       };
 
-      try {
-        const res = await fetch(`/api/events/${eventId}/sb-push-offer`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            seatIds: item.seatIds,
-            ...(omitBlockKeys.has(item.key) ? { omitTicketBlock: true } : {}),
-          }),
+      if (!res.ok || !json.ok || json.jobId == null) {
+        setBulkPushQueue({
+          running: false,
+          current: 0,
+          total: items.length,
+          label: "Queue failed",
+          succeeded: 0,
+          failed: items.length,
+          lastError: json.error ?? `Failed to start bulk push (${res.status})`,
         });
-        const json = (await res.json()) as {
-          ok?: boolean;
-          error?: string;
-          skipped?: boolean;
-          sbTicketId?: string | null;
-          existingSbTicketId?: string | null;
-          logId?: number;
-          listingFingerprint?: string;
-          summary?: { blockName?: string; row?: string; seatNumbers?: string[] };
-          response?: unknown;
-        };
-
-        const existing = findSbListingEntryForRow(sbStatus.bySeatKey, meta);
-        const duplicateOk =
-          json.skipped && Boolean(json.existingSbTicketId ?? json.sbTicketId ?? existing?.sbTicketId);
-
-        if (!res.ok || !json.ok) {
-          if (!duplicateOk) {
-            failed++;
-            lastError = json.error ?? `Push failed (${res.status})`;
-            continue;
-          }
-        }
-
-        const entry = sbListingEntryFromPushResponse(item, json, existing);
-        pinSbListingEntries(eventId, entry, meta);
-        handleSbStatusChange(entry, meta);
-        window.dispatchEvent(
-          new CustomEvent("sb-listing-row-pushed", {
-            detail: { eventId, meta, entry },
-          }),
-        );
-        succeeded++;
-        setSelectedPushKeys((prev) => {
-          const next = new Set(prev);
-          next.delete(item.key);
-          return next;
-        });
-      } catch (e) {
-        failed++;
-        lastError = e instanceof Error ? e.message : String(e);
+        window.setTimeout(() => setBulkPushQueue(null), 4000);
+        return;
       }
-    }
 
-    setBulkPushQueue({
-      running: false,
-      current: items.length,
-      total: items.length,
-      label: "Queue complete",
-      succeeded,
-      failed,
-      lastError,
-    });
-    window.setTimeout(() => setBulkPushQueue(null), 4000);
-    void refreshSbStatus();
+      setBulkPushJobId(json.jobId);
+      setBulkPushQueue({
+        running: json.job?.status === "running",
+        current: json.job?.current ?? 0,
+        total: json.job?.total ?? items.length,
+        label: json.job?.label ?? "Starting…",
+        succeeded: json.job?.succeeded ?? 0,
+        failed: json.job?.failed ?? 0,
+        lastError: json.job?.lastError ?? null,
+      });
+      setSelectedPushKeys(new Set());
+    } catch (e) {
+      setBulkPushQueue({
+        running: false,
+        current: 0,
+        total: items.length,
+        label: "Queue failed",
+        succeeded: 0,
+        failed: items.length,
+        lastError: e instanceof Error ? e.message : String(e),
+      });
+      window.setTimeout(() => setBulkPushQueue(null), 4000);
+    }
   }, [
     eventId,
     bulkPushEnabled,
@@ -1133,10 +1204,331 @@ export function SockAvailablePanel(props: {
     pushableItems,
     selectedPushKeys,
     omitBlockKeys,
-    sbStatus.bySeatKey,
-    handleSbStatusChange,
-    refreshSbStatus,
   ]);
+
+  const runBulkDeleteQueue = useCallback(async () => {
+    if (!eventId || !bulkPushEnabled || bulkActionRunning) return;
+    const items = deletableItems.filter((i) => selectedPushKeys.has(i.key));
+    if (items.length === 0) return;
+    if (
+      !window.confirm(
+        `Delete ${items.length} listing(s) from SeatsBrokers?\n\nThey will be deleted one at a time in queue order. This cannot be undone on SB.`,
+      )
+    ) {
+      return;
+    }
+
+    bulkDeleteStartedKeysRef.current = new Set(items.map((i) => i.key));
+
+    setBulkDeleteQueue({
+      running: true,
+      current: 0,
+      total: items.length,
+      label: "Starting…",
+      succeeded: 0,
+      failed: 0,
+      lastError: null,
+    });
+
+    try {
+      const res = await fetch(`/api/events/${eventId}/sb-bulk-delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: items.map((item) => ({
+            sbTicketId: item.sbTicketId,
+            ...(item.logId ? { logId: item.logId } : {}),
+            seatIds: item.seatIds,
+            blockName: item.blockName,
+            rowLabel: item.rowLabel,
+            seatSpan: item.seatSpan,
+            label: item.label,
+          })),
+        }),
+      });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        jobId?: number;
+        alreadyRunning?: boolean;
+        job?: {
+          status?: "running" | "complete" | "failed";
+          current?: number;
+          total?: number;
+          succeeded?: number;
+          failed?: number;
+          lastError?: string | null;
+          label?: string;
+        };
+      };
+
+      if (!res.ok || !json.ok || json.jobId == null) {
+        setBulkDeleteQueue({
+          running: false,
+          current: 0,
+          total: items.length,
+          label: "Queue failed",
+          succeeded: 0,
+          failed: items.length,
+          lastError: json.error ?? `Failed to start bulk delete (${res.status})`,
+        });
+        window.setTimeout(() => setBulkDeleteQueue(null), 4000);
+        return;
+      }
+
+      setBulkDeleteJobId(json.jobId);
+      setBulkDeleteQueue({
+        running: json.job?.status === "running",
+        current: json.job?.current ?? 0,
+        total: json.job?.total ?? items.length,
+        label: json.job?.label ?? "Starting…",
+        succeeded: json.job?.succeeded ?? 0,
+        failed: json.job?.failed ?? 0,
+        lastError: json.job?.lastError ?? null,
+      });
+      setSelectedPushKeys(bulkDeleteStartedKeysRef.current);
+    } catch (e) {
+      setBulkDeleteQueue({
+        running: false,
+        current: 0,
+        total: items.length,
+        label: "Queue failed",
+        succeeded: 0,
+        failed: items.length,
+        lastError: e instanceof Error ? e.message : String(e),
+      });
+      window.setTimeout(() => setBulkDeleteQueue(null), 4000);
+    }
+  }, [eventId, bulkPushEnabled, bulkDeleteQueue?.running, deletableItems, selectedPushKeys]);
+
+  useEffect(() => {
+    if (!eventId || !bulkPushEnabled) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/events/${eventId}/sb-bulk-push?active=1`, { cache: "no-store" });
+        const json = (await res.json()) as {
+          ok?: boolean;
+          job?: {
+            id?: number;
+            status?: "running" | "complete" | "failed";
+            current?: number;
+            total?: number;
+            succeeded?: number;
+            failed?: number;
+            lastError?: string | null;
+            label?: string;
+          } | null;
+        };
+        if (cancelled || !res.ok || !json.ok || !json.job?.id) return;
+
+        setBulkPushJobId(json.job.id);
+        setBulkPushQueue({
+          running: json.job.status === "running",
+          current: json.job.current ?? 0,
+          total: json.job.total ?? 0,
+          label: json.job.label ?? "Starting…",
+          succeeded: json.job.succeeded ?? 0,
+          failed: json.job.failed ?? 0,
+          lastError: json.job.lastError ?? null,
+        });
+      } catch {
+        /* non-fatal */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, bulkPushEnabled]);
+
+  useEffect(() => {
+    if (!eventId || bulkPushJobId == null) return;
+
+    let cancelled = false;
+    let hideTimer: number | undefined;
+    let lastCurrent = -1;
+    let interval: number | undefined;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/events/${eventId}/sb-bulk-push?jobId=${bulkPushJobId}`, {
+          cache: "no-store",
+        });
+        const json = (await res.json()) as {
+          ok?: boolean;
+          job?: {
+            status?: "running" | "complete" | "failed";
+            current?: number;
+            total?: number;
+            succeeded?: number;
+            failed?: number;
+            lastError?: string | null;
+            label?: string;
+          } | null;
+        };
+        if (cancelled || !res.ok || !json.ok || !json.job) return;
+
+        const job = json.job;
+        setBulkPushQueue({
+          running: job.status === "running",
+          current: job.current ?? 0,
+          total: job.total ?? 0,
+          label: job.label ?? "Pushing…",
+          succeeded: job.succeeded ?? 0,
+          failed: job.failed ?? 0,
+          lastError: job.lastError ?? null,
+        });
+
+        if ((job.current ?? 0) > lastCurrent) {
+          lastCurrent = job.current ?? 0;
+          void refreshSbStatus();
+        }
+
+        if (job.status !== "running") {
+          void refreshSbStatus();
+          if (interval != null) window.clearInterval(interval);
+          if (hideTimer == null) {
+            hideTimer = window.setTimeout(() => {
+              if (!cancelled) {
+                setBulkPushQueue(null);
+                setBulkPushJobId(null);
+              }
+            }, 4000);
+          }
+        }
+      } catch {
+        /* keep polling */
+      }
+    };
+
+    void poll();
+    interval = window.setInterval(() => void poll(), 1500);
+
+    return () => {
+      cancelled = true;
+      if (interval != null) window.clearInterval(interval);
+      if (hideTimer != null) window.clearTimeout(hideTimer);
+    };
+  }, [eventId, bulkPushJobId, refreshSbStatus]);
+
+  useEffect(() => {
+    if (!eventId || !bulkPushEnabled) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/events/${eventId}/sb-bulk-delete?active=1`, { cache: "no-store" });
+        const json = (await res.json()) as {
+          ok?: boolean;
+          job?: {
+            id?: number;
+            status?: "running" | "complete" | "failed";
+            current?: number;
+            total?: number;
+            succeeded?: number;
+            failed?: number;
+            lastError?: string | null;
+            label?: string;
+          } | null;
+        };
+        if (cancelled || !res.ok || !json.ok || !json.job?.id) return;
+
+        setBulkDeleteJobId(json.job.id);
+        setBulkDeleteQueue({
+          running: json.job.status === "running",
+          current: json.job.current ?? 0,
+          total: json.job.total ?? 0,
+          label: json.job.label ?? "Starting…",
+          succeeded: json.job.succeeded ?? 0,
+          failed: json.job.failed ?? 0,
+          lastError: json.job.lastError ?? null,
+        });
+      } catch {
+        /* non-fatal */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, bulkPushEnabled]);
+
+  useEffect(() => {
+    if (!eventId || bulkDeleteJobId == null) return;
+
+    let cancelled = false;
+    let hideTimer: number | undefined;
+    let lastCurrent = -1;
+    let interval: number | undefined;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/events/${eventId}/sb-bulk-delete?jobId=${bulkDeleteJobId}`, {
+          cache: "no-store",
+        });
+        const json = (await res.json()) as {
+          ok?: boolean;
+          job?: {
+            status?: "running" | "complete" | "failed";
+            current?: number;
+            total?: number;
+            succeeded?: number;
+            failed?: number;
+            lastError?: string | null;
+            label?: string;
+          } | null;
+        };
+        if (cancelled || !res.ok || !json.ok || !json.job) return;
+
+        const job = json.job;
+        setBulkDeleteQueue({
+          running: job.status === "running",
+          current: job.current ?? 0,
+          total: job.total ?? 0,
+          label: job.label ?? "Deleting…",
+          succeeded: job.succeeded ?? 0,
+          failed: job.failed ?? 0,
+          lastError: job.lastError ?? null,
+        });
+
+        if ((job.current ?? 0) > lastCurrent) {
+          lastCurrent = job.current ?? 0;
+          void refreshSbStatus();
+        }
+
+        if (job.status !== "running") {
+          void refreshSbStatus();
+          if (interval != null) window.clearInterval(interval);
+          if ((job.failed ?? 0) > 0) {
+            setSelectedPushKeys(new Set(bulkDeleteStartedKeysRef.current));
+          } else {
+            setSelectedPushKeys(new Set());
+          }
+          if (hideTimer == null) {
+            hideTimer = window.setTimeout(() => {
+              if (!cancelled) {
+                setBulkDeleteQueue(null);
+                setBulkDeleteJobId(null);
+              }
+            }, 4000);
+          }
+        }
+      } catch {
+        /* keep polling */
+      }
+    };
+
+    void poll();
+    interval = window.setInterval(() => void poll(), 1500);
+
+    return () => {
+      cancelled = true;
+      if (interval != null) window.clearInterval(interval);
+      if (hideTimer != null) window.clearTimeout(hideTimer);
+    };
+  }, [eventId, bulkDeleteJobId, refreshSbStatus]);
 
   const sectionPad = embedInParentCard ? "px-4 sm:px-7" : "";
   const filtersVisible = smUp ? filtersExpanded : mobileFiltersOpen;
@@ -1959,7 +2351,7 @@ export function SockAvailablePanel(props: {
                         {bulkPushEnabled ? (
                           <>
                             <th scope="col" className="w-10 px-2 py-3 text-center font-medium text-zinc-400">
-                              <span className="sr-only">Select for bulk push</span>
+                              <span className="sr-only">Select for bulk SB actions</span>
                             </th>
                             <th
                               scope="col"
@@ -1999,24 +2391,26 @@ export function SockAvailablePanel(props: {
                     <tbody className="divide-y divide-white/[0.05]">
                       {rawSorted.map((r) => {
                         const pushKey = `raw|${r.id}`;
-                        const pushSelectable = bulkPushEnabled && pushableKeySet.has(pushKey);
-                        const pushSelected = pushSelectable && selectedPushKeys.has(pushKey);
-                        const omitBlock = pushSelectable && omitBlockKeys.has(pushKey);
+                        const bulkSelectable =
+                          bulkPushEnabled &&
+                          (pushableKeySet.has(pushKey) || deletableKeySet.has(pushKey));
+                        const bulkSelected = bulkSelectable && selectedPushKeys.has(pushKey);
+                        const omitBlock = pushableKeySet.has(pushKey) && omitBlockKeys.has(pushKey);
                         return (
                         <tr
                           key={r.id}
-                          className={`text-zinc-200 transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] ${pushSelected ? "bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] ring-1 ring-inset ring-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)]" : ""}`}
+                          className={`text-zinc-200 transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] ${bulkSelected ? "bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] ring-1 ring-inset ring-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)]" : ""}`}
                         >
                           {bulkPushEnabled ? (
                             <>
                               <td className="px-2 py-3 text-center align-middle">
-                                {pushSelectable ? (
+                                {bulkSelectable ? (
                                   <input
                                     type="checkbox"
-                                    checked={pushSelected}
-                                    disabled={Boolean(bulkPushQueue?.running)}
+                                    checked={bulkSelected}
+                                    disabled={bulkActionRunning}
                                     className="size-4 rounded border-white/20 bg-black/40 accent-[color:var(--ticketing-accent)]"
-                                    aria-label={`Select ${r.blockName} row ${r.row} seat ${r.seatNumber} for bulk push`}
+                                    aria-label={`Select ${r.blockName} row ${r.row} seat ${r.seatNumber} for bulk SB actions`}
                                     onChange={() => togglePushSelection(pushKey)}
                                   />
                                 ) : (
@@ -2024,11 +2418,11 @@ export function SockAvailablePanel(props: {
                                 )}
                               </td>
                               <td className="px-1 py-3 text-center align-middle">
-                                {pushSelectable ? (
+                                {pushableKeySet.has(pushKey) ? (
                                   <input
                                     type="checkbox"
                                     checked={omitBlock}
-                                    disabled={Boolean(bulkPushQueue?.running)}
+                                    disabled={bulkActionRunning}
                                     className="size-4 rounded border-amber-400/30 bg-black/40 accent-amber-400"
                                     title="Omit ticket_block from SB payload"
                                     aria-label={`Omit ticket_block for ${r.blockName} row ${r.row} seat ${r.seatNumber}`}
@@ -2125,7 +2519,7 @@ export function SockAvailablePanel(props: {
                       {bulkPushEnabled ? (
                         <>
                           <th scope="col" className="w-10 px-2 py-3 text-center font-medium text-zinc-400">
-                            <span className="sr-only">Select for bulk push</span>
+                            <span className="sr-only">Select for bulk SB actions</span>
                           </th>
                           <th
                             scope="col"
@@ -2178,24 +2572,25 @@ export function SockAvailablePanel(props: {
                   </thead>
                   <tbody className="divide-y divide-white/[0.05]">
                     {groupedSorted.map((g) => {
-                      const pushSelectable = bulkPushEnabled && pushableKeySet.has(g.id);
-                      const pushSelected = pushSelectable && selectedPushKeys.has(g.id);
-                      const omitBlock = pushSelectable && omitBlockKeys.has(g.id);
+                      const bulkSelectable =
+                        bulkPushEnabled && (pushableKeySet.has(g.id) || deletableKeySet.has(g.id));
+                      const bulkSelected = bulkSelectable && selectedPushKeys.has(g.id);
+                      const omitBlock = pushableKeySet.has(g.id) && omitBlockKeys.has(g.id);
                       return (
                       <tr
                         key={g.id}
-                        className={`text-zinc-200 transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] ${pushSelected ? "bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] ring-1 ring-inset ring-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)]" : ""}`}
+                        className={`text-zinc-200 transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] ${bulkSelected ? "bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] ring-1 ring-inset ring-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)]" : ""}`}
                       >
                         {bulkPushEnabled ? (
                           <>
                             <td className="px-2 py-3 text-center align-middle">
-                              {pushSelectable ? (
+                              {bulkSelectable ? (
                                 <input
                                   type="checkbox"
-                                  checked={pushSelected}
-                                  disabled={Boolean(bulkPushQueue?.running)}
+                                  checked={bulkSelected}
+                                  disabled={bulkActionRunning}
                                   className="size-4 rounded border-white/20 bg-black/40 accent-[color:var(--ticketing-accent)]"
-                                  aria-label={`Select ${g.blockName} row ${g.row} seats ${g.seatSpan} for bulk push`}
+                                  aria-label={`Select ${g.blockName} row ${g.row} seats ${g.seatSpan} for bulk SB actions`}
                                   onChange={() => togglePushSelection(g.id)}
                                 />
                               ) : (
@@ -2203,11 +2598,11 @@ export function SockAvailablePanel(props: {
                               )}
                             </td>
                             <td className="px-1 py-3 text-center align-middle">
-                              {pushSelectable ? (
+                              {pushableKeySet.has(g.id) ? (
                                 <input
                                   type="checkbox"
                                   checked={omitBlock}
-                                  disabled={Boolean(bulkPushQueue?.running)}
+                                  disabled={bulkActionRunning}
                                   className="size-4 rounded border-amber-400/30 bg-black/40 accent-amber-400"
                                   title="Omit ticket_block from SB payload"
                                   aria-label={`Omit ticket_block for ${g.blockName} row ${g.row} seats ${g.seatSpan}`}
@@ -2312,15 +2707,21 @@ export function SockAvailablePanel(props: {
 
       {bulkPushEnabled ? (
         <SbBulkPushBar
-          selectedCount={selectedPushCount}
+          selectedCount={selectedBulkCount}
           pushableCount={pushableItems.length}
+          selectedPushCount={selectedPushCount}
+          deletableCount={deletableItems.length}
+          selectedDeletableCount={selectedDeletableCount}
           omitBlockSelectedCount={omitBlockSelectedCount}
-          queue={bulkPushQueue}
+          pushQueue={bulkPushQueue}
+          deleteQueue={bulkDeleteQueue}
           sbConfigured={sbConfigured}
           hasSbEventId={Boolean(sbEventId)}
-          onSelectAll={selectAllPushable}
+          onSelectAllPushable={selectAllPushable}
+          onSelectAllDeletable={selectAllDeletable}
           onClear={clearPushSelection}
           onPush={() => void runBulkPushQueue()}
+          onDelete={() => void runBulkDeleteQueue()}
         />
       ) : null}
 
