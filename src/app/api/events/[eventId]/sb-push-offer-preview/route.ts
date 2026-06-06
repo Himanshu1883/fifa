@@ -8,6 +8,7 @@ export const runtime = "nodejs";
 
 const bodySchema = z.object({
   seatIds: z.array(z.string().min(1)).min(1).max(50),
+  omitTicketBlock: z.boolean().optional(),
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ eventId: string }> }) {
@@ -33,7 +34,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ eventId: strin
   }
 
   try {
-    const result = await loadSbOfferPreviewForSeatIds(id, body.seatIds, { ticketType });
+    const result = await loadSbOfferPreviewForSeatIds(id, body.seatIds, {
+      ticketType,
+      omitTicketBlock: body.omitTicketBlock === true,
+    });
     if (!result.ok) {
       return NextResponse.json(result, { status: 422 });
     }

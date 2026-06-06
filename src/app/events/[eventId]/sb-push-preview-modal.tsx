@@ -38,6 +38,7 @@ type Props = {
   rowLabel?: string | null;
   blockName?: string | null;
   seatSpan?: string | null;
+  omitTicketBlock?: boolean;
 };
 
 function RulesTable(props: {
@@ -73,7 +74,8 @@ function RulesTable(props: {
 }
 
 export function SbPushPreviewModal(props: Props) {
-  const { open, eventId, seatIds, onClose, onPushed, rowLabel, blockName, seatSpan } = props;
+  const { open, eventId, seatIds, onClose, onPushed, rowLabel, blockName, seatSpan, omitTicketBlock = false } =
+    props;
   const titleId = useId();
   const [loading, setLoading] = useState(false);
   const [pushing, setPushing] = useState(false);
@@ -117,7 +119,10 @@ export function SbPushPreviewModal(props: Props) {
       const res = await fetch(`/api/events/${eventId}/sb-push-offer-preview`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seatIds: seatIdsKey.split(",") }),
+        body: JSON.stringify({
+          seatIds: seatIdsKey.split(","),
+          ...(omitTicketBlock ? { omitTicketBlock: true } : {}),
+        }),
         cache: "no-store",
       });
       const json = (await res.json()) as SbOfferPreviewResult;
@@ -134,7 +139,7 @@ export function SbPushPreviewModal(props: Props) {
     } finally {
       setLoading(false);
     }
-  }, [eventId, seatIdsKey]);
+  }, [eventId, seatIdsKey, omitTicketBlock]);
 
   useEffect(() => {
     if (!open) {
@@ -149,11 +154,11 @@ export function SbPushPreviewModal(props: Props) {
 
     if (seatIdsKey.length === 0) return;
 
-    const fetchKey = `${eventId}:${seatIdsKey}`;
+    const fetchKey = `${eventId}:${seatIdsKey}:${omitTicketBlock ? "no-block" : "block"}`;
     if (lastFetchedKeyRef.current === fetchKey) return;
 
     void loadPreview();
-  }, [open, eventId, seatIdsKey, loadPreview]);
+  }, [open, eventId, seatIdsKey, omitTicketBlock, loadPreview]);
 
   const handleRefreshPreview = useCallback(() => {
     lastFetchedKeyRef.current = null;
@@ -195,7 +200,10 @@ export function SbPushPreviewModal(props: Props) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ seatIds }),
+          body: JSON.stringify({
+            seatIds,
+            ...(omitTicketBlock ? { omitTicketBlock: true } : {}),
+          }),
         },
       );
       const json = (await res.json()) as {

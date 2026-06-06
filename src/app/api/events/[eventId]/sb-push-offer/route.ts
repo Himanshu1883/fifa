@@ -19,6 +19,7 @@ const querySchema = z.object({
 
 const bodySchema = z.object({
   seatIds: z.array(z.string().min(1)).min(1).max(50).optional(),
+  omitTicketBlock: z.boolean().optional(),
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ eventId: string }> }) {
@@ -55,11 +56,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ eventId: strin
 
   let offerIndex = parsedQuery.data.offerIndex;
   let sourceSeatIds: string[] | undefined;
+  let omitTicketBlock = false;
 
   const raw = await req.json().catch(() => ({}));
   const parsedBody = bodySchema.safeParse(raw);
   const bodySeatIds =
     parsedBody.success && parsedBody.data.seatIds?.length ? parsedBody.data.seatIds : undefined;
+  if (parsedBody.success && parsedBody.data.omitTicketBlock) {
+    omitTicketBlock = true;
+  }
 
   if (bodySeatIds?.length) {
     sourceSeatIds = bodySeatIds;
@@ -91,7 +96,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ eventId: strin
   }
 
   try {
-    const result = await pushSingleSbOfferForEvent(id, offerIndex, { ticketType, sourceSeatIds });
+    const result = await pushSingleSbOfferForEvent(id, offerIndex, {
+      ticketType,
+      sourceSeatIds,
+      omitTicketBlock,
+    });
     if (!result.ok) {
       const status = result.skipped ? 409 : 422;
       return NextResponse.json(result, { status });

@@ -2,7 +2,13 @@
 
 import { ModalPortal } from "@/app/modal-portal";
 import { SbRemovedListingsSection } from "@/app/events/[eventId]/sb-removed-listings-section";
+import { SbBulkPushBar, type SbBulkPushQueueState } from "@/app/events/[eventId]/sb-bulk-push-bar";
 import { SbListingRowActions } from "@/app/events/[eventId]/sb-listing-row-actions";
+import {
+  isSbRowPushable,
+  sbListingEntryFromPushResponse,
+  type SbBulkPushItem,
+} from "@/lib/sb-bulk-push-utils";
 import type { SbListingStatusEntry, SbListingStatusPayload } from "@/lib/sb-listing-status";
 import {
   applyPinnedOverrides,
@@ -15,8 +21,34 @@ import {
   unpinSbListingEntries,
   type SbRowLookupMeta,
 } from "@/lib/sb-listing-row-index";
+import { resolvePlainSbCategoryNum, type SbCategoryNum } from "@/lib/sb-category";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { formatUsd, priceToNumber } from "@/lib/format-usd";
+
+const SB_CATEGORY_FILTER_NUMS = [1, 2, 3, 4] as const satisfies readonly SbCategoryNum[];
+
+function defaultCategoryNumFilter(): Set<SbCategoryNum> {
+  return new Set(SB_CATEGORY_FILTER_NUMS);
+}
+
+function isDefaultCategoryNumFilter(selected: Set<SbCategoryNum>): boolean {
+  return (
+    selected.size === SB_CATEGORY_FILTER_NUMS.length &&
+    SB_CATEGORY_FILTER_NUMS.every((n) => selected.has(n))
+  );
+}
+
+function isDefaultCategoryFilter(
+  selectedNums: Set<SbCategoryNum>,
+  selectedCustomNames: Set<string>,
+  addedCustomNames: Set<string>,
+): boolean {
+  return (
+    isDefaultCategoryNumFilter(selectedNums) &&
+    selectedCustomNames.size === 0 &&
+    addedCustomNames.size === 0
+  );
+}
 
 const searchInpClass =
   "min-h-10 w-full rounded-lg border border-white/[0.09] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_92%,white_8%)] px-2.5 py-1.5 text-sm text-zinc-100 shadow-inner shadow-black/35 placeholder:text-zinc-500 transition-[border-color,box-shadow] focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
@@ -338,6 +370,13 @@ export function SockAvailablePanel(props: {
   const [sbStatus, setSbStatus] = useState<SbListingStatusPayload>(emptySbStatus);
   const [sbConfigured, setSbConfigured] = useState(false);
   const [sbOnSbOnly, setSbOnSbOnly] = useState(false);
+  const [selectedCategoryNums, setSelectedCategoryNums] = useState<Set<SbCategoryNum>>(defaultCategoryNumFilter);
+  const [selectedCustomCategoryNames, setSelectedCustomCategoryNames] = useState<Set<string>>(() => new Set());
+  const [addedCustomCategoryNames, setAddedCustomCategoryNames] = useState<Set<string>>(() => new Set());
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
+  const [selectedPushKeys, setSelectedPushKeys] = useState<Set<string>>(() => new Set());
+  const [omitBlockKeys, setOmitBlockKeys] = useState<Set<string>>(() => new Set());
+  const [bulkPushQueue, setBulkPushQueue] = useState<SbBulkPushQueueState | null>(null);
 
   const refreshSbConfigured = useCallback(async () => {
     try {
@@ -347,6 +386,91 @@ export function SockAvailablePanel(props: {
     } catch {
       setSbConfigured(false);
     }
+  }, []);
+
+  const toggleCategoryNumFilter = useCallback((num: SbCategoryNum) => {
+    setSelectedCategoryNums((prev) => {
+      const next = new Set(prev);
+      if (next.has(num)) next.delete(num);
+      else next.add(num);
+      return next;
+    });
+  }, []);
+
+  const resetCategoryFilter = useCallback(() => {
+    setSelectedCategoryNums(defaultCategoryNumFilter());
+    setSelectedCustomCategoryNames(new Set());
+    setAddedCustomCategoryNames(new Set());
+  }, []);
+
+  const isCategoryFilterActive = useCallback(
+    (categoryName: string): boolean => {
+      const name = norm(categoryName);
+      if (!name) return false;
+      const sampleRow = rows.find((r) => norm(r.categoryName) === name);
+      const categoryNum = resolvePlainSbCategoryNum(name, sampleRow?.categoryId);
+      if (categoryNum != null) return selectedCategoryNums.has(categoryNum);
+      return selectedCustomCategoryNames.has(name);
+    },
+    [rows, selectedCategoryNums, selectedCustomCategoryNames],
+  );
+
+  const toggleCategoryInFilter = useCallback(
+    (categoryName: string) => {
+      const name = norm(categoryName);
+      if (!name) return;
+      const sampleRow = rows.find((r) => norm(r.categoryName) === name);
+      const categoryNum = resolvePlainSbCategoryNum(name, sampleRow?.categoryId);
+      if (categoryNum != null) {
+        setSelectedCategoryNums((prev) => {
+          const next = new Set(prev);
+          if (next.has(categoryNum)) next.delete(categoryNum);
+          else next.add(categoryNum);
+          return next;
+        });
+      } else {
+        setAddedCustomCategoryNames((prevAdded) => {
+          const nextAdded = new Set(prevAdded);
+          nextAdded.add(name);
+          return nextAdded;
+        });
+        setSelectedCustomCategoryNames((prev) => {
+          const next = new Set(prev);
+          if (next.has(name)) next.delete(name);
+          else next.add(name);
+          return next;
+        });
+      }
+    },
+    [rows],
+  );
+
+  const toggleCustomCategoryChip = useCallback((categoryName: string) => {
+    const name = norm(categoryName);
+    if (!name) return;
+    setSelectedCustomCategoryNames((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }, []);
+
+  const removeCustomCategoryChip = useCallback((categoryName: string) => {
+    const name = norm(categoryName);
+    if (!name) return;
+    setSelectedCustomCategoryNames((prev) => {
+      if (!prev.has(name)) return prev;
+      const next = new Set(prev);
+      next.delete(name);
+      return next;
+    });
+    setAddedCustomCategoryNames((prev) => {
+      if (!prev.has(name)) return prev;
+      const next = new Set(prev);
+      next.delete(name);
+      return next;
+    });
   }, []);
 
   const refreshSbStatus = useCallback(async () => {
@@ -528,6 +652,15 @@ export function SockAvailablePanel(props: {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [openGroup]);
 
+  useEffect(() => {
+    if (!categoryPickerOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setCategoryPickerOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [categoryPickerOpen]);
+
   const areaOptions = useMemo(() => {
     const set = new Set<string>();
     for (const r of rows) {
@@ -545,6 +678,11 @@ export function SockAvailablePanel(props: {
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [rows]);
+
+  const customCategoryChipNames = useMemo(
+    () => Array.from(addedCustomCategoryNames).sort((a, b) => a.localeCompare(b)),
+    [addedCustomCategoryNames],
+  );
 
   const blockOptions = useMemo(() => {
     const set = new Set<string>();
@@ -577,6 +715,12 @@ export function SockAvailablePanel(props: {
     const hasTo = Number.isFinite(toMs);
 
     return rows.filter((r) => {
+      const categoryNum = resolvePlainSbCategoryNum(r.categoryName, r.categoryId);
+      const nameNorm = norm(r.categoryName);
+      const matchesNum = categoryNum != null && selectedCategoryNums.has(categoryNum);
+      const matchesCustom = nameNorm !== "" && selectedCustomCategoryNames.has(nameNorm);
+      if (!matchesNum && !matchesCustom) return false;
+
       if (kindQ && norm(r.kind).toLowerCase() !== kindQ) return false;
       if (areaQ && norm(r.areaName).toLowerCase() !== areaQ) return false;
       if (categoryQ && norm(r.categoryName).toLowerCase() !== categoryQ) return false;
@@ -631,6 +775,8 @@ export function SockAvailablePanel(props: {
     area,
     block,
     category,
+    selectedCategoryNums,
+    selectedCustomCategoryNames,
     contingent,
     createdFrom,
     createdTo,
@@ -771,6 +917,227 @@ export function SockAvailablePanel(props: {
   const shownCount = shownItems.length;
   const loadedCount = viewMode === "raw" ? rows.length : groupedLoadedCount;
 
+  const bulkPushEnabled = showSbColumn && Boolean(sbEventId) && sbConfigured;
+
+  const pushableItems = useMemo((): SbBulkPushItem[] => {
+    if (!bulkPushEnabled) return [];
+    if (viewMode === "raw") {
+      return rawSorted
+        .filter((r) => r.kind === "RESALE")
+        .filter((r) =>
+          isSbRowPushable(
+            lookupSbEntry([r.seatId], {
+              blockName: r.blockName,
+              row: r.row,
+              seatSpan: r.seatNumber,
+            }),
+          ),
+        )
+        .map((r) => ({
+          key: `raw|${r.id}`,
+          seatIds: [r.seatId],
+          blockName: r.blockName,
+          rowLabel: r.row,
+          seatSpan: r.seatNumber,
+          label: `${r.blockName} · R${r.row} · ${r.seatNumber}`,
+        }));
+    }
+    return groupedSorted
+      .filter((g) => g.kind === "RESALE")
+      .filter((g) =>
+        isSbRowPushable(
+          lookupSbEntry(
+            g.seats.map((s) => s.seatId),
+            { blockName: g.blockName, row: g.row, seatSpan: g.seatSpan },
+          ),
+        ),
+      )
+      .map((g) => ({
+        key: g.id,
+        seatIds: g.seats.map((s) => s.seatId),
+        blockName: g.blockName,
+        rowLabel: g.row,
+        seatSpan: g.seatSpan,
+        label: `${g.blockName} · R${g.row} · ${g.seatSpan}`,
+      }));
+  }, [bulkPushEnabled, viewMode, rawSorted, groupedSorted, lookupSbEntry]);
+
+  const pushableKeySet = useMemo(() => new Set(pushableItems.map((i) => i.key)), [pushableItems]);
+
+  useEffect(() => {
+    setSelectedPushKeys((prev) => {
+      const next = new Set([...prev].filter((k) => pushableKeySet.has(k)));
+      return next.size === prev.size ? prev : next;
+    });
+    setOmitBlockKeys((prev) => {
+      const next = new Set([...prev].filter((k) => pushableKeySet.has(k)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [pushableKeySet]);
+
+  const selectedPushCount = useMemo(() => {
+    let n = 0;
+    for (const k of selectedPushKeys) {
+      if (pushableKeySet.has(k)) n++;
+    }
+    return n;
+  }, [selectedPushKeys, pushableKeySet]);
+
+  const togglePushSelection = useCallback((key: string) => {
+    setSelectedPushKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const toggleOmitBlock = useCallback((key: string) => {
+    setOmitBlockKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const omitBlockSelectedCount = useMemo(() => {
+    let n = 0;
+    for (const k of selectedPushKeys) {
+      if (pushableKeySet.has(k) && omitBlockKeys.has(k)) n++;
+    }
+    return n;
+  }, [selectedPushKeys, omitBlockKeys, pushableKeySet]);
+
+  const selectAllPushable = useCallback(() => {
+    setSelectedPushKeys(new Set(pushableItems.map((i) => i.key)));
+  }, [pushableItems]);
+
+  const clearPushSelection = useCallback(() => {
+    setSelectedPushKeys(new Set());
+  }, []);
+
+  const runBulkPushQueue = useCallback(async () => {
+    if (!eventId || !bulkPushEnabled || bulkPushQueue?.running) return;
+    const items = pushableItems.filter((i) => selectedPushKeys.has(i.key));
+    if (items.length === 0) return;
+    if (
+      !window.confirm(
+        `Push ${items.length} listing(s) to SeatsBrokers?\n\nThey will be pushed one at a time in queue order.`,
+      )
+    ) {
+      return;
+    }
+
+    let succeeded = 0;
+    let failed = 0;
+    let lastError: string | null = null;
+
+    setBulkPushQueue({
+      running: true,
+      current: 0,
+      total: items.length,
+      label: "Starting…",
+      succeeded: 0,
+      failed: 0,
+      lastError: null,
+    });
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]!;
+      setBulkPushQueue({
+        running: true,
+        current: i + 1,
+        total: items.length,
+        label: item.label,
+        succeeded,
+        failed,
+        lastError,
+      });
+
+      const meta: SbRowLookupMeta = {
+        seatIds: item.seatIds,
+        blockName: item.blockName,
+        row: item.rowLabel,
+        seatSpan: item.seatSpan,
+      };
+
+      try {
+        const res = await fetch(`/api/events/${eventId}/sb-push-offer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            seatIds: item.seatIds,
+            ...(omitBlockKeys.has(item.key) ? { omitTicketBlock: true } : {}),
+          }),
+        });
+        const json = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          skipped?: boolean;
+          sbTicketId?: string | null;
+          existingSbTicketId?: string | null;
+          logId?: number;
+          listingFingerprint?: string;
+          summary?: { blockName?: string; row?: string; seatNumbers?: string[] };
+          response?: unknown;
+        };
+
+        const existing = findSbListingEntryForRow(sbStatus.bySeatKey, meta);
+        const duplicateOk =
+          json.skipped && Boolean(json.existingSbTicketId ?? json.sbTicketId ?? existing?.sbTicketId);
+
+        if (!res.ok || !json.ok) {
+          if (!duplicateOk) {
+            failed++;
+            lastError = json.error ?? `Push failed (${res.status})`;
+            continue;
+          }
+        }
+
+        const entry = sbListingEntryFromPushResponse(item, json, existing);
+        pinSbListingEntries(eventId, entry, meta);
+        handleSbStatusChange(entry, meta);
+        window.dispatchEvent(
+          new CustomEvent("sb-listing-row-pushed", {
+            detail: { eventId, meta, entry },
+          }),
+        );
+        succeeded++;
+        setSelectedPushKeys((prev) => {
+          const next = new Set(prev);
+          next.delete(item.key);
+          return next;
+        });
+      } catch (e) {
+        failed++;
+        lastError = e instanceof Error ? e.message : String(e);
+      }
+    }
+
+    setBulkPushQueue({
+      running: false,
+      current: items.length,
+      total: items.length,
+      label: "Queue complete",
+      succeeded,
+      failed,
+      lastError,
+    });
+    window.setTimeout(() => setBulkPushQueue(null), 4000);
+    void refreshSbStatus();
+  }, [
+    eventId,
+    bulkPushEnabled,
+    bulkPushQueue?.running,
+    pushableItems,
+    selectedPushKeys,
+    omitBlockKeys,
+    sbStatus.bySeatKey,
+    handleSbStatusChange,
+    refreshSbStatus,
+  ]);
+
   const sectionPad = embedInParentCard ? "px-4 sm:px-7" : "";
   const filtersVisible = smUp ? filtersExpanded : mobileFiltersOpen;
   const hasAnyFilters = Boolean(
@@ -788,7 +1155,12 @@ export function SockAvailablePanel(props: {
       createdFrom ||
       createdTo ||
       sortKey !== "amount_asc" ||
-      sbOnSbOnly,
+      sbOnSbOnly ||
+      !isDefaultCategoryFilter(
+        selectedCategoryNums,
+        selectedCustomCategoryNames,
+        addedCustomCategoryNames,
+      ),
   );
 
   const sbActiveCount = sbStatus.active.length;
@@ -894,6 +1266,97 @@ export function SockAvailablePanel(props: {
           </p>
         </div>
       </div>
+
+      {rows.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/[0.07] bg-zinc-900/25 px-3.5 py-2.5 ring-1 ring-white/[0.04] backdrop-blur-sm sm:px-4">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+            Categories
+          </span>
+          <div
+            className="flex flex-wrap items-center rounded-xl bg-black/35 p-1 ring-1 ring-white/[0.10] shadow-inner shadow-black/35"
+            role="group"
+            aria-label="Category filter"
+          >
+            {SB_CATEGORY_FILTER_NUMS.map((num) => {
+              const active = selectedCategoryNums.has(num);
+              return (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => toggleCategoryNumFilter(num)}
+                  className={
+                    active
+                      ? "min-h-8 rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] px-2.5 text-xs font-semibold tabular-nums text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_32%,transparent)] outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
+                      : "min-h-8 rounded-lg px-2.5 text-xs font-semibold tabular-nums text-zinc-300 outline-none transition-colors hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
+                  }
+                  aria-pressed={active}
+                  aria-label={`Category ${num}${active ? " selected" : ""}`}
+                >
+                  Cat {num}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setCategoryPickerOpen(true)}
+              className="min-h-8 rounded-lg px-2.5 text-xs font-semibold text-zinc-300 outline-none transition-colors hover:bg-white/[0.04] hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
+              aria-label="Add category filter"
+              title="Add category"
+            >
+              +
+            </button>
+          </div>
+          {customCategoryChipNames.map((name) => {
+            const active = selectedCustomCategoryNames.has(name);
+            return (
+              <div
+                key={name}
+                className={
+                  active
+                    ? "inline-flex min-h-8 max-w-full items-stretch overflow-hidden rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_32%,transparent)]"
+                    : "inline-flex min-h-8 max-w-full items-stretch overflow-hidden rounded-lg bg-black/35 ring-1 ring-white/[0.10]"
+                }
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleCustomCategoryChip(name)}
+                  className={
+                    active
+                      ? "max-w-[12rem] truncate px-2.5 text-xs font-semibold text-zinc-50 outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] sm:max-w-[16rem]"
+                      : "max-w-[12rem] truncate px-2.5 text-xs font-semibold text-zinc-400 outline-none transition-colors hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] sm:max-w-[16rem]"
+                  }
+                  aria-pressed={active}
+                  aria-label={`${name}${active ? " selected" : ""}`}
+                  title={name}
+                >
+                  {name}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeCustomCategoryChip(name)}
+                  className="border-l border-white/[0.10] px-2 text-xs font-medium text-zinc-400 outline-none transition-colors hover:bg-white/[0.06] hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
+                  aria-label={`Remove ${name} filter`}
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+          {!isDefaultCategoryFilter(
+            selectedCategoryNums,
+            selectedCustomCategoryNames,
+            addedCustomCategoryNames,
+          ) ? (
+            <button
+              type="button"
+              onClick={resetCategoryFilter}
+              className="min-h-8 rounded-lg border border-white/[0.10] bg-black/25 px-2.5 text-xs font-medium text-zinc-300 transition-colors hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)]"
+            >
+              Reset
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {rows.length === 0 ? (
         <div
@@ -1046,6 +1509,7 @@ export function SockAvailablePanel(props: {
                     setCreatedTo("");
                     setSortKey("amount_asc");
                     setSbOnSbOnly(false);
+                    resetCategoryFilter();
                     setShowMoreFilters(false);
                     setFiltersExpanded(false);
                   }}
@@ -1456,6 +1920,7 @@ export function SockAvailablePanel(props: {
                           setCreatedTo("");
                           setSortKey("amount_asc");
                           setSbOnSbOnly(false);
+                          resetCategoryFilter();
                           setShowMoreFilters(false);
                           setFiltersExpanded(false);
                           setMobileFiltersOpen(false);
@@ -1491,6 +1956,23 @@ export function SockAvailablePanel(props: {
                   <table className="w-full min-w-[110rem] border-collapse text-sm">
                     <thead>
                       <tr className="sticky top-0 z-10 border-b border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_95%,transparent)] text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 backdrop-blur-md">
+                        {bulkPushEnabled ? (
+                          <>
+                            <th scope="col" className="w-10 px-2 py-3 text-center font-medium text-zinc-400">
+                              <span className="sr-only">Select for bulk push</span>
+                            </th>
+                            <th
+                              scope="col"
+                              className="w-12 px-1 py-3 text-center font-medium text-zinc-400"
+                              title="Omit ticket_block from SB payload"
+                            >
+                              <span className="sr-only">Omit block</span>
+                              <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-200/80">
+                                No blk
+                              </span>
+                            </th>
+                          </>
+                        ) : null}
                         <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Area</th>
                         <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Category</th>
                         <th scope="col" className="px-4 py-3 font-medium text-zinc-400">Block</th>
@@ -1515,8 +1997,49 @@ export function SockAvailablePanel(props: {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/[0.05]">
-                      {rawSorted.map((r) => (
-                        <tr key={r.id} className="text-zinc-200 transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)]">
+                      {rawSorted.map((r) => {
+                        const pushKey = `raw|${r.id}`;
+                        const pushSelectable = bulkPushEnabled && pushableKeySet.has(pushKey);
+                        const pushSelected = pushSelectable && selectedPushKeys.has(pushKey);
+                        const omitBlock = pushSelectable && omitBlockKeys.has(pushKey);
+                        return (
+                        <tr
+                          key={r.id}
+                          className={`text-zinc-200 transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] ${pushSelected ? "bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] ring-1 ring-inset ring-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)]" : ""}`}
+                        >
+                          {bulkPushEnabled ? (
+                            <>
+                              <td className="px-2 py-3 text-center align-middle">
+                                {pushSelectable ? (
+                                  <input
+                                    type="checkbox"
+                                    checked={pushSelected}
+                                    disabled={Boolean(bulkPushQueue?.running)}
+                                    className="size-4 rounded border-white/20 bg-black/40 accent-[color:var(--ticketing-accent)]"
+                                    aria-label={`Select ${r.blockName} row ${r.row} seat ${r.seatNumber} for bulk push`}
+                                    onChange={() => togglePushSelection(pushKey)}
+                                  />
+                                ) : (
+                                  <span className="text-xs text-zinc-700">—</span>
+                                )}
+                              </td>
+                              <td className="px-1 py-3 text-center align-middle">
+                                {pushSelectable ? (
+                                  <input
+                                    type="checkbox"
+                                    checked={omitBlock}
+                                    disabled={Boolean(bulkPushQueue?.running)}
+                                    className="size-4 rounded border-amber-400/30 bg-black/40 accent-amber-400"
+                                    title="Omit ticket_block from SB payload"
+                                    aria-label={`Omit ticket_block for ${r.blockName} row ${r.row} seat ${r.seatNumber}`}
+                                    onChange={() => toggleOmitBlock(pushKey)}
+                                  />
+                                ) : (
+                                  <span className="text-xs text-zinc-700">—</span>
+                                )}
+                              </td>
+                            </>
+                          ) : null}
                           <td className="px-4 py-3 text-sm font-medium text-zinc-50">{r.areaName}</td>
                           <td className="px-4 py-3 text-sm text-zinc-200">{r.categoryName}</td>
                           <td className="px-4 py-3 text-sm font-medium text-zinc-50">{r.blockName}</td>
@@ -1569,6 +2092,7 @@ export function SockAvailablePanel(props: {
                                 blockName={r.blockName}
                                 rowLabel={r.row}
                                 seatSpan={r.seatNumber}
+                                omitTicketBlock={omitBlock}
                                 entry={lookupSbEntry([r.seatId], {
                                   blockName: r.blockName,
                                   row: r.row,
@@ -1590,13 +2114,31 @@ export function SockAvailablePanel(props: {
                             </button>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 ) : (
                   <table className="w-full min-w-[80rem] border-collapse text-sm">
                   <thead>
                     <tr className="sticky top-0 z-10 border-b border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_95%,transparent)] text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 backdrop-blur-md">
+                      {bulkPushEnabled ? (
+                        <>
+                          <th scope="col" className="w-10 px-2 py-3 text-center font-medium text-zinc-400">
+                            <span className="sr-only">Select for bulk push</span>
+                          </th>
+                          <th
+                            scope="col"
+                            className="w-12 px-1 py-3 text-center font-medium text-zinc-400"
+                            title="Omit ticket_block from SB payload"
+                          >
+                            <span className="sr-only">Omit block</span>
+                            <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-200/80">
+                              No blk
+                            </span>
+                          </th>
+                        </>
+                      ) : null}
                       <th scope="col" className="px-4 py-3 font-medium text-zinc-400">
                         Area
                       </th>
@@ -1635,11 +2177,48 @@ export function SockAvailablePanel(props: {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/[0.05]">
-                    {groupedSorted.map((g) => (
+                    {groupedSorted.map((g) => {
+                      const pushSelectable = bulkPushEnabled && pushableKeySet.has(g.id);
+                      const pushSelected = pushSelectable && selectedPushKeys.has(g.id);
+                      const omitBlock = pushSelectable && omitBlockKeys.has(g.id);
+                      return (
                       <tr
                         key={g.id}
-                        className="text-zinc-200 transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)]"
+                        className={`text-zinc-200 transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] ${pushSelected ? "bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] ring-1 ring-inset ring-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)]" : ""}`}
                       >
+                        {bulkPushEnabled ? (
+                          <>
+                            <td className="px-2 py-3 text-center align-middle">
+                              {pushSelectable ? (
+                                <input
+                                  type="checkbox"
+                                  checked={pushSelected}
+                                  disabled={Boolean(bulkPushQueue?.running)}
+                                  className="size-4 rounded border-white/20 bg-black/40 accent-[color:var(--ticketing-accent)]"
+                                  aria-label={`Select ${g.blockName} row ${g.row} seats ${g.seatSpan} for bulk push`}
+                                  onChange={() => togglePushSelection(g.id)}
+                                />
+                              ) : (
+                                <span className="text-xs text-zinc-700">—</span>
+                              )}
+                            </td>
+                            <td className="px-1 py-3 text-center align-middle">
+                              {pushSelectable ? (
+                                <input
+                                  type="checkbox"
+                                  checked={omitBlock}
+                                  disabled={Boolean(bulkPushQueue?.running)}
+                                  className="size-4 rounded border-amber-400/30 bg-black/40 accent-amber-400"
+                                  title="Omit ticket_block from SB payload"
+                                  aria-label={`Omit ticket_block for ${g.blockName} row ${g.row} seats ${g.seatSpan}`}
+                                  onChange={() => toggleOmitBlock(g.id)}
+                                />
+                              ) : (
+                                <span className="text-xs text-zinc-700">—</span>
+                              )}
+                            </td>
+                          </>
+                        ) : null}
                         <td className="px-4 py-3 text-sm font-medium text-zinc-50">{g.areaName}</td>
                         <td className="px-4 py-3 text-sm text-zinc-200">{g.categoryName}</td>
                         <td className="px-4 py-3 text-sm font-medium text-zinc-50">{g.blockName}</td>
@@ -1698,6 +2277,7 @@ export function SockAvailablePanel(props: {
                               blockName={g.blockName}
                               rowLabel={g.row}
                               seatSpan={g.seatSpan}
+                              omitTicketBlock={omitBlock}
                               entry={lookupSbEntry(g.seats.map((s) => s.seatId), {
                                 blockName: g.blockName,
                                 row: g.row,
@@ -1719,7 +2299,8 @@ export function SockAvailablePanel(props: {
                           </button>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
                 )}
@@ -1728,6 +2309,92 @@ export function SockAvailablePanel(props: {
           )}
         </>
       )}
+
+      {bulkPushEnabled ? (
+        <SbBulkPushBar
+          selectedCount={selectedPushCount}
+          pushableCount={pushableItems.length}
+          omitBlockSelectedCount={omitBlockSelectedCount}
+          queue={bulkPushQueue}
+          sbConfigured={sbConfigured}
+          hasSbEventId={Boolean(sbEventId)}
+          onSelectAll={selectAllPushable}
+          onClear={clearPushSelection}
+          onPush={() => void runBulkPushQueue()}
+        />
+      ) : null}
+
+      {categoryPickerOpen ? (
+        <ModalPortal
+          onBackdropMouseDown={(e) => {
+            if (e.target === e.currentTarget) setCategoryPickerOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Add category filters"
+            className="relative w-full max-w-md overflow-hidden rounded-2xl border border-white/[0.10] bg-[color:var(--ticketing-surface-elevated)] shadow-[0_28px_80px_-26px_rgba(0,0,0,0.85)] ring-1 ring-white/[0.06]"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-white/[0.08] px-4 py-4 sm:px-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                    Categories
+                  </p>
+                  <p className="mt-1 text-sm font-semibold tracking-tight text-white">Add category filters</p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Plain Category 1–4 names update those toggles. Front, wheelchair, and other variants
+                    are added as custom filters.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-lg border border-white/[0.10] bg-black/30 px-2.5 py-1.5 text-xs font-medium text-zinc-200 hover:bg-white/[0.05] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_30%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                  onClick={() => setCategoryPickerOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+            <div className="max-h-[min(60vh,24rem)] overflow-y-auto overscroll-contain px-4 py-3 sm:px-5">
+              {categoryOptions.length === 0 ? (
+                <p className="py-6 text-center text-sm text-zinc-500">No categories in loaded rows.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {categoryOptions.map((name) => {
+                    const active = isCategoryFilterActive(name);
+                    const categoryNum = resolvePlainSbCategoryNum(
+                      name,
+                      rows.find((r) => norm(r.categoryName) === name)?.categoryId,
+                    );
+                    return (
+                      <li key={name}>
+                        <button
+                          type="button"
+                          onClick={() => toggleCategoryInFilter(name)}
+                          className={
+                            active
+                              ? "flex w-full min-h-10 items-center justify-between gap-2 rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_14%,transparent)] px-3 py-2 text-left text-sm font-medium text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_24%,transparent)] outline-none transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)] focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,transparent)]"
+                              : "flex w-full min-h-10 items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-300 outline-none transition-colors hover:bg-white/[0.04] hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_40%,transparent)]"
+                          }
+                          aria-pressed={active}
+                        >
+                          <span className="min-w-0 truncate">{name}</span>
+                          <span className="shrink-0 text-[11px] text-zinc-500">
+                            {categoryNum != null ? `Cat ${categoryNum}` : "Custom"}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+        </ModalPortal>
+      ) : null}
 
       {openGroup ? (
         <ModalPortal

@@ -35,6 +35,7 @@ import {
   toSbTicketPreviewPayload,
   type SbTicketPreviewPayload,
   type MappedSeatsBrokersTicket,
+  type SbPushTicketInput,
 } from "@/lib/seatsbrokers-offer-map";
 import { extractSbTicketId } from "@/lib/sb-ticket-id";
 import type { TransformedSeatOffer } from "@/lib/seat-offers-transform";
@@ -57,7 +58,7 @@ export type ExecuteSbPushOptions = {
   eventId: number;
   matchId: string;
   offers: TransformedSeatOffer[];
-  tickets: MappedSeatsBrokersTicket[];
+  tickets: SbPushTicketInput[];
   config: SeatsBrokersConfig;
   dateToShip: string | null;
   catalog: Awaited<ReturnType<typeof loadSbMatchCatalogForOffers>>;
@@ -326,6 +327,7 @@ export async function executeSbTicketPush(
   const seenInBatch = new Set<string>();
 
   for (const raw of tickets) {
+    const omitTicketBlock = raw.omitTicketBlock === true;
     const enriched = enrichMappedTicketForPush(
       raw,
       offers,
@@ -334,6 +336,7 @@ export async function executeSbTicketPush(
       dateToShip,
       catalog,
       faceValueLookup,
+      { omitTicketBlock },
     );
     if (!enriched) continue;
 
@@ -534,7 +537,7 @@ export type PushSingleSbOfferResult =
 export async function pushSingleSbOfferForEvent(
   eventId: number,
   offerIndex: number,
-  options?: { ticketType?: string | null; sourceSeatIds?: string[] },
+  options?: { ticketType?: string | null; sourceSeatIds?: string[]; omitTicketBlock?: boolean },
 ): Promise<PushSingleSbOfferResult> {
   const configBase = getSeatsBrokersConfig();
   if (!configBase) {
@@ -578,12 +581,13 @@ export async function pushSingleSbOfferForEvent(
   }
 
   const sourceSeats = sourceSeatsForPush(selectedOffer, options?.sourceSeatIds);
-  const ticket: typeof rawTicket = {
+  const ticket: SbPushTicketInput = {
     ...rawTicket,
     summary: {
       ...rawTicket.summary,
       ...sourceSeats,
     },
+    ...(options?.omitTicketBlock ? { omitTicketBlock: true } : {}),
   };
 
   const { created, failed, skipped, results } = await executeSbTicketPush({

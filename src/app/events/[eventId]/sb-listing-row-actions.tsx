@@ -65,6 +65,7 @@ type Props = {
   blockName?: string | null;
   rowLabel?: string | null;
   seatSpan?: string | null;
+  omitTicketBlock?: boolean;
   onStatusChange: (entry: SbListingStatusEntry, meta: SbRowLookupMeta) => void;
   onDeleted?: (entry: SbListingStatusEntry, meta: SbRowLookupMeta) => void;
 };
@@ -83,6 +84,7 @@ export function SbListingRowActions(props: Props) {
     blockName,
     rowLabel,
     seatSpan,
+    omitTicketBlock = false,
     onStatusChange,
     onDeleted,
   } = props;
@@ -330,6 +332,7 @@ export function SbListingRowActions(props: Props) {
           blockName={blockName}
           rowLabel={rowLabel}
           seatSpan={seatSpan}
+          omitTicketBlock={omitTicketBlock}
           onClose={() => setPreviewOpen(false)}
           onPushed={handlePushed}
         />

@@ -242,6 +242,8 @@ export function toSbTicketPreviewPayload(ticket: MappedSeatsBrokersTicket): SbTi
  * Quantity always comes from current inventory — stale preview
  * payloads cannot re-push an old seat after offers refresh.
  */
+export type SbPushTicketInput = MappedSeatsBrokersTicket & { omitTicketBlock?: boolean };
+
 export function enrichMappedTicketForPush(
   ticket: MappedSeatsBrokersTicket,
   offers: TransformedSeatOffer[],
@@ -250,6 +252,7 @@ export function enrichMappedTicketForPush(
   dateToShip: string | null,
   catalog: SbMatchCatalog | null,
   faceValueLookup: SbFaceValueLookup | null = null,
+  options?: { omitTicketBlock?: boolean },
 ): MappedSeatsBrokersTicket | null {
   const offer = offers[ticket.offerIndex];
   if (!offer) return null;
@@ -291,17 +294,19 @@ export function enrichMappedTicketForPush(
   const clientTicketType = clientFields.ticket_type?.trim();
   const clientDateToShip = clientFields.date_to_ship?.trim();
 
+  const omitTicketBlock = options?.omitTicketBlock === true;
   const fields: Record<string, string> = {
     ...fieldsForSbTicketCreate(baseline.fields),
     match_id: matchId,
     ticket_category: ticketCategory,
     split_type: resolveSbSplitTypeForOffer(offer.offerType),
-    ...(ticketBlock ? { ticket_block: ticketBlock } : {}),
+    ...(!omitTicketBlock && ticketBlock ? { ticket_block: ticketBlock } : {}),
     ...(clientPrice ? { price: clientPrice } : {}),
     ...(clientFaceValue ? { face_value: clientFaceValue } : {}),
     ...(clientTicketType ? { ticket_type: clientTicketType } : {}),
     ...(clientDateToShip ? { date_to_ship: clientDateToShip } : {}),
   };
+  if (omitTicketBlock) delete fields.ticket_block;
   if (!fields.face_value?.trim()) {
     if (baseline.fields.face_value) {
       fields.face_value = baseline.fields.face_value;

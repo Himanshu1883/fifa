@@ -1,6 +1,47 @@
 /** FIFA / sock category label → SeatsBrokers ticket_category (1–4). */
 export type SbCategoryNum = 1 | 2 | 3 | 4;
 
+const CATEGORY_VARIANT_RE = /\b(front|wheelchair|accessible|accessibility|ada)\b/i;
+
+function normalizedCategoryName(name: string): string {
+  return String(name ?? "").trim().toLowerCase();
+}
+
+/** True when the label denotes a variant (front row, wheelchair, etc.), not plain Cat 1–4. */
+export function hasCategoryVariantQualifier(name: string): boolean {
+  return CATEGORY_VARIANT_RE.test(normalizedCategoryName(name));
+}
+
+/**
+ * Plain SB category from name only — "Category 3" / "Cat 3", not "Front Category 3" or wheelchair labels.
+ */
+export function plainCategoryNumFromName(name: string): SbCategoryNum | null {
+  const s = normalizedCategoryName(name);
+  if (!s || hasCategoryVariantQualifier(s)) return null;
+  const m = s.match(/^(?:category|cat)\s*(\d)$/);
+  if (!m) return null;
+  const n = Number.parseInt(m[1] ?? "", 10);
+  if (n === 1 || n === 2 || n === 3 || n === 4) return n;
+  return null;
+}
+
+/** Strict plain-category check for Cat 1–4 filter toggles. */
+export function isPlainCategoryNum(
+  categoryName: string,
+  _categoryId: string | null | undefined,
+  num: SbCategoryNum,
+): boolean {
+  return plainCategoryNumFromName(categoryName) === num;
+}
+
+/** Plain category only — for filters; excludes front/wheelchair/accessibility variants. */
+export function resolvePlainSbCategoryNum(
+  categoryName: string,
+  _categoryId?: string | null,
+): SbCategoryNum | null {
+  return plainCategoryNumFromName(categoryName);
+}
+
 /** Parse "Category 1", "Front Category 2", "Cat 3", etc. */
 export function categoryNumFromCategoryName(name: string): SbCategoryNum | null {
   const s = String(name ?? "").trim().toLowerCase();

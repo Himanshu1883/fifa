@@ -57,7 +57,7 @@ export type SbOfferPreviewResult =
 export async function loadSbOfferPreviewForSeatIds(
   eventId: number,
   seatIds: string[],
-  options?: { ticketType?: string | null },
+  options?: { ticketType?: string | null; omitTicketBlock?: boolean },
 ): Promise<SbOfferPreviewResult> {
   const configBase = getSeatsBrokersConfig();
   if (!configBase) {
@@ -108,11 +108,23 @@ export async function loadSbOfferPreviewForSeatIds(
     return { ok: false, error: "Cannot map this offer to SeatsBrokers (block/category/price)." };
   }
 
+  const omitTicketBlock = options?.omitTicketBlock === true;
   const ticket =
-    enrichMappedTicketForPush(rawTicket, offers, matchId, config, dateToShip, catalog, faceValueLookup) ??
-    rawTicket;
+    enrichMappedTicketForPush(
+      rawTicket,
+      offers,
+      matchId,
+      config,
+      dateToShip,
+      catalog,
+      faceValueLookup,
+      { omitTicketBlock },
+    ) ?? rawTicket;
 
   const warnings: string[] = [];
+  if (omitTicketBlock) {
+    warnings.push("ticket_block will be omitted from the SB payload (per-row setting).");
+  }
   const price = ticket.summary.priceUsd;
   if (price == null || !Number.isFinite(price) || price <= 0) {
     warnings.push("Price is missing or zero — SB may reject the listing.");
