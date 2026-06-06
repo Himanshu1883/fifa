@@ -56,6 +56,31 @@ function summaryRecord(summary: unknown): Record<string, unknown> {
   return summary as Record<string, unknown>;
 }
 
+/** Reconcile runs synchronously after each RESALE scrape webhook. */
+const LAST_SCRAPE_RECONCILE_WINDOW_MS = 15 * 60 * 1000;
+
+/**
+ * Count listings removed from scrape inventory and deleted on SB during the latest scrape batch.
+ * Uses inventoryRemovedAt (set only when a listing vanishes from scrape) scoped to the scrape
+ * window so manual deletes long after a scrape are excluded.
+ */
+function countLastScrapeAutoDeleted(
+  listings: SbCatalogListing[],
+  lastScrapeAt: string | null,
+): number {
+  if (!lastScrapeAt) return 0;
+  const scrapeMs = new Date(lastScrapeAt).getTime();
+  if (!Number.isFinite(scrapeMs)) return 0;
+  const windowEnd = scrapeMs + LAST_SCRAPE_RECONCILE_WINDOW_MS;
+
+  return listings.filter((l) => {
+    if (!l.inventoryRemovedAt || !l.sbDeletedAt) return false;
+    const removedMs = new Date(l.inventoryRemovedAt).getTime();
+    if (!Number.isFinite(removedMs)) return false;
+    return removedMs >= scrapeMs && removedMs <= windowEnd;
+  }).length;
+}
+
 function listingFromLog(row: {
   id: number;
   matchId: string;
@@ -212,6 +237,8 @@ export async function loadSbListingsCatalog(): Promise<SbCatalogMatch[]> {
     const failedCount = listings.filter((l) => l.status === "delete_failed").length;
     const pendingCount = listings.filter((l) => l.status === "removed").length;
 
+    const lastScrapeAt = lastScrapeByEvent.get(eventId) ?? null;
+
     matches.push({
       eventId: event.id,
       eventName: event.name,
@@ -221,7 +248,8 @@ export async function loadSbListingsCatalog(): Promise<SbCatalogMatch[]> {
       stage: event.stage,
       country: event.country,
       sortOrder: event.sortOrder,
-      lastScrapeAt: lastScrapeByEvent.get(eventId) ?? null,
+      lastScrapeAt,
+      lastScrapeDeletedCount: countLastScrapeAutoDeleted(listings, lastScrapeAt),
       activeCount,
       deletedCount,
       failedCount,

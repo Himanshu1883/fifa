@@ -57,7 +57,7 @@ const searchInpClass =
 const controlClass =
   "min-h-10 w-full rounded-lg border border-white/[0.09] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_92%,white_8%)] px-2.5 py-1.5 text-sm text-zinc-100 shadow-inner shadow-black/35 placeholder:text-zinc-500 transition-[border-color,box-shadow] focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
 
-const BATCH_SELECT_SIZES = [5, 10, 15, 20] as const;
+const BATCH_SELECT_SIZES = [1, 5, 10, 15, 20] as const;
 type BatchSelectSize = (typeof BATCH_SELECT_SIZES)[number];
 
 const batchSelectClass =
@@ -383,6 +383,7 @@ export function SockAvailablePanel(props: {
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const [selectedPushKeys, setSelectedPushKeys] = useState<Set<string>>(() => new Set());
   const [batchSelectSize, setBatchSelectSize] = useState<BatchSelectSize>(10);
+  const [pushableSelectCount, setPushableSelectCount] = useState(20);
   const [omitBlockKeys, setOmitBlockKeys] = useState<Set<string>>(() => new Set());
   const [bulkPushQueue, setBulkPushQueue] = useState<SbBulkPushQueueState | null>(null);
   const [bulkPushJobId, setBulkPushJobId] = useState<number | null>(null);
@@ -1109,6 +1110,10 @@ export function SockAvailablePanel(props: {
 
   const handlePushSelectionChange = useCallback(
     (key: string, currentlySelected: boolean) => {
+      if (batchSelectSize === 1) {
+        togglePushSelection(key);
+        return;
+      }
       if (currentlySelected) {
         togglePushSelection(key);
       } else {
@@ -1142,6 +1147,18 @@ export function SockAvailablePanel(props: {
       return next;
     });
   }, [pushableItems]);
+
+  const selectFirstNPushable = useCallback(
+    (n: number) => {
+      const count = Math.min(Math.max(1, Math.floor(n)), pushableItems.length, 999);
+      setSelectedPushKeys((prev) => {
+        const next = new Set(prev);
+        for (let i = 0; i < count; i++) next.add(pushableItems[i]!.key);
+        return next;
+      });
+    },
+    [pushableItems],
+  );
 
   const selectAllDeletable = useCallback(() => {
     setSelectedPushKeys((prev) => {
@@ -2849,6 +2866,9 @@ export function SockAvailablePanel(props: {
           sbConfigured={sbConfigured}
           hasSbEventId={Boolean(sbEventId)}
           onSelectAllPushable={selectAllPushable}
+          pushableSelectCount={pushableSelectCount}
+          onPushableSelectCountChange={setPushableSelectCount}
+          onSelectNPushable={selectFirstNPushable}
           onSelectAllDeletable={selectAllDeletable}
           onClear={clearPushSelection}
           onPush={() => void runBulkPushQueue()}

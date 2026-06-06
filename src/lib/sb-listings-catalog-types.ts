@@ -54,6 +54,8 @@ export type SbCatalogMatch = {
   sortOrder: number;
   /** Latest RESALE sock_available webhook scrape for this match (ISO). */
   lastScrapeAt: string | null;
+  /** Listings auto-deleted on SB during the latest scrape reconcile (not manual). */
+  lastScrapeDeletedCount: number;
   activeCount: number;
   deletedCount: number;
   failedCount: number;

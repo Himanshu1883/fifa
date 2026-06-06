@@ -545,9 +545,19 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
                         {match.lastScrapeAt ? (
                           <span
                             className="rounded-md border border-sky-400/25 bg-sky-500/10 px-2 py-0.5 text-sky-200/90"
-                            title={match.lastScrapeAt}
+                            title={
+                              match.lastScrapeDeletedCount > 0
+                                ? `${match.lastScrapeAt} · ${match.lastScrapeDeletedCount} listing(s) auto-deleted after this scrape`
+                                : match.lastScrapeAt
+                            }
                           >
                             Last scrape {formatWhen(match.lastScrapeAt)}
+                            {match.lastScrapeDeletedCount > 0 ? (
+                              <span className="text-sky-100/70">
+                                {" "}
+                                · {match.lastScrapeDeletedCount} deleted
+                              </span>
+                            ) : null}
                           </span>
                         ) : (
                           <span className="rounded-md border border-white/[0.06] bg-black/20 px-2 py-0.5 text-zinc-600">

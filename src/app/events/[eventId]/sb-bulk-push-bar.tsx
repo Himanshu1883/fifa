@@ -15,6 +15,14 @@ export type SbBulkPushQueueState = {
 const selectCompact =
   "rounded-lg border border-white/12 bg-white/[0.04] px-2 py-1.5 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]";
 
+const inputCompact =
+  "w-10 rounded border border-white/12 bg-black/25 px-1 py-0.5 text-center text-sm font-medium tabular-nums text-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]";
+
+function clampPushableSelectCount(n: number, pushableCount: number): number {
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(Math.max(1, Math.floor(n)), Math.min(pushableCount, 999));
+}
+
 type Props = {
   selectedCount: number;
   pushableCount: number;
@@ -30,6 +38,9 @@ type Props = {
   sbConfigured: boolean;
   hasSbEventId: boolean;
   onSelectAllPushable: () => void;
+  pushableSelectCount: number;
+  onPushableSelectCountChange: (count: number) => void;
+  onSelectNPushable: (count: number) => void;
   onSelectAllDeletable: () => void;
   onClear: () => void;
   onPush: () => void;
@@ -97,6 +108,9 @@ export function SbBulkPushBar(props: Props) {
     sbConfigured,
     hasSbEventId,
     onSelectAllPushable,
+    pushableSelectCount,
+    onPushableSelectCountChange,
+    onSelectNPushable,
     onSelectAllDeletable,
     onClear,
     onPush,
@@ -164,9 +178,42 @@ export function SbBulkPushBar(props: Props) {
                 </select>
               </label>
               {!allPushableSelected && pushableCount > 0 ? (
-                <button type="button" className={btnGhost} onClick={onSelectAllPushable}>
-                  Select pushable ({pushableCount})
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className={`${btnGhost} inline-flex items-center gap-1.5`}
+                    onClick={() => onSelectNPushable(pushableSelectCount)}
+                    title={`Select first ${clampPushableSelectCount(pushableSelectCount, pushableCount)} pushable listing${pushableSelectCount === 1 ? "" : "s"}`}
+                  >
+                    Select
+                    <input
+                      type="number"
+                      min={1}
+                      max={Math.min(pushableCount, 999)}
+                      value={pushableSelectCount}
+                      onChange={(e) =>
+                        onPushableSelectCountChange(
+                          clampPushableSelectCount(Number(e.target.value), pushableCount),
+                        )
+                      }
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          onSelectNPushable(pushableSelectCount);
+                        }
+                      }}
+                      className={inputCompact}
+                      aria-label="Number of pushable listings to select"
+                    />
+                    pushable
+                  </button>
+                  {pushableCount > pushableSelectCount ? (
+                    <button type="button" className={btnGhost} onClick={onSelectAllPushable}>
+                      All ({pushableCount})
+                    </button>
+                  ) : null}
+                </>
               ) : null}
               {!allDeletableSelected && deletableCount > 0 ? (
                 <button type="button" className={btnGhost} onClick={onSelectAllDeletable}>
