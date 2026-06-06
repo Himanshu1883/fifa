@@ -1105,6 +1105,24 @@ export function SockAvailablePanel(props: {
     setSelectedPushKeys(new Set());
   }, []);
 
+  const selectableCount = selectableKeySet.size;
+  const allSelectableSelected = selectableCount > 0 && selectedBulkCount >= selectableCount;
+  const selectAllHeaderRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const el = selectAllHeaderRef.current;
+    if (!el) return;
+    el.indeterminate = selectedBulkCount > 0 && selectedBulkCount < selectableCount;
+  }, [selectedBulkCount, selectableCount]);
+
+  const toggleSelectAllSelectable = useCallback(() => {
+    setSelectedPushKeys((prev) => {
+      const allSelected = [...selectableKeySet].every((k) => prev.has(k));
+      if (allSelected) return new Set();
+      return new Set(selectableKeySet);
+    });
+  }, [selectableKeySet]);
+
   const bulkActionRunning = Boolean(bulkPushQueue?.running || bulkDeleteQueue?.running);
 
   const runBulkPushQueue = useCallback(async () => {
@@ -2351,7 +2369,22 @@ export function SockAvailablePanel(props: {
                         {bulkPushEnabled ? (
                           <>
                             <th scope="col" className="w-10 px-2 py-3 text-center font-medium text-zinc-400">
-                              <span className="sr-only">Select for bulk SB actions</span>
+                              <input
+                                ref={selectAllHeaderRef}
+                                type="checkbox"
+                                checked={allSelectableSelected}
+                                disabled={bulkActionRunning || selectableCount === 0}
+                                className="size-4 rounded border-white/20 bg-black/40 accent-[color:var(--ticketing-accent)]"
+                                aria-label="Select all pushable and on-SB listings"
+                                title={
+                                  selectableCount === 0
+                                    ? "No selectable listings"
+                                    : allSelectableSelected
+                                      ? "Clear selection"
+                                      : `Select all (${selectableCount})`
+                                }
+                                onChange={toggleSelectAllSelectable}
+                              />
                             </th>
                             <th
                               scope="col"
@@ -2519,7 +2552,22 @@ export function SockAvailablePanel(props: {
                       {bulkPushEnabled ? (
                         <>
                           <th scope="col" className="w-10 px-2 py-3 text-center font-medium text-zinc-400">
-                            <span className="sr-only">Select for bulk SB actions</span>
+                            <input
+                              ref={selectAllHeaderRef}
+                              type="checkbox"
+                              checked={allSelectableSelected}
+                              disabled={bulkActionRunning || selectableCount === 0}
+                              className="size-4 rounded border-white/20 bg-black/40 accent-[color:var(--ticketing-accent)]"
+                              aria-label="Select all pushable and on-SB listings"
+                              title={
+                                selectableCount === 0
+                                  ? "No selectable listings"
+                                  : allSelectableSelected
+                                    ? "Clear selection"
+                                    : `Select all (${selectableCount})`
+                              }
+                              onChange={toggleSelectAllSelectable}
+                            />
                           </th>
                           <th
                             scope="col"

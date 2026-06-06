@@ -113,6 +113,52 @@ function formatWhen(iso: string | null): string {
   });
 }
 
+function scrapePresenceMeta(
+  listing: SbCatalogListing,
+  lastScrapeAt: string | null,
+): { label: string; badge: string; detail: string } {
+  switch (listing.status) {
+    case "pushed":
+      return {
+        label: "Present",
+        badge:
+          "inline-flex rounded-full border border-sky-400/40 bg-sky-500/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-100",
+        detail: lastScrapeAt
+          ? `Last seen ${formatWhen(lastScrapeAt)}`
+          : "Still in latest scrape (no scrape timestamp yet)",
+      };
+    case "removed":
+      return {
+        label: "Removed from scrape",
+        badge:
+          "inline-flex rounded-full border border-amber-400/40 bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-100",
+        detail: listing.inventoryRemovedAt
+          ? `Missing since ${formatWhen(listing.inventoryRemovedAt)}`
+          : "No longer in sock_available",
+      };
+    case "deleted":
+      return {
+        label: "Deleted on SB",
+        badge:
+          "inline-flex rounded-full border border-rose-400/50 bg-rose-500/20 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-50",
+        detail: listing.inventoryRemovedAt
+          ? `Removed ${formatWhen(listing.inventoryRemovedAt)}`
+          : listing.sbDeletedAt
+            ? `Deleted ${formatWhen(listing.sbDeletedAt)}`
+            : "Removed from FIFA scrape and deleted on SB",
+      };
+    case "delete_failed":
+      return {
+        label: "Delete failed",
+        badge:
+          "inline-flex rounded-full border border-rose-400/45 bg-rose-500/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-100",
+        detail: listing.inventoryRemovedAt
+          ? `Removed ${formatWhen(listing.inventoryRemovedAt)} · SB delete pending`
+          : "Removed from FIFA scrape · SB delete failed",
+      };
+  }
+}
+
 export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbConfigured: boolean }) {
   const { matches: initialMatches, sbConfigured } = props;
   const [matches, setMatches] = useState(initialMatches);
@@ -496,6 +542,18 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
                         {match.sbEventId ? (
                           <span className="font-mono text-[10px] text-zinc-600">SB {match.sbEventId}</span>
                         ) : null}
+                        {match.lastScrapeAt ? (
+                          <span
+                            className="rounded-md border border-sky-400/25 bg-sky-500/10 px-2 py-0.5 text-sky-200/90"
+                            title={match.lastScrapeAt}
+                          >
+                            Last scrape {formatWhen(match.lastScrapeAt)}
+                          </span>
+                        ) : (
+                          <span className="rounded-md border border-white/[0.06] bg-black/20 px-2 py-0.5 text-zinc-600">
+                            No scrape yet
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -527,7 +585,7 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
                         </Link>
                       </div>
                       <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
-                        <table className="w-full min-w-[52rem] border-collapse text-left text-sm">
+                        <table className="w-full min-w-[58rem] border-collapse text-left text-sm">
                           <thead>
                             <tr className="border-b border-white/[0.06] bg-black/30 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
                               <th className="px-4 py-3 font-medium">Listing ID</th>
@@ -537,6 +595,7 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
                               <th className="px-4 py-3 font-medium">Qty</th>
                               <th className="px-4 py-3 font-medium">Price</th>
                               <th className="px-4 py-3 font-medium">Status</th>
+                              <th className="px-4 py-3 font-medium">FIFA scrape</th>
                               <th className="px-4 py-3 font-medium">Timeline</th>
                               <th className="px-4 py-3 text-right font-medium">Actions</th>
                               <th className="w-12 px-2 py-3 text-center font-medium">
@@ -547,6 +606,7 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
                           <tbody>
                             {match.listings.map((listing) => {
                               const meta = statusMeta(listing.status);
+                              const scrapeMeta = scrapePresenceMeta(listing, match.lastScrapeAt);
                               const isDeleted = listing.status === "deleted";
                               return (
                                 <tr
@@ -583,8 +643,22 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
                                   <td className="whitespace-nowrap px-4 py-3">
                                     <span className={meta.badge}>{meta.label}</span>
                                   </td>
+                                  <td className="px-4 py-3 text-[11px] leading-relaxed">
+                                    <span className={scrapeMeta.badge}>{scrapeMeta.label}</span>
+                                    <div className="mt-1.5 text-zinc-500">{scrapeMeta.detail}</div>
+                                    {listing.status === "deleted" && listing.sbDeletedAt ? (
+                                      <div className="mt-0.5 text-rose-300/80">
+                                        SB deleted {formatWhen(listing.sbDeletedAt)}
+                                      </div>
+                                    ) : null}
+                                  </td>
                                   <td className="px-4 py-3 text-[11px] leading-relaxed text-zinc-500">
                                     <div>Pushed {formatWhen(listing.pushedAt)}</div>
+                                    {listing.inventoryRemovedAt ? (
+                                      <div className="text-amber-300/80">
+                                        Removed from scrape {formatWhen(listing.inventoryRemovedAt)}
+                                      </div>
+                                    ) : null}
                                     {listing.sbDeletedAt ? (
                                       <div className={isDeleted ? "text-rose-300/80" : ""}>
                                         Deleted {formatWhen(listing.sbDeletedAt)}

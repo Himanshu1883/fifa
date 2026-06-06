@@ -264,6 +264,8 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
   const [pushConfirmOpen, setPushConfirmOpen] = useState(false);
   const [autoPushEnabled, setAutoPushEnabled] = useState(false);
   const [autoPushToggling, setAutoPushToggling] = useState(false);
+  const [autoDeleteOnScrapeRemoval, setAutoDeleteOnScrapeRemovalState] = useState(true);
+  const [autoDeleteToggling, setAutoDeleteToggling] = useState(false);
   const [eventAutoPushEligible, setEventAutoPushEligible] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [ticketTypeId, setTicketTypeId] = useState(DEFAULT_SB_TICKET_TYPE_ID);
@@ -352,6 +354,46 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
       /* ignore */
     }
   }, [resolvedEventId]);
+
+  const loadPushRulesSettings = useCallback(async () => {
+    try {
+      const res = await fetch("/api/sb-push-rules-settings", { cache: "no-store" });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        config?: { autoDeleteOnScrapeRemoval?: boolean };
+      };
+      if (res.ok && data.ok && data.config) {
+        setAutoDeleteOnScrapeRemovalState(data.config.autoDeleteOnScrapeRemoval !== false);
+      }
+    } catch {
+      /* keep default true */
+    }
+  }, []);
+
+  const setAutoDeleteOnScrapeRemoval = useCallback(async (enabled: boolean) => {
+    setAutoDeleteToggling(true);
+    try {
+      const res = await fetch("/api/sb-push-rules-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autoDeleteOnScrapeRemoval: enabled }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        config?: { autoDeleteOnScrapeRemoval?: boolean };
+        error?: string;
+      };
+      if (!res.ok || !data.ok) {
+        setError(data.error ?? "Could not update auto-delete on scrape setting.");
+        return;
+      }
+      setAutoDeleteOnScrapeRemovalState(data.config?.autoDeleteOnScrapeRemoval !== false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAutoDeleteToggling(false);
+    }
+  }, []);
 
   const setAutoPush = useCallback(
     async (enabled: boolean) => {
@@ -666,12 +708,13 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
   );
 
   const panelBusy = previewing || pushing || resolving;
-  const busy = panelBusy || autoPushToggling;
+  const busy = panelBusy || autoPushToggling || autoDeleteToggling;
 
   useEffect(() => {
     if (!open) return;
     void loadAutoPushState();
-  }, [open, loadAutoPushState]);
+    void loadPushRulesSettings();
+  }, [open, loadAutoPushState, loadPushRulesSettings]);
 
   useEffect(() => {
     if (!open) {
@@ -829,41 +872,70 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/[0.08] bg-black/25 px-3 py-2.5">
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-zinc-200">Auto-push to SeatsBrokers</span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={autoPushEnabled}
-                    disabled={panelBusy || autoPushToggling}
-                    onClick={() => void setAutoPush(!autoPushEnabled)}
-                    className={`relative h-7 w-12 shrink-0 rounded-full border transition-colors ${
-                      autoPushEnabled
-                        ? "border-emerald-500/50 bg-emerald-600/80"
-                        : "border-white/15 bg-zinc-700/80"
-                    } ${panelBusy || autoPushToggling ? "opacity-50" : ""}`}
-                  >
-                    <span
-                      className={`absolute top-0.5 block h-6 w-6 rounded-full bg-white shadow transition-transform ${
-                        autoPushEnabled ? "translate-x-5" : "translate-x-0.5"
-                      }`}
-                    />
-                  </button>
-                  <span className="text-xs text-zinc-500">{autoPushEnabled ? "On" : "Off"}</span>
-                  {autoPushEnabled ? (
-                    <span className="text-[10px] text-emerald-400/90">· every 3s while this app is open</span>
-                  ) : null}
+              <div className="mt-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/[0.08] bg-black/25 px-3 py-2.5">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-zinc-200">Auto-push to SeatsBrokers</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={autoPushEnabled}
+                      disabled={panelBusy || autoPushToggling}
+                      onClick={() => void setAutoPush(!autoPushEnabled)}
+                      className={`relative h-7 w-12 shrink-0 rounded-full border transition-colors ${
+                        autoPushEnabled
+                          ? "border-emerald-500/50 bg-emerald-600/80"
+                          : "border-white/15 bg-zinc-700/80"
+                      } ${panelBusy || autoPushToggling ? "opacity-50" : ""}`}
+                    >
+                      <span
+                        className={`absolute top-0.5 block h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                          autoPushEnabled ? "translate-x-5" : "translate-x-0.5"
+                        }`}
+                      />
+                    </button>
+                    <span className="text-xs text-zinc-500">{autoPushEnabled ? "On" : "Off"}</span>
+                    {autoPushEnabled ? (
+                      <span className="text-[10px] text-emerald-400/90">· every 3s while this app is open</span>
+                    ) : null}
+                  </div>
+                  {eventAutoPushEligible ? (
+                    <span className="rounded-full border border-sky-500/30 bg-sky-950/20 px-2 py-0.5 text-[10px] text-sky-200">
+                      Auto-push eligible
+                    </span>
+                  ) : (
+                    <span className="max-w-md text-[10px] text-zinc-600">
+                      Push once manually to enable auto-push for this event
+                    </span>
+                  )}
                 </div>
-                {eventAutoPushEligible ? (
-                  <span className="rounded-full border border-sky-500/30 bg-sky-950/20 px-2 py-0.5 text-[10px] text-sky-200">
-                    Auto-push eligible
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/[0.08] bg-black/25 px-3 py-2.5">
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+                    <span className="text-sm font-medium text-zinc-200">Auto-delete on scrape removal</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={autoDeleteOnScrapeRemoval}
+                      disabled={panelBusy || autoDeleteToggling}
+                      onClick={() => void setAutoDeleteOnScrapeRemoval(!autoDeleteOnScrapeRemoval)}
+                      className={`relative h-7 w-12 shrink-0 rounded-full border transition-colors ${
+                        autoDeleteOnScrapeRemoval
+                          ? "border-emerald-500/50 bg-emerald-600/80"
+                          : "border-white/15 bg-zinc-700/80"
+                      } ${panelBusy || autoDeleteToggling ? "opacity-50" : ""}`}
+                    >
+                      <span
+                        className={`absolute top-0.5 block h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                          autoDeleteOnScrapeRemoval ? "translate-x-5" : "translate-x-0.5"
+                        }`}
+                      />
+                    </button>
+                    <span className="text-xs text-zinc-500">{autoDeleteOnScrapeRemoval ? "On" : "Off"}</span>
+                  </div>
+                  <span className="max-w-md text-[10px] leading-relaxed text-zinc-600">
+                    When on, sock-available sync deletes SB listings that no longer appear in RESALE scrape.
                   </span>
-                ) : (
-                  <span className="max-w-md text-[10px] text-zinc-600">
-                    Push once manually to enable auto-push for this event
-                  </span>
-                )}
+                </div>
               </div>
             </header>
 

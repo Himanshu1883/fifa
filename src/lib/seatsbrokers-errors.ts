@@ -46,6 +46,16 @@ export function formatSeatsBrokersError(status: number, raw: string, fallback = 
   return raw || fallback;
 }
 
+const RATE_LIMIT_MESSAGE_RE =
+  /too\s+many\s+requests|rate\s*limit|throttl(?:e|ed|ing)|429\b/i;
+
+/** Whether an SB API response indicates rate limiting / throttling. */
+export function isSbRateLimitError(error?: string | null, httpStatus?: number | null): boolean {
+  if (httpStatus === 429) return true;
+  if (!error?.trim()) return false;
+  return RATE_LIMIT_MESSAGE_RE.test(error);
+}
+
 export function formatSeatsBrokersFetchError(e: unknown): string {
   if (
     e instanceof Error &&

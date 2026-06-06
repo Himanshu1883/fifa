@@ -161,6 +161,32 @@ export async function loadSbListingsCatalog(): Promise<SbCatalogMatch[]> {
   });
   const eventById = new Map(events.map((e) => [e.id, e]));
 
+  const [latestDiffLogs, sockUpdatedMax] = await Promise.all([
+    prisma.sockAvailableWebhookDiffLog.findMany({
+      where: { eventId: { in: eventIds }, kind: "RESALE" },
+      orderBy: { createdAt: "desc" },
+      distinct: ["eventId"],
+      select: { eventId: true, createdAt: true },
+    }),
+    prisma.sockAvailable.groupBy({
+      by: ["eventId"],
+      where: { eventId: { in: eventIds }, kind: "RESALE" },
+      _max: { updatedAt: true },
+    }),
+  ]);
+
+  const lastScrapeByEvent = new Map<number, string>();
+  for (const row of latestDiffLogs) {
+    lastScrapeByEvent.set(row.eventId, row.createdAt.toISOString());
+  }
+  for (const row of sockUpdatedMax) {
+    const maxAt = row._max.updatedAt;
+    if (!maxAt) continue;
+    const iso = maxAt.toISOString();
+    const prev = lastScrapeByEvent.get(row.eventId);
+    if (!prev || iso > prev) lastScrapeByEvent.set(row.eventId, iso);
+  }
+
   const byEvent = new Map<number, SbCatalogListing[]>();
   for (const log of logs) {
     const list = byEvent.get(log.eventId) ?? [];
@@ -195,6 +221,7 @@ export async function loadSbListingsCatalog(): Promise<SbCatalogMatch[]> {
       stage: event.stage,
       country: event.country,
       sortOrder: event.sortOrder,
+      lastScrapeAt: lastScrapeByEvent.get(eventId) ?? null,
       activeCount,
       deletedCount,
       failedCount,

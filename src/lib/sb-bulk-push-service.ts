@@ -5,8 +5,16 @@ import {
   SEATS_BROKERS_PUSH_INVENTORY_KIND,
 } from "@/lib/event-seat-offers-service";
 import { prisma } from "@/lib/prisma";
+import { isSbRateLimitError } from "@/lib/seatsbrokers-errors";
 import { pushSingleSbOfferForEvent } from "@/lib/seatsbrokers-push-service";
 import { getSeatsBrokersConfig } from "@/lib/seatsbrokers-config";
+
+const THROTTLE_RETRY_WAIT_MS = 30_000;
+const MAX_THROTTLE_RETRIES = 4;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export type SbBulkPushJobItem = {
   seatIds: string[];
@@ -221,36 +229,69 @@ export async function processBulkPushJobStep(jobId: number): Promise<boolean> {
     let failed = job.failed;
     let lastError = job.lastError;
 
-    try {
-      const loaded = await loadTransformedSeatOffersForEvent(job.eventId, {
-        kind: SEATS_BROKERS_PUSH_INVENTORY_KIND,
-        markupPercent: "persisted",
-      });
-      if (!loaded) {
-        failed++;
-        lastError = "Event not found.";
-      } else {
-        const offers = loaded.transform.offers.filter((o) => o.kind === SEATS_BROKERS_PUSH_INVENTORY_KIND);
-        const resolved = resolveOfferForSeatIds(item.seatIds, offers);
-        if (!resolved) {
+    let itemDone = false;
+    let throttleRetries = 0;
+
+    while (!itemDone) {
+      try {
+        const loaded = await loadTransformedSeatOffersForEvent(job.eventId, {
+          kind: SEATS_BROKERS_PUSH_INVENTORY_KIND,
+          markupPercent: "persisted",
+        });
+        if (!loaded) {
           failed++;
-          lastError = "No matching offer for these seats.";
+          lastError = "Event not found.";
+          itemDone = true;
         } else {
-          const result = await pushSingleSbOfferForEvent(job.eventId, resolved.offerIndex, {
-            sourceSeatIds: item.seatIds,
-            omitTicketBlock: item.omitTicketBlock,
-          });
-          if (result.ok || isDuplicateOk(result)) {
-            succeeded++;
-          } else {
+          const offers = loaded.transform.offers.filter((o) => o.kind === SEATS_BROKERS_PUSH_INVENTORY_KIND);
+          const resolved = resolveOfferForSeatIds(item.seatIds, offers);
+          if (!resolved) {
             failed++;
-            lastError = result.error ?? "Push failed.";
+            lastError = "No matching offer for these seats.";
+            itemDone = true;
+          } else {
+            const result = await pushSingleSbOfferForEvent(job.eventId, resolved.offerIndex, {
+              sourceSeatIds: item.seatIds,
+              omitTicketBlock: item.omitTicketBlock,
+            });
+            if (result.ok || isDuplicateOk(result)) {
+              succeeded++;
+              lastError = null;
+              itemDone = true;
+            } else if (
+              isSbRateLimitError(result.error, result.httpStatus) &&
+              throttleRetries < MAX_THROTTLE_RETRIES
+            ) {
+              throttleRetries++;
+              lastError = "Rate limited — retrying in 30s…";
+              await prisma.sbBulkPushJob.update({
+                where: { id: jobId },
+                data: { lastError },
+              });
+              await sleep(THROTTLE_RETRY_WAIT_MS);
+            } else {
+              failed++;
+              lastError = result.error ?? "Push failed.";
+              itemDone = true;
+            }
           }
         }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        if (isSbRateLimitError(message) && throttleRetries < MAX_THROTTLE_RETRIES) {
+          throttleRetries++;
+          lastError = "Rate limited — retrying in 30s…";
+          await prisma.sbBulkPushJob.update({
+            where: { id: jobId },
+            data: { lastError },
+          });
+          await sleep(THROTTLE_RETRY_WAIT_MS);
+        } else {
+          failed++;
+          lastError = message;
+          itemDone = true;
+        }
       }
-    } catch (e) {
-      failed++;
-      lastError = e instanceof Error ? e.message : String(e);
     }
 
     const finished = index + 1 >= items.length;

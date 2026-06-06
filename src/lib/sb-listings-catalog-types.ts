@@ -52,6 +52,8 @@ export type SbCatalogMatch = {
   stage: string | null;
   country: string | null;
   sortOrder: number;
+  /** Latest RESALE sock_available webhook scrape for this match (ISO). */
+  lastScrapeAt: string | null;
   activeCount: number;
   deletedCount: number;
   failedCount: number;
