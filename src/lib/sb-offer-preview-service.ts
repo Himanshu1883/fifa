@@ -122,7 +122,11 @@ export async function loadSbOfferPreviewForSeatIds(
   }
   if (!ticket.summary.sbBlockMatched) {
     warnings.push(
-      `FIFA block "${ticket.summary.blockName}" is not mapped in SB catalog (row/block are not sent in the create payload).`,
+      `FIFA block "${ticket.summary.blockName}" is not mapped in SB catalog — ticket_block will be missing unless you pick a block manually.`,
+    );
+  } else if (ticket.summary.sbBlockMatchSource === "cross_category") {
+    warnings.push(
+      `FIFA block "${ticket.summary.blockName}" maps to SB section ${ticket.summary.sbBlockCode} in a different SB category than FIFA label "${ticket.summary.categoryName}".`,
     );
   }
   if (!String(ticket.fields.date_to_ship ?? "").trim()) {

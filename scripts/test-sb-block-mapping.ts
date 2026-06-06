@@ -8,6 +8,8 @@ import {
   parseSbTicketBlocks,
   resolveSbBlockFromCatalog,
   resolveSbTicketBlockRowId,
+  sbBlockSectionCodesMatch,
+  sectionCodeFromFifaBlockName,
   type SbBlockOption,
   type SbMatchCatalog,
 } from "../src/lib/seatsbrokers-catalog";
@@ -65,6 +67,54 @@ const parsed = parseSbTicketBlocks({
   result: [{ id: 1060776, block_id: "111c" }],
 });
 assert(parsed.length === 1 && parsed[0]!.rowId === "1060776" && parsed[0]!.blockId === "111c", "parses id + block_id");
+
+section("sectionCodeFromFifaBlockName (T1-/T2- venues)");
+assert(sectionCodeFromFifaBlockName("T1-06") === "06", "T1-06 → 06");
+assert(sectionCodeFromFifaBlockName("T2-43") === "43", "T2-43 → 43");
+assert(sectionCodeFromFifaBlockName("111C") === null, "111C has no T-prefix section");
+assert(sbBlockSectionCodesMatch("06", "6"), "06 equals 6 numerically");
+
+const mockBlocksCat1Venue: SbBlockOption[] = [
+  { rowId: "1061410", blockId: "06" },
+  { rowId: "1061399", blockId: "43" },
+];
+const mockVenueCatalog: SbMatchCatalog = {
+  categories: [{ id: "16", name: "Category 1", categoryNum: 1 }],
+  blocksByCategoryId: new Map([["16", mockBlocksCat1Venue]]),
+};
+const t106 = resolveSbBlockFromCatalog(mockVenueCatalog, "16", "T1-06", "10229225847090");
+assert(t106.matched && t106.sbBlockRowId === "1061410" && t106.sbBlockCode === "06", "T1-06 → SB 06");
+assert(t106.matchSource === "primary", "T1-06 primary match");
+
+const crossVenueCatalog: SbMatchCatalog = {
+  categories: [
+    { id: "14", name: "Category 3", categoryNum: 3 },
+    { id: "15", name: "Category 2", categoryNum: 2 },
+  ],
+  blocksByCategoryId: new Map([
+    ["14", [{ rowId: "1061363", blockId: "11" }]],
+    ["15", [{ rowId: "1061377", blockId: "09" }]],
+  ]),
+};
+const t209 = resolveSbBlockFromCatalog(crossVenueCatalog, "14", "T2-09", "x");
+assert(
+  t209.matched && t209.sbBlockCode === "09" && t209.matchSource === "cross_category" && t209.matchedSbCategoryId === "15",
+  "T2-09 cross-category → SB 09 in cat 15",
+);
+
+const numericVenueBlocks: SbBlockOption[] = [
+  { rowId: "1060414", blockId: "313" },
+  { rowId: "1060434", blockId: "240" },
+];
+const numericVenueCatalog: SbMatchCatalog = {
+  categories: [{ id: "15", name: "Category 2", categoryNum: 2 }],
+  blocksByCategoryId: new Map([["15", numericVenueBlocks]]),
+};
+const b240 = resolveSbBlockFromCatalog(numericVenueCatalog, "15", "240", "10229531393022");
+assert(
+  b240.matched && b240.sbBlockRowId === "1060434" && b240.sbBlockCode === "240",
+  "blockName 240 wins over FIFA id substring 313",
+);
 
 section("resolveSbBlockFromCatalog");
 const r1 = resolveSbBlockFromCatalog(mockCatalog, "16", "111C", "10229531540407");

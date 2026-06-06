@@ -12,7 +12,11 @@ import { executeSbTicketPush } from "@/lib/seatsbrokers-push-service";
 import type { SbCategoryNum } from "@/lib/sb-category";
 import { computeDateToShip } from "@/lib/sb-date-to-ship";
 import { loadSbFaceValueLookup } from "@/lib/sb-face-value";
-import { loadSbMatchCatalogForOffers, serializeSbCatalogBlocks } from "@/lib/seatsbrokers-catalog";
+import {
+  buildSbBlockMappingRows,
+  loadSbMatchCatalogForOffers,
+  serializeSbCatalogBlocks,
+} from "@/lib/seatsbrokers-catalog";
 import { enrichMappedTicketForPush, mapOffersToSeatsBrokersCreateTickets } from "@/lib/seatsbrokers-offer-map";
 
 export const runtime = "nodejs";
@@ -205,6 +209,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ eventId: strin
           blocksByCategoryId: serializeSbCatalogBlocks(catalog),
           dropdownError: catalog.dropdownError ?? null,
         },
+        blockMappings: buildSbBlockMappingRows(offers, catalog),
         tickets: slice.map((m) => {
           const { sbBlockOptions, ...summaryRest } = m.summary;
           return {

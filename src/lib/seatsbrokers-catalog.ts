@@ -99,6 +99,54 @@ function normToken(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+/**
+ * FIFA seat-map blocks at some venues use T1-06 / T2-43 while SB lists section 06 / 43.
+ * Returns the trailing section number when the name matches that pattern.
+ */
+export function sectionCodeFromFifaBlockName(blockName: string): string | null {
+  const m = String(blockName ?? "").trim().match(/^T[12]-(\d+)$/i);
+  return m?.[1] ?? null;
+}
+
+/** Compare SB section codes; numeric ids treat 6 and 06 as equal. */
+export function sbBlockSectionCodesMatch(fifaToken: string, sbBlockId: string): boolean {
+  const a = normToken(fifaToken);
+  const b = normToken(sbBlockId);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (/^\d+$/.test(a) && /^\d+$/.test(b)) return Number.parseInt(a, 10) === Number.parseInt(b, 10);
+  return false;
+}
+
+/** Long numeric ids are FIFA/SockAvailable; never fuzzy-match these against SB section codes. */
+function isLikelyFifaSnowflakeId(value: string): boolean {
+  return /^\d{12,}$/.test(value.trim());
+}
+
+function blockNameMatchTokens(blockName: string): string[] {
+  const tokens = [normToken(blockName)];
+  const section = sectionCodeFromFifaBlockName(blockName);
+  if (section) tokens.push(normToken(section));
+  return [...new Set(tokens.filter(Boolean))];
+}
+
+function sbBlockMatchesBlockName(sbBlockId: string, blockName: string): boolean {
+  const bb = normToken(sbBlockId);
+  if (!bb) return false;
+  return blockNameMatchTokens(blockName).some(
+    (token) => sbBlockSectionCodesMatch(token, bb) || tokensMatch(bb, token),
+  );
+}
+
+function sectionCodesForCrossMatch(blockName: string): string[] {
+  const codes: string[] = [];
+  const t = sectionCodeFromFifaBlockName(blockName);
+  if (t) codes.push(t);
+  const bn = normToken(blockName);
+  if (bn && /^\d+$/.test(bn)) codes.push(bn);
+  return [...new Set(codes)];
+}
+
 /** Loose contains only when the shorter token is long enough to avoid "4" matching "346". */
 function tokensMatch(a: string, b: string): boolean {
   if (!a || !b) return false;
@@ -126,19 +174,82 @@ export function resolveSbTicketBlockRowId(
   if (!v) return fallbackRowId;
   const byRow = options.find((b) => b.rowId === v);
   if (byRow) return byRow.rowId;
-  const bySection = options.find((b) => b.blockId === v);
+  const bySection = options.find(
+    (b) => b.blockId === v || sbBlockSectionCodesMatch(v, b.blockId),
+  );
   if (bySection) return bySection.rowId;
+  const section = sectionCodeFromFifaBlockName(v);
+  if (section) {
+    const byFifaSection = options.find((b) => sbBlockSectionCodesMatch(section, b.blockId));
+    if (byFifaSection) return byFifaSection.rowId;
+  }
   return fallbackRowId;
 }
 
 export function isValidSbTicketBlockValue(value: string, options: SbBlockOption[]): boolean {
   const v = value.trim();
   if (!v) return false;
-  return options.some((b) => b.rowId === v || b.blockId === v);
+  return options.some(
+    (b) =>
+      b.rowId === v ||
+      b.blockId === v ||
+      sbBlockSectionCodesMatch(v, b.blockId) ||
+      (sectionCodeFromFifaBlockName(v) != null &&
+        sbBlockSectionCodesMatch(sectionCodeFromFifaBlockName(v)!, b.blockId)),
+  );
 }
 
 export function sbBlockCodeForRowId(rowId: string, options: SbBlockOption[]): string {
   return options.find((b) => b.rowId === rowId)?.blockId ?? "";
+}
+
+export type SbBlockMatchSource = "primary" | "cross_category" | "single_option" | "unmatched";
+
+export type SbBlockResolveResult = {
+  /** Internal row id for ticket_block on create (e.g. 1060776). */
+  sbBlockRowId: string;
+  /** Section code in SB list UI (e.g. 111c). */
+  sbBlockCode: string;
+  matched: boolean;
+  sbBlockOptions: SbBlockOption[];
+  /** SB category id that owns the matched block (may differ from FIFA category on cross-match). */
+  matchedSbCategoryId: string;
+  matchSource: SbBlockMatchSource;
+};
+
+function findSbBlockInOptions(
+  options: SbBlockOption[],
+  blockName: string,
+  fifaBlockId: string,
+): SbBlockOption | null {
+  const byName = options.find((b) => sbBlockMatchesBlockName(b.blockId, blockName));
+  if (byName) return byName;
+
+  const bn = blockName.trim();
+  if (!bn && !isLikelyFifaSnowflakeId(fifaBlockId)) {
+    const fid = normToken(fifaBlockId);
+    if (fid) {
+      return (
+        options.find(
+          (b) => sbBlockSectionCodesMatch(fid, b.blockId) || tokensMatch(b.blockId, fid),
+        ) ?? null
+      );
+    }
+  }
+  return null;
+}
+
+function findSbBlockBySectionAcrossCatalog(
+  catalog: SbMatchCatalog,
+  sectionCode: string,
+  excludeCategoryId: string,
+): { block: SbBlockOption; categoryId: string } | null {
+  for (const [categoryId, options] of catalog.blocksByCategoryId) {
+    if (categoryId === excludeCategoryId) continue;
+    const hit = options.find((b) => sbBlockSectionCodesMatch(sectionCode, b.blockId));
+    if (hit) return { block: hit, categoryId };
+  }
+  return null;
 }
 
 export function resolveSbBlockFromCatalog(
@@ -146,36 +257,149 @@ export function resolveSbBlockFromCatalog(
   sbCategoryId: string,
   blockName: string,
   fifaBlockId: string,
-): {
-  /** Internal row id for ticket_block on create (e.g. 1060776). */
-  sbBlockRowId: string;
-  /** Section code in SB list UI (e.g. 111c). */
-  sbBlockCode: string;
-  matched: boolean;
-  sbBlockOptions: SbBlockOption[];
-} {
+): SbBlockResolveResult {
   const sbBlockOptions = getSbBlocksForCategory(catalog, sbCategoryId);
-  if (sbBlockOptions.length === 0) {
-    return { sbBlockRowId: "", sbBlockCode: "", matched: false, sbBlockOptions };
+  const unmatched = (): SbBlockResolveResult => ({
+    sbBlockRowId: "",
+    sbBlockCode: "",
+    matched: false,
+    sbBlockOptions,
+    matchedSbCategoryId: sbCategoryId,
+    matchSource: "unmatched",
+  });
+
+  if (sbBlockOptions.length === 0 && !catalog) return unmatched();
+
+  const primaryHit = findSbBlockInOptions(sbBlockOptions, blockName, fifaBlockId);
+  if (primaryHit) {
+    return {
+      sbBlockRowId: primaryHit.rowId,
+      sbBlockCode: primaryHit.blockId,
+      matched: true,
+      sbBlockOptions,
+      matchedSbCategoryId: sbCategoryId,
+      matchSource: "primary",
+    };
   }
 
-  const bn = normToken(blockName);
-  const fid = normToken(fifaBlockId);
-
-  for (const b of sbBlockOptions) {
-    const bb = normToken(b.blockId);
-    if (!bb) continue;
-    if (bb === bn || bb === fid || tokensMatch(bb, bn) || tokensMatch(bb, fid)) {
-      return { sbBlockRowId: b.rowId, sbBlockCode: b.blockId, matched: true, sbBlockOptions };
+  if (catalog) {
+    for (const sectionCode of sectionCodesForCrossMatch(blockName)) {
+      const cross = findSbBlockBySectionAcrossCatalog(catalog, sectionCode, sbCategoryId);
+      if (cross) {
+        return {
+          sbBlockRowId: cross.block.rowId,
+          sbBlockCode: cross.block.blockId,
+          matched: true,
+          sbBlockOptions,
+          matchedSbCategoryId: cross.categoryId,
+          matchSource: "cross_category",
+        };
+      }
     }
   }
 
   if (sbBlockOptions.length === 1) {
     const only = sbBlockOptions[0]!;
-    return { sbBlockRowId: only.rowId, sbBlockCode: only.blockId, matched: true, sbBlockOptions };
+    return {
+      sbBlockRowId: only.rowId,
+      sbBlockCode: only.blockId,
+      matched: true,
+      sbBlockOptions,
+      matchedSbCategoryId: sbCategoryId,
+      matchSource: "single_option",
+    };
   }
 
-  return { sbBlockRowId: "", sbBlockCode: "", matched: false, sbBlockOptions };
+  return unmatched();
+}
+
+export type SbBlockMappingRow = {
+  fifaBlockName: string;
+  fifaBlockId: string;
+  fifaCategoryName: string;
+  fifaCategoryNum: SbCategoryNum | null;
+  sbCategoryId: string;
+  sbCategoryLabel: string;
+  sbBlockCode: string | null;
+  sbBlockRowId: string | null;
+  matched: boolean;
+  matchSource: SbBlockMatchSource;
+  seatCount: number;
+  offerCount: number;
+};
+
+/** Unique FIFA block → SB section mapping for push preview UI. */
+export function buildSbBlockMappingRows(
+  offers: TransformedSeatOffer[],
+  catalog: SbMatchCatalog | null,
+): SbBlockMappingRow[] {
+  const byKey = new Map<
+    string,
+    {
+      fifaBlockName: string;
+      fifaBlockId: string;
+      fifaCategoryName: string;
+      fifaCategoryId: string;
+      seatCount: number;
+      offerCount: number;
+    }
+  >();
+
+  for (const offer of offers) {
+    const first = offer.seats[0];
+    if (!first) continue;
+    const key = `${first.categoryId}|${first.blockId}`;
+    const row = byKey.get(key);
+    if (row) {
+      row.seatCount += offer.seats.length;
+      row.offerCount += 1;
+    } else {
+      byKey.set(key, {
+        fifaBlockName: first.blockName,
+        fifaBlockId: first.blockId,
+        fifaCategoryName: first.categoryName,
+        fifaCategoryId: first.categoryId,
+        seatCount: offer.seats.length,
+        offerCount: 1,
+      });
+    }
+  }
+
+  const out: SbBlockMappingRow[] = [];
+  for (const row of byKey.values()) {
+    const { sbCategoryId, categoryNum, categoryLabel } = resolveSbCategoryFromCatalog(
+      catalog,
+      row.fifaCategoryName,
+      row.fifaCategoryId,
+    );
+    const block = resolveSbBlockFromCatalog(
+      catalog,
+      sbCategoryId,
+      row.fifaBlockName,
+      row.fifaBlockId,
+    );
+    const matchedCategory = catalog?.categories.find((c) => c.id === block.matchedSbCategoryId);
+    out.push({
+      fifaBlockName: row.fifaBlockName,
+      fifaBlockId: row.fifaBlockId,
+      fifaCategoryName: row.fifaCategoryName,
+      fifaCategoryNum: categoryNum,
+      sbCategoryId: block.matchedSbCategoryId,
+      sbCategoryLabel: matchedCategory?.name ?? categoryLabel,
+      sbBlockCode: block.sbBlockCode || null,
+      sbBlockRowId: block.sbBlockRowId || null,
+      matched: block.matched,
+      matchSource: block.matchSource,
+      seatCount: row.seatCount,
+      offerCount: row.offerCount,
+    });
+  }
+
+  return out.sort((a, b) => {
+    const cat = (a.fifaCategoryName ?? "").localeCompare(b.fifaCategoryName ?? "");
+    if (cat !== 0) return cat;
+    return a.fifaBlockName.localeCompare(b.fifaBlockName, undefined, { numeric: true });
+  });
 }
 
 export function serializeSbCatalogBlocks(
@@ -198,17 +422,9 @@ export async function loadSbMatchCatalogForOffers(
   const categories = dropdownRes.ok ? parseSbDropdownCategories(dropdownRes.data) : [];
   const dropdownError = dropdownRes.ok ? undefined : dropdownRes.error;
 
-  const neededNums = new Set<SbCategoryNum>();
-  for (const o of offers) {
-    const first = o.seats[0];
-    if (!first) continue;
-    const n = resolveSbCategoryNum(first.categoryName, first.categoryId);
-    if (n) neededNums.add(n);
-  }
-
   const blocksByCategoryId = new Map<string, SbBlockOption[]>();
   for (const cat of categories) {
-    if (cat.categoryNum == null || !neededNums.has(cat.categoryNum)) continue;
+    if (cat.categoryNum == null || cat.categoryNum < 1 || cat.categoryNum > 4) continue;
     const blockRes = await sbGetTicketBlocks(matchId, cat.id, config);
     blocksByCategoryId.set(
       cat.id,

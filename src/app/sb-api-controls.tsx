@@ -3,7 +3,9 @@
 import { updateSbEventIdAction } from "@/app/actions/event-sb-id";
 import { syncEventDateAction } from "@/app/actions/sync-event-date";
 import { ModalPortal } from "@/app/modal-portal";
+import { SbBlockMappingTable } from "@/app/sb-block-mapping-table";
 import { SbListingHistoryModal } from "@/app/sb-listing-history-modal";
+import type { SbBlockMappingRow } from "@/lib/seatsbrokers-catalog";
 import { computeDateToShip } from "@/lib/sb-date-to-ship";
 import { DEFAULT_SB_TICKET_TYPE_ID, SB_TICKET_TYPES } from "@/lib/sb-ticket-types";
 import { countSbTicketListings } from "@/lib/seatsbrokers-parse";
@@ -114,6 +116,7 @@ type TicketPayload = {
     sbBlockId?: string;
     sbBlockCode?: string;
     sbBlockMatched?: boolean;
+    sbBlockMatchSource?: string;
     sbBlockOptions?: SbBlockOption[];
     blockName?: string;
     row: string;
@@ -207,6 +210,7 @@ type PushResponse = {
   failed?: number;
   skipped?: number;
   tickets?: TicketPayload[];
+  blockMappings?: SbBlockMappingRow[];
   results?: Array<{
     offerIndex: number;
     ok: boolean;
@@ -1094,6 +1098,10 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                 <p className="rounded-lg border border-red-500/30 bg-red-950/25 px-3 py-2 text-xs text-red-200">{error}</p>
               ) : null}
 
+              {previewMeta?.blockMappings && previewMeta.blockMappings.length > 0 ? (
+                <SbBlockMappingTable rows={previewMeta.blockMappings} />
+              ) : null}
+
               {/* What we send */}
               <section className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1230,6 +1238,13 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                           <p className="mb-2 rounded border border-amber-500/30 bg-amber-950/20 px-2 py-1 text-[10px] text-amber-200">
                             No SB block auto-match for FIFA block &quot;{t.summary.blockName ?? "—"}&quot; — pick{" "}
                             <strong>ticket_block</strong> in Edit ({blockOptions.length} options from SB).
+                          </p>
+                        ) : null}
+                        {t.summary.sbBlockMatchSource === "cross_category" && t.summary.sbBlockCode ? (
+                          <p className="mb-2 rounded border border-sky-500/25 bg-sky-950/20 px-2 py-1 text-[10px] text-sky-100">
+                            FIFA block <strong>{t.summary.blockName}</strong> maps to SB section{" "}
+                            <strong>{t.summary.sbBlockCode}</strong> under SB category{" "}
+                            <strong>{t.fields.ticket_category}</strong> (differs from FIFA category label).
                           </p>
                         ) : null}
                         {blockOptions.length > 0 && !row.editing ? (

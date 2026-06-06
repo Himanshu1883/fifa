@@ -11,6 +11,7 @@ import {
   resolveSbCategoryFromCatalog,
   resolveSbTicketBlockRowId,
   sbBlockCodeForRowId,
+  type SbBlockMatchSource,
   type SbBlockOption,
   type SbMatchCatalog,
 } from "@/lib/seatsbrokers-catalog";
@@ -41,6 +42,7 @@ export type MappedSeatsBrokersTicket = {
     sbBlockCode: string;
     blockName: string;
     sbBlockMatched: boolean;
+    sbBlockMatchSource?: SbBlockMatchSource;
     sbBlockOptions: SbBlockOption[];
     row: string;
     seatNumbers: string[];
@@ -99,18 +101,27 @@ export function mapOfferToSeatsBrokersCreateTicket(
     first.categoryName,
     first.categoryId,
   );
-  const { sbBlockRowId, sbBlockCode, matched: sbBlockMatched, sbBlockOptions } = resolveSbBlockFromCatalog(
+  const blockResolve = resolveSbBlockFromCatalog(
     catalog,
     sbCategoryId,
     first.blockName,
     first.blockId,
   );
+  const {
+    sbBlockRowId,
+    sbBlockCode,
+    matched: sbBlockMatched,
+    sbBlockOptions,
+    matchedSbCategoryId,
+    matchSource: sbBlockMatchSource,
+  } = blockResolve;
+  const ticketCategory = blockResolve.matched ? matchedSbCategoryId : sbCategoryId;
 
   const fields: Record<string, string> = {
     match_id: matchId,
     ticket_type: config.defaultTicketType,
     quantity: String(offer.transformedCount),
-    ticket_category: sbCategoryId,
+    ticket_category: ticketCategory,
     home_town: config.defaultHomeTown,
     price_type: config.priceType,
     price: formatPriceUsdForSb(priceUsd),
@@ -130,7 +141,7 @@ export function mapOfferToSeatsBrokersCreateTicket(
       quantity: offer.transformedCount,
       priceUsd: resolveOfferPriceUsd(offer),
       fifaCategoryId: first.categoryId,
-      sbCategoryId,
+      sbCategoryId: ticketCategory,
       categoryName: first.categoryName,
       categoryNum,
       categoryLabel,
@@ -139,6 +150,7 @@ export function mapOfferToSeatsBrokersCreateTicket(
       sbBlockCode,
       blockName: first.blockName,
       sbBlockMatched,
+      sbBlockMatchSource,
       sbBlockOptions,
       row: first.row,
       seatNumbers,
@@ -271,7 +283,8 @@ export function enrichMappedTicketForPush(
     ? resolveSbTicketBlockRowId(clientBlock, baseline.summary.sbBlockOptions, baseline.summary.sbBlockId)
     : baseline.summary.sbBlockId;
   const ticketCategory = useClientCategory ? clientCategory : baseline.fields.ticket_category;
-  const sbBlockCode = sbBlockCodeForRowId(ticketBlock, baseline.summary.sbBlockOptions);
+  const sbBlockCode =
+    sbBlockCodeForRowId(ticketBlock, baseline.summary.sbBlockOptions) || baseline.summary.sbBlockCode;
 
   const clientPrice = clientFields.price?.trim();
   const clientFaceValue = clientFields.face_value?.trim();
