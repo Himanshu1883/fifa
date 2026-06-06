@@ -16,7 +16,7 @@ export type SbBulkDeleteJobItem = {
 export type SbBulkDeleteJobSnapshot = {
   id: number;
   eventId: number;
-  status: "running" | "complete" | "failed";
+  status: "running" | "complete" | "failed" | "cancelled";
   current: number;
   total: number;
   succeeded: number;
@@ -45,28 +45,39 @@ function parseItems(raw: Prisma.JsonValue): SbBulkDeleteJobItem[] {
 function toSnapshot(job: {
   id: number;
   eventId: number;
-  status: "RUNNING" | "COMPLETE" | "FAILED";
+  status: "RUNNING" | "COMPLETE" | "FAILED" | "CANCELLED";
   current: number;
   total: number;
   succeeded: number;
   failed: number;
   lastError: string | null;
   currentLabel: string | null;
+  cancelRequestedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   completedAt: Date | null;
 }): SbBulkDeleteJobSnapshot {
   const status =
-    job.status === "RUNNING" ? "running" : job.status === "COMPLETE" ? "complete" : "failed";
+    job.status === "RUNNING"
+      ? "running"
+      : job.status === "COMPLETE"
+        ? "complete"
+        : job.status === "CANCELLED"
+          ? "cancelled"
+          : "failed";
   const label =
     job.currentLabel ??
-    (status === "complete"
-      ? "Queue complete"
-      : status === "failed"
-        ? "Queue failed"
-        : job.current > 0
-          ? "Deleting…"
-          : "Starting…");
+    (status === "cancelled"
+      ? "Cancelled"
+      : status === "complete"
+        ? "Queue complete"
+        : status === "failed"
+          ? "Queue failed"
+          : job.cancelRequestedAt
+            ? "Cancelling…"
+            : job.current > 0
+              ? "Deleting…"
+              : "Starting…");
 
   return {
     id: job.id,
@@ -97,6 +108,55 @@ export async function getActiveBulkDeleteJobForEvent(
     orderBy: { createdAt: "desc" },
   });
   return job ? toSnapshot(job) : null;
+}
+
+async function finalizeCancelledBulkDeleteJob(jobId: number): Promise<void> {
+  const job = await prisma.sbBulkDeleteJob.findUnique({ where: { id: jobId } });
+  if (!job || job.status !== "RUNNING") return;
+  await prisma.sbBulkDeleteJob.update({
+    where: { id: jobId },
+    data: {
+      status: "CANCELLED",
+      completedAt: new Date(),
+      currentLabel: "Cancelled",
+    },
+  });
+}
+
+async function isBulkDeleteCancelRequested(jobId: number): Promise<boolean> {
+  const job = await prisma.sbBulkDeleteJob.findUnique({
+    where: { id: jobId },
+    select: { cancelRequestedAt: true, status: true },
+  });
+  return Boolean(job?.cancelRequestedAt) || job?.status === "CANCELLED";
+}
+
+export async function cancelBulkDeleteJob(
+  eventId: number,
+  jobId: number,
+): Promise<
+  | { ok: true; job: SbBulkDeleteJobSnapshot }
+  | { ok: false; error: string }
+> {
+  const job = await prisma.sbBulkDeleteJob.findUnique({ where: { id: jobId } });
+  if (!job) return { ok: false, error: "Job not found." };
+  if (job.eventId !== eventId) return { ok: false, error: "Job does not belong to this event." };
+  if (job.status === "CANCELLED") {
+    return { ok: true, job: toSnapshot(job) };
+  }
+  if (job.status !== "RUNNING") {
+    return { ok: false, error: "Job is not running." };
+  }
+
+  const updated = await prisma.sbBulkDeleteJob.update({
+    where: { id: jobId },
+    data: {
+      cancelRequestedAt: job.cancelRequestedAt ?? new Date(),
+      currentLabel: "Cancelling…",
+    },
+  });
+
+  return { ok: true, job: toSnapshot(updated) };
 }
 
 export async function startBulkDeleteJob(
@@ -170,6 +230,10 @@ export async function processBulkDeleteJobStep(jobId: number): Promise<boolean> 
   try {
     const job = await prisma.sbBulkDeleteJob.findUnique({ where: { id: jobId } });
     if (!job || job.status !== "RUNNING") return false;
+    if (job.cancelRequestedAt) {
+      await finalizeCancelledBulkDeleteJob(jobId);
+      return false;
+    }
 
     const items = parseItems(job.items);
     if (items.length === 0) {
@@ -211,6 +275,11 @@ export async function processBulkDeleteJobStep(jobId: number): Promise<boolean> 
     let succeeded = job.succeeded;
     let failed = job.failed;
     let lastError = job.lastError;
+
+    if (await isBulkDeleteCancelRequested(jobId)) {
+      await finalizeCancelledBulkDeleteJob(jobId);
+      return false;
+    }
 
     try {
       const event = await prisma.event.findUnique({
@@ -287,6 +356,8 @@ export async function processBulkDeleteJob(jobId: number): Promise<void> {
 
 export function bulkDeleteJobToQueueState(job: SbBulkDeleteJobSnapshot): {
   running: boolean;
+  cancelled: boolean;
+  cancelling: boolean;
   current: number;
   total: number;
   label: string;
@@ -296,6 +367,8 @@ export function bulkDeleteJobToQueueState(job: SbBulkDeleteJobSnapshot): {
 } {
   return {
     running: job.status === "running",
+    cancelled: job.status === "cancelled",
+    cancelling: job.status === "running" && job.label === "Cancelling…",
     current: job.current,
     total: job.total,
     label: job.label,

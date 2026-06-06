@@ -8,6 +8,8 @@ const BULK_SELECT_CATEGORY_NUMS = [1, 2, 3, 4] as const satisfies readonly SbCat
 
 export type SbBulkPushQueueState = {
   running: boolean;
+  cancelled?: boolean;
+  cancelling?: boolean;
   current: number;
   total: number;
   label: string;
@@ -52,6 +54,8 @@ type Props = {
   onClear: () => void;
   onPush: () => void;
   onDelete: () => void;
+  onCancelPush?: () => void;
+  onCancelDelete?: () => void;
 };
 
 const btnPrimary =
@@ -66,29 +70,52 @@ const btnGhost =
 function QueueProgress(props: {
   mode: "push" | "delete";
   queue: SbBulkPushQueueState;
+  onCancel?: () => void;
 }) {
-  const { mode, queue } = props;
+  const { mode, queue, onCancel } = props;
   const running = queue.running;
+  const cancelled = Boolean(queue.cancelled);
+  const cancelling = Boolean(queue.cancelling);
   const verb = mode === "push" ? "Push" : "Delete";
+  const skipped = Math.max(0, queue.total - queue.current);
+
+  const barColor = cancelled
+    ? "bg-amber-400"
+    : mode === "delete"
+      ? "bg-rose-400"
+      : "bg-[color:var(--ticketing-accent)]";
 
   return (
     <div className="space-y-1">
-      <p className="text-sm font-semibold text-zinc-100">
-        {running
-          ? `${verb === "Push" ? "Pushing" : "Deleting"} from SB… ${queue.current} / ${queue.total}`
-          : `${verb} complete · ${queue.succeeded} succeeded · ${queue.failed} failed`}
-      </p>
+      <div className="flex items-start justify-between gap-3">
+        <p className="min-w-0 text-sm font-semibold text-zinc-100">
+          {cancelled
+            ? `${verb} cancelled · ${queue.succeeded} succeeded · ${queue.failed} failed`
+            : running
+              ? `${verb === "Push" ? "Pushing" : "Deleting"} from SB… ${queue.current} / ${queue.total}`
+              : `${verb} complete · ${queue.succeeded} succeeded · ${queue.failed} failed`}
+        </p>
+        {running && onCancel ? (
+          <button
+            type="button"
+            className={`${btnGhost} shrink-0 px-2.5 py-1 text-xs disabled:opacity-50`}
+            disabled={cancelling}
+            onClick={onCancel}
+          >
+            {cancelling ? "Cancelling…" : "Cancel"}
+          </button>
+        ) : null}
+      </div>
       <p className="truncate text-xs text-zinc-400">{queue.label}</p>
       <div className="h-1.5 overflow-hidden rounded-full bg-black/40">
         <div
-          className={`h-full rounded-full transition-[width] duration-300 ${
-            mode === "delete" ? "bg-rose-400" : "bg-[color:var(--ticketing-accent)]"
-          }`}
+          className={`h-full rounded-full transition-[width] duration-300 ${barColor}`}
           style={{ width: `${Math.round((queue.current / Math.max(queue.total, 1)) * 100)}%` }}
         />
       </div>
       <p className="text-[10px] text-zinc-500">
         {queue.succeeded} succeeded · {queue.failed} failed
+        {cancelled && skipped > 0 ? <span className="ml-1 text-amber-200/90">· {skipped} skipped</span> : null}
         {queue.lastError ? (
           <span className="ml-1 text-rose-300/90" title={queue.lastError}>
             · {queue.lastError}
@@ -125,12 +152,20 @@ export function SbBulkPushBar(props: Props) {
     onClear,
     onPush,
     onDelete,
+    onCancelPush,
+    onCancelDelete,
   } = props;
 
   const pushRunning = Boolean(pushQueue?.running);
   const deleteRunning = Boolean(deleteQueue?.running);
-  const pushProgress = pushQueue && (pushRunning || (!deleteRunning && pushQueue.total > 0));
-  const deleteProgress = deleteQueue && (deleteRunning || (!pushRunning && deleteQueue.total > 0));
+  const pushCancelled = Boolean(pushQueue?.cancelled);
+  const deleteCancelled = Boolean(deleteQueue?.cancelled);
+  const pushProgress =
+    pushQueue &&
+    (pushRunning || pushCancelled || (!deleteRunning && !deleteCancelled && pushQueue.total > 0));
+  const deleteProgress =
+    deleteQueue &&
+    (deleteRunning || deleteCancelled || (!pushRunning && !pushCancelled && deleteQueue.total > 0));
 
   if (selectedCount === 0 && pushableCount === 0 && !pushProgress && !deleteProgress) return null;
 
@@ -149,8 +184,12 @@ export function SbBulkPushBar(props: Props) {
       aria-label="Bulk SB actions"
     >
       <div className="pointer-events-auto flex w-full max-w-2xl flex-col gap-2 rounded-2xl border border-white/[0.12] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_88%,black_12%)] px-4 py-3 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.9)] ring-1 ring-white/[0.08] backdrop-blur-md">
-        {pushProgress && pushQueue ? <QueueProgress mode="push" queue={pushQueue} /> : null}
-        {deleteProgress && deleteQueue ? <QueueProgress mode="delete" queue={deleteQueue} /> : null}
+        {pushProgress && pushQueue ? (
+          <QueueProgress mode="push" queue={pushQueue} onCancel={onCancelPush} />
+        ) : null}
+        {deleteProgress && deleteQueue ? (
+          <QueueProgress mode="delete" queue={deleteQueue} onCancel={onCancelDelete} />
+        ) : null}
 
         {showActionTools && (showSelectionSummary || showPushableTools) ? (
           <div className="flex flex-col gap-2.5">

@@ -23,10 +23,56 @@ import {
   type SbRowLookupMeta,
 } from "@/lib/sb-listing-row-index";
 import { resolvePlainSbCategoryNum, type SbCategoryNum } from "@/lib/sb-category";
+import { bulkDeleteJobToQueueState } from "@/lib/sb-bulk-delete-service";
+import { bulkPushJobToQueueState } from "@/lib/sb-bulk-push-service";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { formatUsd, priceToNumber } from "@/lib/format-usd";
 
 const SB_CATEGORY_FILTER_NUMS = [1, 2, 3, 4] as const satisfies readonly SbCategoryNum[];
+
+type BulkJobApi = {
+  status?: "running" | "complete" | "failed" | "cancelled";
+  current?: number;
+  total?: number;
+  succeeded?: number;
+  failed?: number;
+  lastError?: string | null;
+  label?: string;
+};
+
+function pushJobToQueue(job: BulkJobApi, fallbackTotal = 0): SbBulkPushQueueState {
+  return bulkPushJobToQueueState({
+    id: 0,
+    eventId: 0,
+    status: job.status ?? "running",
+    current: job.current ?? 0,
+    total: job.total ?? fallbackTotal,
+    succeeded: job.succeeded ?? 0,
+    failed: job.failed ?? 0,
+    lastError: job.lastError ?? null,
+    label: job.label ?? "Starting…",
+    createdAt: "",
+    updatedAt: "",
+    completedAt: null,
+  });
+}
+
+function deleteJobToQueue(job: BulkJobApi, fallbackTotal = 0): SbBulkPushQueueState {
+  return bulkDeleteJobToQueueState({
+    id: 0,
+    eventId: 0,
+    status: job.status ?? "running",
+    current: job.current ?? 0,
+    total: job.total ?? fallbackTotal,
+    succeeded: job.succeeded ?? 0,
+    failed: job.failed ?? 0,
+    lastError: job.lastError ?? null,
+    label: job.label ?? "Starting…",
+    createdAt: "",
+    updatedAt: "",
+    completedAt: null,
+  });
+}
 
 function defaultCategoryNumFilter(): Set<SbCategoryNum> {
   return new Set(SB_CATEGORY_FILTER_NUMS);
@@ -1302,15 +1348,7 @@ export function SockAvailablePanel(props: {
       }
 
       setBulkPushJobId(json.jobId);
-      setBulkPushQueue({
-        running: json.job?.status === "running",
-        current: json.job?.current ?? 0,
-        total: json.job?.total ?? items.length,
-        label: json.job?.label ?? "Starting…",
-        succeeded: json.job?.succeeded ?? 0,
-        failed: json.job?.failed ?? 0,
-        lastError: json.job?.lastError ?? null,
-      });
+      setBulkPushQueue(pushJobToQueue(json.job ?? {}, items.length));
       setSelectedPushKeys(new Set());
     } catch (e) {
       setBulkPushQueue({
@@ -1404,15 +1442,7 @@ export function SockAvailablePanel(props: {
       }
 
       setBulkDeleteJobId(json.jobId);
-      setBulkDeleteQueue({
-        running: json.job?.status === "running",
-        current: json.job?.current ?? 0,
-        total: json.job?.total ?? items.length,
-        label: json.job?.label ?? "Starting…",
-        succeeded: json.job?.succeeded ?? 0,
-        failed: json.job?.failed ?? 0,
-        lastError: json.job?.lastError ?? null,
-      });
+      setBulkDeleteQueue(deleteJobToQueue(json.job ?? {}, items.length));
       setSelectedPushKeys(bulkDeleteStartedKeysRef.current);
     } catch (e) {
       setBulkDeleteQueue({
@@ -1427,6 +1457,82 @@ export function SockAvailablePanel(props: {
       window.setTimeout(() => setBulkDeleteQueue(null), 4000);
     }
   }, [eventId, bulkPushEnabled, bulkDeleteQueue?.running, deletableItems, selectedPushKeys]);
+
+  const cancelBulkPushQueue = useCallback(async () => {
+    if (!eventId || bulkPushJobId == null || !bulkPushQueue?.running) return;
+
+    setBulkPushQueue((prev) =>
+      prev ? { ...prev, cancelling: true, label: "Cancelling…" } : prev,
+    );
+
+    try {
+      const res = await fetch(`/api/events/${eventId}/sb-bulk-push/cancel?jobId=${bulkPushJobId}`, {
+        method: "POST",
+      });
+      const json = (await res.json()) as { ok?: boolean; job?: BulkJobApi; error?: string };
+      if (!res.ok || !json.ok || !json.job) {
+        setBulkPushQueue((prev) =>
+          prev
+            ? {
+                ...prev,
+                cancelling: false,
+                lastError: json.error ?? `Failed to cancel (${res.status})`,
+              }
+            : prev,
+        );
+        return;
+      }
+      setBulkPushQueue(pushJobToQueue(json.job, bulkPushQueue?.total ?? 0));
+    } catch (e) {
+      setBulkPushQueue((prev) =>
+        prev
+          ? {
+              ...prev,
+              cancelling: false,
+              lastError: e instanceof Error ? e.message : String(e),
+            }
+          : prev,
+      );
+    }
+  }, [eventId, bulkPushJobId, bulkPushQueue?.running, bulkPushQueue?.total]);
+
+  const cancelBulkDeleteQueue = useCallback(async () => {
+    if (!eventId || bulkDeleteJobId == null || !bulkDeleteQueue?.running) return;
+
+    setBulkDeleteQueue((prev) =>
+      prev ? { ...prev, cancelling: true, label: "Cancelling…" } : prev,
+    );
+
+    try {
+      const res = await fetch(`/api/events/${eventId}/sb-bulk-delete/cancel?jobId=${bulkDeleteJobId}`, {
+        method: "POST",
+      });
+      const json = (await res.json()) as { ok?: boolean; job?: BulkJobApi; error?: string };
+      if (!res.ok || !json.ok || !json.job) {
+        setBulkDeleteQueue((prev) =>
+          prev
+            ? {
+                ...prev,
+                cancelling: false,
+                lastError: json.error ?? `Failed to cancel (${res.status})`,
+              }
+            : prev,
+        );
+        return;
+      }
+      setBulkDeleteQueue(deleteJobToQueue(json.job, bulkDeleteQueue?.total ?? 0));
+    } catch (e) {
+      setBulkDeleteQueue((prev) =>
+        prev
+          ? {
+              ...prev,
+              cancelling: false,
+              lastError: e instanceof Error ? e.message : String(e),
+            }
+          : prev,
+      );
+    }
+  }, [eventId, bulkDeleteJobId, bulkDeleteQueue?.running, bulkDeleteQueue?.total]);
 
   useEffect(() => {
     if (!eventId || !bulkPushEnabled) return;
@@ -1451,15 +1557,7 @@ export function SockAvailablePanel(props: {
         if (cancelled || !res.ok || !json.ok || !json.job?.id) return;
 
         setBulkPushJobId(json.job.id);
-        setBulkPushQueue({
-          running: json.job.status === "running",
-          current: json.job.current ?? 0,
-          total: json.job.total ?? 0,
-          label: json.job.label ?? "Starting…",
-          succeeded: json.job.succeeded ?? 0,
-          failed: json.job.failed ?? 0,
-          lastError: json.job.lastError ?? null,
-        });
+        setBulkPushQueue(pushJobToQueue(json.job));
       } catch {
         /* non-fatal */
       }
@@ -1498,15 +1596,7 @@ export function SockAvailablePanel(props: {
         if (cancelled || !res.ok || !json.ok || !json.job) return;
 
         const job = json.job;
-        setBulkPushQueue({
-          running: job.status === "running",
-          current: job.current ?? 0,
-          total: job.total ?? 0,
-          label: job.label ?? "Pushing…",
-          succeeded: job.succeeded ?? 0,
-          failed: job.failed ?? 0,
-          lastError: job.lastError ?? null,
-        });
+        setBulkPushQueue(pushJobToQueue(job));
 
         if ((job.current ?? 0) > lastCurrent) {
           lastCurrent = job.current ?? 0;
@@ -1563,15 +1653,7 @@ export function SockAvailablePanel(props: {
         if (cancelled || !res.ok || !json.ok || !json.job?.id) return;
 
         setBulkDeleteJobId(json.job.id);
-        setBulkDeleteQueue({
-          running: json.job.status === "running",
-          current: json.job.current ?? 0,
-          total: json.job.total ?? 0,
-          label: json.job.label ?? "Starting…",
-          succeeded: json.job.succeeded ?? 0,
-          failed: json.job.failed ?? 0,
-          lastError: json.job.lastError ?? null,
-        });
+        setBulkDeleteQueue(deleteJobToQueue(json.job));
       } catch {
         /* non-fatal */
       }
@@ -1610,15 +1692,7 @@ export function SockAvailablePanel(props: {
         if (cancelled || !res.ok || !json.ok || !json.job) return;
 
         const job = json.job;
-        setBulkDeleteQueue({
-          running: job.status === "running",
-          current: job.current ?? 0,
-          total: job.total ?? 0,
-          label: job.label ?? "Deleting…",
-          succeeded: job.succeeded ?? 0,
-          failed: job.failed ?? 0,
-          lastError: job.lastError ?? null,
-        });
+        setBulkDeleteQueue(deleteJobToQueue(job));
 
         if ((job.current ?? 0) > lastCurrent) {
           lastCurrent = job.current ?? 0;
@@ -2918,6 +2992,8 @@ export function SockAvailablePanel(props: {
           onClear={clearPushSelection}
           onPush={() => void runBulkPushQueue()}
           onDelete={() => void runBulkDeleteQueue()}
+          onCancelPush={() => void cancelBulkPushQueue()}
+          onCancelDelete={() => void cancelBulkDeleteQueue()}
         />
       ) : null}
 

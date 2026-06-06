@@ -28,7 +28,7 @@ export type SbBulkPushJobItem = {
 export type SbBulkPushJobSnapshot = {
   id: number;
   eventId: number;
-  status: "running" | "complete" | "failed";
+  status: "running" | "complete" | "failed" | "cancelled";
   current: number;
   total: number;
   succeeded: number;
@@ -57,28 +57,39 @@ function parseItems(raw: Prisma.JsonValue): SbBulkPushJobItem[] {
 function toSnapshot(job: {
   id: number;
   eventId: number;
-  status: "RUNNING" | "COMPLETE" | "FAILED";
+  status: "RUNNING" | "COMPLETE" | "FAILED" | "CANCELLED";
   current: number;
   total: number;
   succeeded: number;
   failed: number;
   lastError: string | null;
   currentLabel: string | null;
+  cancelRequestedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   completedAt: Date | null;
 }): SbBulkPushJobSnapshot {
   const status =
-    job.status === "RUNNING" ? "running" : job.status === "COMPLETE" ? "complete" : "failed";
+    job.status === "RUNNING"
+      ? "running"
+      : job.status === "COMPLETE"
+        ? "complete"
+        : job.status === "CANCELLED"
+          ? "cancelled"
+          : "failed";
   const label =
     job.currentLabel ??
-    (status === "complete"
-      ? "Queue complete"
-      : status === "failed"
-        ? "Queue failed"
-        : job.current > 0
-          ? "Pushing…"
-          : "Starting…");
+    (status === "cancelled"
+      ? "Cancelled"
+      : status === "complete"
+        ? "Queue complete"
+        : status === "failed"
+          ? "Queue failed"
+          : job.cancelRequestedAt
+            ? "Cancelling…"
+            : job.current > 0
+              ? "Pushing…"
+              : "Starting…");
 
   return {
     id: job.id,
@@ -115,6 +126,55 @@ export async function getActiveBulkPushJobForEvent(eventId: number): Promise<SbB
     orderBy: { createdAt: "desc" },
   });
   return job ? toSnapshot(job) : null;
+}
+
+async function finalizeCancelledBulkPushJob(jobId: number): Promise<void> {
+  const job = await prisma.sbBulkPushJob.findUnique({ where: { id: jobId } });
+  if (!job || job.status !== "RUNNING") return;
+  await prisma.sbBulkPushJob.update({
+    where: { id: jobId },
+    data: {
+      status: "CANCELLED",
+      completedAt: new Date(),
+      currentLabel: "Cancelled",
+    },
+  });
+}
+
+async function isBulkPushCancelRequested(jobId: number): Promise<boolean> {
+  const job = await prisma.sbBulkPushJob.findUnique({
+    where: { id: jobId },
+    select: { cancelRequestedAt: true, status: true },
+  });
+  return Boolean(job?.cancelRequestedAt) || job?.status === "CANCELLED";
+}
+
+export async function cancelBulkPushJob(
+  eventId: number,
+  jobId: number,
+): Promise<
+  | { ok: true; job: SbBulkPushJobSnapshot }
+  | { ok: false; error: string }
+> {
+  const job = await prisma.sbBulkPushJob.findUnique({ where: { id: jobId } });
+  if (!job) return { ok: false, error: "Job not found." };
+  if (job.eventId !== eventId) return { ok: false, error: "Job does not belong to this event." };
+  if (job.status === "CANCELLED") {
+    return { ok: true, job: toSnapshot(job) };
+  }
+  if (job.status !== "RUNNING") {
+    return { ok: false, error: "Job is not running." };
+  }
+
+  const updated = await prisma.sbBulkPushJob.update({
+    where: { id: jobId },
+    data: {
+      cancelRequestedAt: job.cancelRequestedAt ?? new Date(),
+      currentLabel: "Cancelling…",
+    },
+  });
+
+  return { ok: true, job: toSnapshot(updated) };
 }
 
 export async function startBulkPushJob(
@@ -187,6 +247,10 @@ export async function processBulkPushJobStep(jobId: number): Promise<boolean> {
   try {
     const job = await prisma.sbBulkPushJob.findUnique({ where: { id: jobId } });
     if (!job || job.status !== "RUNNING") return false;
+    if (job.cancelRequestedAt) {
+      await finalizeCancelledBulkPushJob(jobId);
+      return false;
+    }
 
     const items = parseItems(job.items);
     if (items.length === 0) {
@@ -233,6 +297,11 @@ export async function processBulkPushJobStep(jobId: number): Promise<boolean> {
     let throttleRetries = 0;
 
     while (!itemDone) {
+      if (await isBulkPushCancelRequested(jobId)) {
+        await finalizeCancelledBulkPushJob(jobId);
+        return false;
+      }
+
       try {
         const loaded = await loadTransformedSeatOffersForEvent(job.eventId, {
           kind: SEATS_BROKERS_PUSH_INVENTORY_KIND,
@@ -269,6 +338,10 @@ export async function processBulkPushJobStep(jobId: number): Promise<boolean> {
                 data: { lastError },
               });
               await sleep(THROTTLE_RETRY_WAIT_MS);
+              if (await isBulkPushCancelRequested(jobId)) {
+                await finalizeCancelledBulkPushJob(jobId);
+                return false;
+              }
             } else {
               failed++;
               lastError = result.error ?? "Push failed.";
@@ -286,6 +359,10 @@ export async function processBulkPushJobStep(jobId: number): Promise<boolean> {
             data: { lastError },
           });
           await sleep(THROTTLE_RETRY_WAIT_MS);
+          if (await isBulkPushCancelRequested(jobId)) {
+            await finalizeCancelledBulkPushJob(jobId);
+            return false;
+          }
         } else {
           failed++;
           lastError = message;
@@ -342,6 +419,8 @@ export async function processBulkPushJob(jobId: number): Promise<void> {
 
 export function bulkPushJobToQueueState(job: SbBulkPushJobSnapshot): {
   running: boolean;
+  cancelled: boolean;
+  cancelling: boolean;
   current: number;
   total: number;
   label: string;
@@ -351,6 +430,8 @@ export function bulkPushJobToQueueState(job: SbBulkPushJobSnapshot): {
 } {
   return {
     running: job.status === "running",
+    cancelled: job.status === "cancelled",
+    cancelling: job.status === "running" && job.label === "Cancelling…",
     current: job.current,
     total: job.total,
     label: job.label,

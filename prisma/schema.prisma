@@ -328,12 +328,14 @@ enum SbBulkPushJobStatus {
   RUNNING
   COMPLETE
   FAILED
+  CANCELLED
 }
 
 enum SbBulkDeleteJobStatus {
   RUNNING
   COMPLETE
   FAILED
+  CANCELLED
 }
 
 model SbListingPushLog {
@@ -374,10 +376,11 @@ model SbBulkPushJob {
   succeeded    Int                  @default(0)
   failed       Int                  @default(0)
   lastError    String?              @map("last_error") @db.Text
-  currentLabel String?              @map("current_label")
-  createdAt    DateTime             @default(now()) @map("created_at")
-  updatedAt    DateTime             @updatedAt @map("updated_at")
-  completedAt  DateTime?            @map("completed_at")
+  currentLabel       String?              @map("current_label")
+  cancelRequestedAt  DateTime?            @map("cancel_requested_at")
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+  completedAt        DateTime?            @map("completed_at")
 
   @@index([eventId, status])
   @@index([eventId, createdAt(sort: Desc)])
@@ -395,10 +398,11 @@ model SbBulkDeleteJob {
   succeeded    Int                    @default(0)
   failed       Int                    @default(0)
   lastError    String?                @map("last_error") @db.Text
-  currentLabel String?                @map("current_label")
-  createdAt    DateTime               @default(now()) @map("created_at")
-  updatedAt    DateTime               @updatedAt @map("updated_at")
-  completedAt  DateTime?              @map("completed_at")
+  currentLabel       String?                @map("current_label")
+  cancelRequestedAt  DateTime?              @map("cancel_requested_at")
+  createdAt          DateTime               @default(now()) @map("created_at")
+  updatedAt          DateTime               @updatedAt @map("updated_at")
+  completedAt        DateTime?              @map("completed_at")
 
   @@index([eventId, status])
   @@index([eventId, createdAt(sort: Desc)])
