@@ -12,6 +12,9 @@ export type SbBulkPushQueueState = {
   lastError: string | null;
 };
 
+const selectCompact =
+  "rounded-lg border border-white/12 bg-white/[0.04] px-2 py-1.5 text-sm font-medium text-zinc-200 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]";
+
 type Props = {
   selectedCount: number;
   pushableCount: number;
@@ -19,6 +22,9 @@ type Props = {
   deletableCount: number;
   selectedDeletableCount: number;
   omitBlockSelectedCount?: number;
+  batchSelectSize: number;
+  batchSelectSizes: readonly number[];
+  onBatchSelectSizeChange: (size: number) => void;
   pushQueue: SbBulkPushQueueState | null;
   deleteQueue: SbBulkPushQueueState | null;
   sbConfigured: boolean;
@@ -83,6 +89,9 @@ export function SbBulkPushBar(props: Props) {
     deletableCount,
     selectedDeletableCount,
     omitBlockSelectedCount = 0,
+    batchSelectSize,
+    batchSelectSizes,
+    onBatchSelectSizeChange,
     pushQueue,
     deleteQueue,
     sbConfigured,
@@ -138,6 +147,22 @@ export function SbBulkPushBar(props: Props) {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-1.5 text-[10px] font-medium text-zinc-500">
+                <span className="whitespace-nowrap">Batch</span>
+                <select
+                  value={batchSelectSize}
+                  onChange={(e) => onBatchSelectSizeChange(Number(e.target.value))}
+                  className={selectCompact}
+                  title="Number of rows to select per checkbox click"
+                  aria-label="Batch select size"
+                >
+                  {batchSelectSizes.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {!allPushableSelected && pushableCount > 0 ? (
                 <button type="button" className={btnGhost} onClick={onSelectAllPushable}>
                   Select pushable ({pushableCount})

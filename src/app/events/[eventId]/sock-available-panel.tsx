@@ -57,6 +57,12 @@ const searchInpClass =
 const controlClass =
   "min-h-10 w-full rounded-lg border border-white/[0.09] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_92%,white_8%)] px-2.5 py-1.5 text-sm text-zinc-100 shadow-inner shadow-black/35 placeholder:text-zinc-500 transition-[border-color,box-shadow] focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]";
 
+const BATCH_SELECT_SIZES = [5, 10, 15, 20] as const;
+type BatchSelectSize = (typeof BATCH_SELECT_SIZES)[number];
+
+const batchSelectClass =
+  "w-full rounded border border-white/20 bg-black/40 px-0.5 py-0.5 text-[9px] text-zinc-300 focus:border-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)] focus:outline-none";
+
 function useMediaQuery(query: string): boolean {
   return useSyncExternalStore(
     (onChange) => {
@@ -376,6 +382,7 @@ export function SockAvailablePanel(props: {
   const [addedCustomCategoryNames, setAddedCustomCategoryNames] = useState<Set<string>>(() => new Set());
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const [selectedPushKeys, setSelectedPushKeys] = useState<Set<string>>(() => new Set());
+  const [batchSelectSize, setBatchSelectSize] = useState<BatchSelectSize>(10);
   const [omitBlockKeys, setOmitBlockKeys] = useState<Set<string>>(() => new Set());
   const [bulkPushQueue, setBulkPushQueue] = useState<SbBulkPushQueueState | null>(null);
   const [bulkPushJobId, setBulkPushJobId] = useState<number | null>(null);
@@ -1024,6 +1031,21 @@ export function SockAvailablePanel(props: {
     return keys;
   }, [pushableKeySet, deletableKeySet]);
 
+  const selectableRowsInOrder = useMemo(() => {
+    const keys: string[] = [];
+    if (viewMode === "raw") {
+      for (const r of rawSorted) {
+        const key = `raw|${r.id}`;
+        if (selectableKeySet.has(key)) keys.push(key);
+      }
+    } else {
+      for (const g of groupedSorted) {
+        if (selectableKeySet.has(g.id)) keys.push(g.id);
+      }
+    }
+    return keys;
+  }, [viewMode, rawSorted, groupedSorted, selectableKeySet]);
+
   useEffect(() => {
     setSelectedPushKeys((prev) => {
       const next = new Set([...prev].filter((k) => selectableKeySet.has(k)));
@@ -1067,6 +1089,34 @@ export function SockAvailablePanel(props: {
       return next;
     });
   }, []);
+
+  const selectBatchFromKey = useCallback(
+    (key: string, count: number) => {
+      setSelectedPushKeys((prev) => {
+        const index = selectableRowsInOrder.indexOf(key);
+        if (index === -1) return prev;
+        const next = new Set(prev);
+        let added = 0;
+        for (let i = index; i < selectableRowsInOrder.length && added < count; i++) {
+          next.add(selectableRowsInOrder[i]);
+          added++;
+        }
+        return next;
+      });
+    },
+    [selectableRowsInOrder],
+  );
+
+  const handlePushSelectionChange = useCallback(
+    (key: string, currentlySelected: boolean) => {
+      if (currentlySelected) {
+        togglePushSelection(key);
+      } else {
+        selectBatchFromKey(key, batchSelectSize);
+      }
+    },
+    [togglePushSelection, selectBatchFromKey, batchSelectSize],
+  );
 
   const toggleOmitBlock = useCallback((key: string) => {
     setOmitBlockKeys((prev) => {
@@ -2368,23 +2418,38 @@ export function SockAvailablePanel(props: {
                       <tr className="sticky top-0 z-10 border-b border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_95%,transparent)] text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 backdrop-blur-md">
                         {bulkPushEnabled ? (
                           <>
-                            <th scope="col" className="w-10 px-2 py-3 text-center font-medium text-zinc-400">
-                              <input
-                                ref={selectAllHeaderRef}
-                                type="checkbox"
-                                checked={allSelectableSelected}
-                                disabled={bulkActionRunning || selectableCount === 0}
-                                className="size-4 rounded border-white/20 bg-black/40 accent-[color:var(--ticketing-accent)]"
-                                aria-label="Select all pushable and on-SB listings"
-                                title={
-                                  selectableCount === 0
-                                    ? "No selectable listings"
-                                    : allSelectableSelected
-                                      ? "Clear selection"
-                                      : `Select all (${selectableCount})`
-                                }
-                                onChange={toggleSelectAllSelectable}
-                              />
+                            <th scope="col" className="w-14 px-1 py-3 text-center font-medium text-zinc-400">
+                              <div className="flex flex-col items-center gap-1">
+                                <input
+                                  ref={selectAllHeaderRef}
+                                  type="checkbox"
+                                  checked={allSelectableSelected}
+                                  disabled={bulkActionRunning || selectableCount === 0}
+                                  className="size-4 rounded border-white/20 bg-black/40 accent-[color:var(--ticketing-accent)]"
+                                  aria-label="Select all pushable and on-SB listings"
+                                  title={
+                                    selectableCount === 0
+                                      ? "No selectable listings"
+                                      : allSelectableSelected
+                                        ? "Clear selection"
+                                        : `Select all (${selectableCount})`
+                                  }
+                                  onChange={toggleSelectAllSelectable}
+                                />
+                                <select
+                                  value={batchSelectSize}
+                                  onChange={(e) => setBatchSelectSize(Number(e.target.value) as BatchSelectSize)}
+                                  className={batchSelectClass}
+                                  title="Number of rows to select per checkbox click"
+                                  aria-label="Batch select size"
+                                >
+                                  {BATCH_SELECT_SIZES.map((n) => (
+                                    <option key={n} value={n}>
+                                      {n}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
                             </th>
                             <th
                               scope="col"
@@ -2444,7 +2509,7 @@ export function SockAvailablePanel(props: {
                                     disabled={bulkActionRunning}
                                     className="size-4 rounded border-white/20 bg-black/40 accent-[color:var(--ticketing-accent)]"
                                     aria-label={`Select ${r.blockName} row ${r.row} seat ${r.seatNumber} for bulk SB actions`}
-                                    onChange={() => togglePushSelection(pushKey)}
+                                    onChange={() => handlePushSelectionChange(pushKey, bulkSelected)}
                                   />
                                 ) : (
                                   <span className="text-xs text-zinc-700">—</span>
@@ -2551,23 +2616,38 @@ export function SockAvailablePanel(props: {
                     <tr className="sticky top-0 z-10 border-b border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface-elevated)_95%,transparent)] text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 backdrop-blur-md">
                       {bulkPushEnabled ? (
                         <>
-                          <th scope="col" className="w-10 px-2 py-3 text-center font-medium text-zinc-400">
-                            <input
-                              ref={selectAllHeaderRef}
-                              type="checkbox"
-                              checked={allSelectableSelected}
-                              disabled={bulkActionRunning || selectableCount === 0}
-                              className="size-4 rounded border-white/20 bg-black/40 accent-[color:var(--ticketing-accent)]"
-                              aria-label="Select all pushable and on-SB listings"
-                              title={
-                                selectableCount === 0
-                                  ? "No selectable listings"
-                                  : allSelectableSelected
-                                    ? "Clear selection"
-                                    : `Select all (${selectableCount})`
-                              }
-                              onChange={toggleSelectAllSelectable}
-                            />
+                          <th scope="col" className="w-14 px-1 py-3 text-center font-medium text-zinc-400">
+                            <div className="flex flex-col items-center gap-1">
+                              <input
+                                ref={selectAllHeaderRef}
+                                type="checkbox"
+                                checked={allSelectableSelected}
+                                disabled={bulkActionRunning || selectableCount === 0}
+                                className="size-4 rounded border-white/20 bg-black/40 accent-[color:var(--ticketing-accent)]"
+                                aria-label="Select all pushable and on-SB listings"
+                                title={
+                                  selectableCount === 0
+                                    ? "No selectable listings"
+                                    : allSelectableSelected
+                                      ? "Clear selection"
+                                      : `Select all (${selectableCount})`
+                                }
+                                onChange={toggleSelectAllSelectable}
+                              />
+                              <select
+                                value={batchSelectSize}
+                                onChange={(e) => setBatchSelectSize(Number(e.target.value) as BatchSelectSize)}
+                                className={batchSelectClass}
+                                title="Number of rows to select per checkbox click"
+                                aria-label="Batch select size"
+                              >
+                                {BATCH_SELECT_SIZES.map((n) => (
+                                  <option key={n} value={n}>
+                                    {n}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                           </th>
                           <th
                             scope="col"
@@ -2639,7 +2719,7 @@ export function SockAvailablePanel(props: {
                                   disabled={bulkActionRunning}
                                   className="size-4 rounded border-white/20 bg-black/40 accent-[color:var(--ticketing-accent)]"
                                   aria-label={`Select ${g.blockName} row ${g.row} seats ${g.seatSpan} for bulk SB actions`}
-                                  onChange={() => togglePushSelection(g.id)}
+                                  onChange={() => handlePushSelectionChange(g.id, bulkSelected)}
                                 />
                               ) : (
                                 <span className="text-xs text-zinc-700">—</span>
@@ -2761,6 +2841,9 @@ export function SockAvailablePanel(props: {
           deletableCount={deletableItems.length}
           selectedDeletableCount={selectedDeletableCount}
           omitBlockSelectedCount={omitBlockSelectedCount}
+          batchSelectSize={batchSelectSize}
+          batchSelectSizes={BATCH_SELECT_SIZES}
+          onBatchSelectSizeChange={(size) => setBatchSelectSize(size as BatchSelectSize)}
           pushQueue={bulkPushQueue}
           deleteQueue={bulkDeleteQueue}
           sbConfigured={sbConfigured}
