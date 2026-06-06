@@ -1,5 +1,7 @@
 "use client";
 
+import { createPortal } from "react-dom";
+
 export type SbBulkPushQueueState = {
   running: boolean;
   current: number;
@@ -103,9 +105,9 @@ export function SbBulkPushBar(props: Props) {
   const allDeletableSelected = deletableCount > 0 && selectedDeletableCount >= deletableCount;
   const showSelection = selectedCount > 0 && !pushRunning && !deleteRunning;
 
-  return (
+  const bar = (
     <div
-      className="pointer-events-none fixed inset-x-0 bottom-4 z-[60] flex justify-center px-4"
+      className="pointer-events-none fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom,0px))] z-[60] flex justify-center px-4"
       role="region"
       aria-label="Bulk SB actions"
     >
@@ -189,4 +191,8 @@ export function SbBulkPushBar(props: Props) {
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(bar, document.body);
 }
