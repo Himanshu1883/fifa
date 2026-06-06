@@ -9,6 +9,8 @@ export type SbBulkPushItem = {
   rowLabel: string;
   seatSpan: string;
   label: string;
+  categoryName: string;
+  categoryId: string;
 };
 
 export type SbBulkDeleteItem = {

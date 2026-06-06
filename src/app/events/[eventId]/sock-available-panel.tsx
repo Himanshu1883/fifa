@@ -382,8 +382,9 @@ export function SockAvailablePanel(props: {
   const [addedCustomCategoryNames, setAddedCustomCategoryNames] = useState<Set<string>>(() => new Set());
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const [selectedPushKeys, setSelectedPushKeys] = useState<Set<string>>(() => new Set());
-  const [batchSelectSize, setBatchSelectSize] = useState<BatchSelectSize>(10);
+  const [batchSelectSize, setBatchSelectSize] = useState<BatchSelectSize>(1);
   const [pushableSelectCount, setPushableSelectCount] = useState(20);
+  const [bulkSelectCategoryNums, setBulkSelectCategoryNums] = useState<Set<SbCategoryNum>>(() => new Set());
   const [omitBlockKeys, setOmitBlockKeys] = useState<Set<string>>(() => new Set());
   const [bulkPushQueue, setBulkPushQueue] = useState<SbBulkPushQueueState | null>(null);
   const [bulkPushJobId, setBulkPushJobId] = useState<number | null>(null);
@@ -953,6 +954,8 @@ export function SockAvailablePanel(props: {
           rowLabel: r.row,
           seatSpan: r.seatNumber,
           label: `${r.blockName} · R${r.row} · ${r.seatNumber}`,
+          categoryName: r.categoryName,
+          categoryId: r.categoryId,
         }));
     }
     return groupedSorted
@@ -972,6 +975,8 @@ export function SockAvailablePanel(props: {
         rowLabel: g.row,
         seatSpan: g.seatSpan,
         label: `${g.blockName} · R${g.row} · ${g.seatSpan}`,
+        categoryName: g.categoryName,
+        categoryId: g.seats[0]?.categoryId ?? "",
       }));
   }, [bulkPushEnabled, viewMode, rawSorted, groupedSorted, lookupSbEntry]);
 
@@ -1154,6 +1159,43 @@ export function SockAvailablePanel(props: {
       setSelectedPushKeys((prev) => {
         const next = new Set(prev);
         for (let i = 0; i < count; i++) next.add(pushableItems[i]!.key);
+        return next;
+      });
+    },
+    [pushableItems],
+  );
+
+  const toggleBulkSelectCategoryNum = useCallback((num: SbCategoryNum) => {
+    setBulkSelectCategoryNums((prev) => {
+      const next = new Set(prev);
+      if (next.has(num)) next.delete(num);
+      else next.add(num);
+      return next;
+    });
+  }, []);
+
+  const selectPushableByCategories = useCallback(
+    (n: number, categoryNums: readonly SbCategoryNum[]) => {
+      if (categoryNums.length === 0) return;
+      const perCategoryLimit = Math.min(Math.max(1, Math.floor(n)), 999);
+      const categories = new Set(categoryNums);
+      const perCategoryCount = new Map<SbCategoryNum, number>();
+      for (const num of categories) perCategoryCount.set(num, 0);
+
+      const keysToAdd: string[] = [];
+      for (const item of pushableItems) {
+        const categoryNum = resolvePlainSbCategoryNum(item.categoryName, item.categoryId);
+        if (categoryNum == null || !categories.has(categoryNum)) continue;
+        const taken = perCategoryCount.get(categoryNum) ?? 0;
+        if (taken >= perCategoryLimit) continue;
+        keysToAdd.push(item.key);
+        perCategoryCount.set(categoryNum, taken + 1);
+      }
+
+      if (keysToAdd.length === 0) return;
+      setSelectedPushKeys((prev) => {
+        const next = new Set(prev);
+        for (const key of keysToAdd) next.add(key);
         return next;
       });
     },
@@ -2869,6 +2911,9 @@ export function SockAvailablePanel(props: {
           pushableSelectCount={pushableSelectCount}
           onPushableSelectCountChange={setPushableSelectCount}
           onSelectNPushable={selectFirstNPushable}
+          bulkSelectCategoryNums={bulkSelectCategoryNums}
+          onBulkSelectCategoryToggle={toggleBulkSelectCategoryNum}
+          onSelectNPushableByCategory={selectPushableByCategories}
           onSelectAllDeletable={selectAllDeletable}
           onClear={clearPushSelection}
           onPush={() => void runBulkPushQueue()}

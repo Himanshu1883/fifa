@@ -2,6 +2,10 @@
 
 import { createPortal } from "react-dom";
 
+import { type SbCategoryNum } from "@/lib/sb-category";
+
+const BULK_SELECT_CATEGORY_NUMS = [1, 2, 3, 4] as const satisfies readonly SbCategoryNum[];
+
 export type SbBulkPushQueueState = {
   running: boolean;
   current: number;
@@ -41,6 +45,9 @@ type Props = {
   pushableSelectCount: number;
   onPushableSelectCountChange: (count: number) => void;
   onSelectNPushable: (count: number) => void;
+  bulkSelectCategoryNums: ReadonlySet<SbCategoryNum>;
+  onBulkSelectCategoryToggle: (num: SbCategoryNum) => void;
+  onSelectNPushableByCategory: (count: number, categories: readonly SbCategoryNum[]) => void;
   onSelectAllDeletable: () => void;
   onClear: () => void;
   onPush: () => void;
@@ -111,6 +118,9 @@ export function SbBulkPushBar(props: Props) {
     pushableSelectCount,
     onPushableSelectCountChange,
     onSelectNPushable,
+    bulkSelectCategoryNums,
+    onBulkSelectCategoryToggle,
+    onSelectNPushableByCategory,
     onSelectAllDeletable,
     onClear,
     onPush,
@@ -122,11 +132,15 @@ export function SbBulkPushBar(props: Props) {
   const pushProgress = pushQueue && (pushRunning || (!deleteRunning && pushQueue.total > 0));
   const deleteProgress = deleteQueue && (deleteRunning || (!pushRunning && deleteQueue.total > 0));
 
-  if (selectedCount === 0 && !pushProgress && !deleteProgress) return null;
+  if (selectedCount === 0 && pushableCount === 0 && !pushProgress && !deleteProgress) return null;
 
   const allPushableSelected = pushableCount > 0 && selectedPushCount >= pushableCount;
   const allDeletableSelected = deletableCount > 0 && selectedDeletableCount >= deletableCount;
-  const showSelection = selectedCount > 0 && !pushRunning && !deleteRunning;
+  const showActionTools = !pushRunning && !deleteRunning;
+  const showSelectionSummary = selectedCount > 0 && showActionTools;
+  const showPushableTools = pushableCount > 0 && showActionTools;
+  const bulkCategorySelectCount = clampPushableSelectCount(pushableSelectCount, pushableCount);
+  const bulkCategoryNums = BULK_SELECT_CATEGORY_NUMS.filter((num) => bulkSelectCategoryNums.has(num));
 
   const bar = (
     <div
@@ -138,52 +152,125 @@ export function SbBulkPushBar(props: Props) {
         {pushProgress && pushQueue ? <QueueProgress mode="push" queue={pushQueue} /> : null}
         {deleteProgress && deleteQueue ? <QueueProgress mode="delete" queue={deleteQueue} /> : null}
 
-        {showSelection ? (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-zinc-100">
-                {selectedCount} listing{selectedCount === 1 ? "" : "s"} selected
-              </p>
-              <p className="text-[10px] text-zinc-500">
-                {selectedPushCount > 0 && selectedDeletableCount > 0
-                  ? `${selectedPushCount} pushable · ${selectedDeletableCount} on SB`
-                  : selectedPushCount > 0
-                    ? "Queue pushes one listing at a time to SeatsBrokers"
-                    : selectedDeletableCount > 0
-                      ? "Queue deletes one listing at a time from SeatsBrokers"
-                      : "Select pushable or on-SB listings"}
-                {omitBlockSelectedCount > 0 ? (
-                  <span className="text-amber-200/90">
-                    {" "}
-                    · {omitBlockSelectedCount} omit ticket_block
-                  </span>
-                ) : null}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-1.5 text-[10px] font-medium text-zinc-500">
-                <span className="whitespace-nowrap">Batch</span>
-                <select
-                  value={batchSelectSize}
-                  onChange={(e) => onBatchSelectSizeChange(Number(e.target.value))}
-                  className={selectCompact}
-                  title="Number of rows to select per checkbox click"
-                  aria-label="Batch select size"
+        {showActionTools && (showSelectionSummary || showPushableTools) ? (
+          <div className="flex flex-col gap-2.5">
+            {showSelectionSummary ? (
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-zinc-100">
+                  {selectedCount} listing{selectedCount === 1 ? "" : "s"} selected
+                </p>
+                <p className="text-[10px] text-zinc-500">
+                  {selectedPushCount > 0 && selectedDeletableCount > 0
+                    ? `${selectedPushCount} pushable · ${selectedDeletableCount} on SB`
+                    : selectedPushCount > 0
+                      ? "Queue pushes one listing at a time to SeatsBrokers"
+                      : selectedDeletableCount > 0
+                        ? "Queue deletes one listing at a time from SeatsBrokers"
+                        : "Select pushable or on-SB listings"}
+                  {omitBlockSelectedCount > 0 ? (
+                    <span className="text-amber-200/90">
+                      {" "}
+                      · {omitBlockSelectedCount} omit ticket_block
+                    </span>
+                  ) : null}
+                </p>
+              </div>
+            ) : null}
+
+            {showPushableTools ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <div
+                  className="flex flex-wrap items-center rounded-xl bg-black/35 p-1 ring-1 ring-white/[0.10] shadow-inner shadow-black/35"
+                  role="group"
+                  aria-label="Bulk select by plain category"
                 >
-                  {batchSelectSizes.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {!allPushableSelected && pushableCount > 0 ? (
+                  {BULK_SELECT_CATEGORY_NUMS.map((num) => {
+                    const active = bulkSelectCategoryNums.has(num);
+                    return (
+                      <button
+                        key={num}
+                        type="button"
+                        onClick={() => onBulkSelectCategoryToggle(num)}
+                        className={
+                          active
+                            ? "min-h-7 rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] px-2 text-[11px] font-semibold tabular-nums text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_32%,transparent)] outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
+                            : "min-h-7 rounded-lg px-2 text-[11px] font-semibold tabular-nums text-zinc-300 outline-none transition-colors hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
+                        }
+                        aria-pressed={active}
+                        aria-label={`Bulk select category ${num}${active ? " selected" : ""}`}
+                        title="Plain Category only — not front row or wheelchair"
+                      >
+                        Cat {num}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  className={`${btnGhost} inline-flex items-center gap-1.5 disabled:opacity-40`}
+                  disabled={bulkCategoryNums.length === 0}
+                  onClick={() => onSelectNPushableByCategory(pushableSelectCount, bulkCategoryNums)}
+                  title={
+                    bulkCategoryNums.length === 0
+                      ? "Select one or more categories first"
+                      : `Select up to ${bulkCategorySelectCount} plain pushable listing${bulkCategorySelectCount === 1 ? "" : "s"} per selected category (${bulkCategoryNums.map((n) => `Cat ${n}`).join(", ")}) — excludes front row and wheelchair`
+                  }
+                >
+                  Select
+                  <input
+                    type="number"
+                    min={1}
+                    max={Math.min(pushableCount, 999)}
+                    value={pushableSelectCount}
+                    onChange={(e) =>
+                      onPushableSelectCountChange(
+                        clampPushableSelectCount(Number(e.target.value), pushableCount),
+                      )
+                    }
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && bulkCategoryNums.length > 0) {
+                        e.preventDefault();
+                        onSelectNPushableByCategory(pushableSelectCount, bulkCategoryNums);
+                      }
+                    }}
+                    className={inputCompact}
+                    aria-label="Number of pushable listings to select per category"
+                  />
+                  by category
+                </button>
+                <span className="text-[10px] text-zinc-500" title="Count applies separately to each selected category">
+                  {bulkCategorySelectCount} per cat · plain only
+                </span>
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap items-center gap-2">
+              {showSelectionSummary ? (
+                <label className="flex items-center gap-1.5 text-[10px] font-medium text-zinc-500">
+                  <span className="whitespace-nowrap">Batch</span>
+                  <select
+                    value={batchSelectSize}
+                    onChange={(e) => onBatchSelectSizeChange(Number(e.target.value))}
+                    className={selectCompact}
+                    title="Number of rows to select per checkbox click"
+                    aria-label="Batch select size"
+                  >
+                    {batchSelectSizes.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {!allPushableSelected && showPushableTools ? (
                 <>
                   <button
                     type="button"
                     className={`${btnGhost} inline-flex items-center gap-1.5`}
                     onClick={() => onSelectNPushable(pushableSelectCount)}
-                    title={`Select first ${clampPushableSelectCount(pushableSelectCount, pushableCount)} pushable listing${pushableSelectCount === 1 ? "" : "s"}`}
+                    title={`Select first ${bulkCategorySelectCount} pushable listing${pushableSelectCount === 1 ? "" : "s"}`}
                   >
                     Select
                     <input
@@ -215,15 +302,17 @@ export function SbBulkPushBar(props: Props) {
                   ) : null}
                 </>
               ) : null}
-              {!allDeletableSelected && deletableCount > 0 ? (
+              {showSelectionSummary && !allDeletableSelected && deletableCount > 0 ? (
                 <button type="button" className={btnGhost} onClick={onSelectAllDeletable}>
                   Select on SB ({deletableCount})
                 </button>
               ) : null}
-              <button type="button" className={btnGhost} onClick={onClear}>
-                Clear
-              </button>
-              {selectedPushCount > 0 ? (
+              {showSelectionSummary ? (
+                <button type="button" className={btnGhost} onClick={onClear}>
+                  Clear
+                </button>
+              ) : null}
+              {showSelectionSummary && selectedPushCount > 0 ? (
                 <button
                   type="button"
                   className={btnPrimary}
@@ -240,7 +329,7 @@ export function SbBulkPushBar(props: Props) {
                   Push {selectedPushCount} to SB
                 </button>
               ) : null}
-              {selectedDeletableCount > 0 ? (
+              {showSelectionSummary && selectedDeletableCount > 0 ? (
                 <button
                   type="button"
                   className={btnDanger}
