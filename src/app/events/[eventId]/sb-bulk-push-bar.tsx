@@ -3,6 +3,7 @@
 import { createPortal } from "react-dom";
 
 import { type SbCategoryNum } from "@/lib/sb-category";
+import { SB_TICKET_TYPES, sbTicketTypeLabel } from "@/lib/sb-ticket-types";
 
 const BULK_SELECT_CATEGORY_NUMS = [1, 2, 3, 4] as const satisfies readonly SbCategoryNum[];
 
@@ -56,6 +57,8 @@ type Props = {
   onDelete: () => void;
   onCancelPush?: () => void;
   onCancelDelete?: () => void;
+  ticketTypeId: string;
+  onTicketTypeChange: (typeId: string) => void;
 };
 
 const btnPrimary =
@@ -154,6 +157,8 @@ export function SbBulkPushBar(props: Props) {
     onDelete,
     onCancelPush,
     onCancelDelete,
+    ticketTypeId,
+    onTicketTypeChange,
   } = props;
 
   const pushRunning = Boolean(pushQueue?.running);
@@ -214,6 +219,27 @@ export function SbBulkPushBar(props: Props) {
                   ) : null}
                 </p>
               </div>
+            ) : null}
+
+            {showActionTools && (showPushableTools || selectedPushCount > 0) ? (
+              <label className="flex flex-wrap items-center gap-2 text-[10px] font-medium text-zinc-500">
+                <span className="whitespace-nowrap">
+                  Ticket type: {sbTicketTypeLabel(ticketTypeId)} ({ticketTypeId})
+                </span>
+                <select
+                  value={ticketTypeId}
+                  onChange={(e) => onTicketTypeChange(e.target.value)}
+                  className={selectCompact}
+                  title="ticket_type sent on SB ticket/create"
+                  aria-label="Ticket type for bulk push"
+                >
+                  {SB_TICKET_TYPES.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.id})
+                    </option>
+                  ))}
+                </select>
+              </label>
             ) : null}
 
             {showPushableTools ? (

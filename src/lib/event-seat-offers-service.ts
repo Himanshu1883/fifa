@@ -1,3 +1,5 @@
+import "server-only";
+
 import { prisma } from "@/lib/prisma";
 import { parseMarkupPercentInput } from "@/lib/markup";
 import { getPersistedMarkupPercent } from "@/lib/markup-settings";

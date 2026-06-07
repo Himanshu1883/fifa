@@ -24,7 +24,7 @@ export function getSeatsBrokersConfig(): SeatsBrokersConfig | null {
     baseUrl,
     apiKey,
     defaultTournamentId: process.env.SEATS_BROKERS_DEFAULT_TOURNAMENT_ID?.trim() || "64",
-    defaultTicketType: process.env.SEATS_BROKERS_DEFAULT_TICKET_TYPE?.trim() || "3",
+    defaultTicketType: process.env.SEATS_BROKERS_DEFAULT_TICKET_TYPE?.trim() || DEFAULT_SB_TICKET_TYPE_ID,
     defaultSplitTypeTogether: process.env.SEATS_BROKERS_SPLIT_TYPE_TOGETHER?.trim() || "2",
     defaultSplitTypeSingle: process.env.SEATS_BROKERS_SPLIT_TYPE_SINGLE?.trim() || "5",
     defaultHomeTown: process.env.SEATS_BROKERS_DEFAULT_HOME_TOWN?.trim() || "0",

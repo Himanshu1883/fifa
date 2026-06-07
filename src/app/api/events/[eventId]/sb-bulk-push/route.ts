@@ -7,6 +7,7 @@ import {
   processBulkPushJob,
   startBulkPushJob,
 } from "@/lib/sb-bulk-push-service";
+import { DEFAULT_SB_TICKET_TYPE_ID } from "@/lib/sb-ticket-types";
 
 export const runtime = "nodejs";
 
@@ -21,6 +22,7 @@ const itemSchema = z.object({
 
 const bodySchema = z.object({
   items: z.array(itemSchema).min(1).max(500),
+  ticketType: z.string().trim().min(1).max(8).optional(),
 });
 
 export async function GET(req: Request, ctx: { params: Promise<{ eventId: string }> }) {
@@ -88,7 +90,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ eventId: strin
   }
 
   try {
-    const result = await startBulkPushJob(id, parsed.data.items);
+    const result = await startBulkPushJob(
+      id,
+      parsed.data.items,
+      parsed.data.ticketType ?? DEFAULT_SB_TICKET_TYPE_ID,
+    );
     if (!result.ok) {
       return NextResponse.json(result, { status: 422 });
     }

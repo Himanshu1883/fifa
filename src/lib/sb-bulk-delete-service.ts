@@ -1,4 +1,7 @@
+import "server-only";
+
 import type { Prisma } from "@/generated/prisma/client";
+import type { SbBulkDeleteJobSnapshot } from "@/lib/sb-bulk-job-queue-state";
 import { deleteSbListingForEvent } from "@/lib/sb-listing-delete";
 import { prisma } from "@/lib/prisma";
 import { getSeatsBrokersConfig } from "@/lib/seatsbrokers-config";
@@ -13,20 +16,8 @@ export type SbBulkDeleteJobItem = {
   label?: string;
 };
 
-export type SbBulkDeleteJobSnapshot = {
-  id: number;
-  eventId: number;
-  status: "running" | "complete" | "failed" | "cancelled";
-  current: number;
-  total: number;
-  succeeded: number;
-  failed: number;
-  lastError: string | null;
-  label: string;
-  createdAt: string;
-  updatedAt: string;
-  completedAt: string | null;
-};
+export type { SbBulkDeleteJobSnapshot } from "@/lib/sb-bulk-job-queue-state";
+export { bulkDeleteJobToQueueState } from "@/lib/sb-bulk-job-queue-state";
 
 const processingJobIds = new Set<number>();
 
@@ -354,26 +345,3 @@ export async function processBulkDeleteJob(jobId: number): Promise<void> {
   await processBulkDeleteJobStep(jobId);
 }
 
-export function bulkDeleteJobToQueueState(job: SbBulkDeleteJobSnapshot): {
-  running: boolean;
-  cancelled: boolean;
-  cancelling: boolean;
-  current: number;
-  total: number;
-  label: string;
-  succeeded: number;
-  failed: number;
-  lastError: string | null;
-} {
-  return {
-    running: job.status === "running",
-    cancelled: job.status === "cancelled",
-    cancelling: job.status === "running" && job.label === "Cancelling…",
-    current: job.current,
-    total: job.total,
-    label: job.label,
-    succeeded: job.succeeded,
-    failed: job.failed,
-    lastError: job.lastError,
-  };
-}

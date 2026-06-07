@@ -23,10 +23,13 @@ import {
   type SbRowLookupMeta,
 } from "@/lib/sb-listing-row-index";
 import { resolvePlainSbCategoryNum, type SbCategoryNum } from "@/lib/sb-category";
-import { bulkDeleteJobToQueueState } from "@/lib/sb-bulk-delete-service";
-import { bulkPushJobToQueueState } from "@/lib/sb-bulk-push-service";
+import {
+  bulkDeleteJobToQueueState,
+  bulkPushJobToQueueState,
+} from "@/lib/sb-bulk-job-queue-state";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { formatUsd, priceToNumber } from "@/lib/format-usd";
+import { DEFAULT_SB_TICKET_TYPE_ID } from "@/lib/sb-ticket-types";
 
 const SB_CATEGORY_FILTER_NUMS = [1, 2, 3, 4] as const satisfies readonly SbCategoryNum[];
 
@@ -436,6 +439,7 @@ export function SockAvailablePanel(props: {
   const [bulkPushJobId, setBulkPushJobId] = useState<number | null>(null);
   const [bulkDeleteQueue, setBulkDeleteQueue] = useState<SbBulkPushQueueState | null>(null);
   const [bulkDeleteJobId, setBulkDeleteJobId] = useState<number | null>(null);
+  const [bulkPushTicketTypeId, setBulkPushTicketTypeId] = useState(DEFAULT_SB_TICKET_TYPE_ID);
   const bulkDeleteStartedKeysRef = useRef<Set<string>>(new Set());
 
   const refreshSbConfigured = useCallback(async () => {
@@ -445,6 +449,31 @@ export function SockAvailablePanel(props: {
       setSbConfigured(Boolean(res.ok && json.configured));
     } catch {
       setSbConfigured(false);
+    }
+  }, []);
+
+  const loadBulkPushTicketType = useCallback(async () => {
+    try {
+      const res = await fetch("/api/seatsbrokers/auto-push", { cache: "no-store" });
+      const data = (await res.json()) as { ticketType?: string };
+      if (res.ok && data.ticketType) {
+        setBulkPushTicketTypeId(data.ticketType);
+      }
+    } catch {
+      /* keep default */
+    }
+  }, []);
+
+  const saveBulkPushTicketType = useCallback(async (typeId: string) => {
+    setBulkPushTicketTypeId(typeId);
+    try {
+      await fetch("/api/seatsbrokers/auto-push", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticketType: typeId }),
+      });
+    } catch {
+      /* ignore */
     }
   }, []);
 
@@ -566,7 +595,8 @@ export function SockAvailablePanel(props: {
   useEffect(() => {
     void refreshSbConfigured();
     void refreshSbStatus();
-  }, [refreshSbConfigured, refreshSbStatus, eventId]);
+    void loadBulkPushTicketType();
+  }, [refreshSbConfigured, refreshSbStatus, loadBulkPushTicketType, eventId]);
 
   const resaleView = initialKind === "RESALE";
 
@@ -1307,6 +1337,7 @@ export function SockAvailablePanel(props: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          ticketType: bulkPushTicketTypeId,
           items: items.map((item) => ({
             seatIds: item.seatIds,
             blockName: item.blockName,
@@ -1369,6 +1400,7 @@ export function SockAvailablePanel(props: {
     pushableItems,
     selectedPushKeys,
     omitBlockKeys,
+    bulkPushTicketTypeId,
   ]);
 
   const runBulkDeleteQueue = useCallback(async () => {
@@ -2994,6 +3026,8 @@ export function SockAvailablePanel(props: {
           onDelete={() => void runBulkDeleteQueue()}
           onCancelPush={() => void cancelBulkPushQueue()}
           onCancelDelete={() => void cancelBulkDeleteQueue()}
+          ticketTypeId={bulkPushTicketTypeId}
+          onTicketTypeChange={(typeId) => void saveBulkPushTicketType(typeId)}
         />
       ) : null}
 

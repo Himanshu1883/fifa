@@ -1,3 +1,5 @@
+import "server-only";
+
 import {
   loadTransformedSeatOffersForEvent,
   SEATS_BROKERS_PUSH_INVENTORY_KIND,

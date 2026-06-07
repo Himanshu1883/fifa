@@ -1,4 +1,7 @@
+import "server-only";
+
 import type { Prisma } from "@/generated/prisma/client";
+import type { SbBulkPushJobSnapshot } from "@/lib/sb-bulk-job-queue-state";
 import { resolveOfferForSeatIds } from "@/lib/sb-offer-match";
 import {
   loadTransformedSeatOffersForEvent,
@@ -8,6 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { isSbRateLimitError } from "@/lib/seatsbrokers-errors";
 import { pushSingleSbOfferForEvent } from "@/lib/seatsbrokers-push-service";
 import { getSeatsBrokersConfig } from "@/lib/seatsbrokers-config";
+import { DEFAULT_SB_TICKET_TYPE_ID, parseSbTicketTypeId } from "@/lib/sb-ticket-types";
 
 const THROTTLE_RETRY_WAIT_MS = 30_000;
 const MAX_THROTTLE_RETRIES = 4;
@@ -19,26 +23,15 @@ function sleep(ms: number): Promise<void> {
 export type SbBulkPushJobItem = {
   seatIds: string[];
   omitTicketBlock?: boolean;
+  ticketType?: string;
   blockName?: string;
   rowLabel?: string;
   seatSpan?: string;
   label?: string;
 };
 
-export type SbBulkPushJobSnapshot = {
-  id: number;
-  eventId: number;
-  status: "running" | "complete" | "failed" | "cancelled";
-  current: number;
-  total: number;
-  succeeded: number;
-  failed: number;
-  lastError: string | null;
-  label: string;
-  createdAt: string;
-  updatedAt: string;
-  completedAt: string | null;
-};
+export type { SbBulkPushJobSnapshot } from "@/lib/sb-bulk-job-queue-state";
+export { bulkPushJobToQueueState } from "@/lib/sb-bulk-job-queue-state";
 
 const processingJobIds = new Set<number>();
 
@@ -180,6 +173,7 @@ export async function cancelBulkPushJob(
 export async function startBulkPushJob(
   eventId: number,
   items: SbBulkPushJobItem[],
+  ticketType?: string | null,
 ): Promise<
   | { ok: true; job: SbBulkPushJobSnapshot; alreadyRunning?: false }
   | { ok: true; job: SbBulkPushJobSnapshot; alreadyRunning: true }
@@ -198,10 +192,13 @@ export async function startBulkPushJob(
     return { ok: false, error: "Event has no SB match id. Add it via Add SB ID first." };
   }
 
+  const resolvedTicketType = parseSbTicketTypeId(ticketType ?? DEFAULT_SB_TICKET_TYPE_ID);
+
   const normalized = items
     .map((item) => ({
       seatIds: item.seatIds.map((s) => s.trim()).filter(Boolean),
       omitTicketBlock: Boolean(item.omitTicketBlock),
+      ticketType: parseSbTicketTypeId(item.ticketType ?? resolvedTicketType),
       blockName: item.blockName ?? "",
       rowLabel: item.rowLabel ?? "",
       seatSpan: item.seatSpan ?? "",
@@ -322,6 +319,7 @@ export async function processBulkPushJobStep(jobId: number): Promise<boolean> {
             const result = await pushSingleSbOfferForEvent(job.eventId, resolved.offerIndex, {
               sourceSeatIds: item.seatIds,
               omitTicketBlock: item.omitTicketBlock,
+              ticketType: item.ticketType,
             });
             if (result.ok || isDuplicateOk(result)) {
               succeeded++;
@@ -417,26 +415,3 @@ export async function processBulkPushJob(jobId: number): Promise<void> {
   await processBulkPushJobStep(jobId);
 }
 
-export function bulkPushJobToQueueState(job: SbBulkPushJobSnapshot): {
-  running: boolean;
-  cancelled: boolean;
-  cancelling: boolean;
-  current: number;
-  total: number;
-  label: string;
-  succeeded: number;
-  failed: number;
-  lastError: string | null;
-} {
-  return {
-    running: job.status === "running",
-    cancelled: job.status === "cancelled",
-    cancelling: job.status === "running" && job.label === "Cancelling…",
-    current: job.current,
-    total: job.total,
-    label: job.label,
-    succeeded: job.succeeded,
-    failed: job.failed,
-    lastError: job.lastError,
-  };
-}
