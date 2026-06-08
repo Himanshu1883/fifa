@@ -727,25 +727,6 @@ export function SockAvailablePanel(props: {
 
   const sbDeletedCount = sbStatus.removed.filter((e) => e.status === "deleted").length;
 
-  const sbStatusFilterCounts = useMemo(() => {
-    let pushed = 0;
-    let unpushed = 0;
-    let deleted = 0;
-    for (const r of rows) {
-      if (r.kind !== "RESALE") continue;
-      const entry = findSbListingEntryForRow(sbStatus.bySeatKey, {
-        seatIds: [r.seatId],
-        blockName: r.blockName,
-        row: r.row,
-        seatSpan: r.seatNumber,
-      });
-      if (isSbRowPushed(entry)) pushed++;
-      else if (isSbRowDeletedForFilter(entry)) deleted++;
-      else if (isSbRowUnpushedForFilter(entry)) unpushed++;
-    }
-    return { pushed, unpushed, deleted };
-  }, [rows, sbStatus.bySeatKey]);
-
   const newKeySetByKind = useMemo(() => {
     return {
       RESALE: new Set(latestDiffNewKeysByKind?.RESALE ?? []),
@@ -812,7 +793,7 @@ export function SockAvailablePanel(props: {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [rows]);
 
-  const eligibleRows = useMemo(() => {
+  const filteredRowsBeforeSb = useMemo(() => {
     const q = search.trim().toLowerCase();
     const kindQ = norm(kind).toLowerCase();
     const areaQ = norm(area).toLowerCase();
@@ -858,18 +839,6 @@ export function SockAvailablePanel(props: {
       if (hasFrom && (!Number.isFinite(createdMs) || createdMs < fromMs)) return false;
       if (hasTo && (!Number.isFinite(createdMs) || createdMs > toMs)) return false;
 
-      if (sbStatusFilter !== "all" && showSbColumn && eventId) {
-        const sbEntry = findSbListingEntryForRow(sbStatus.bySeatKey, {
-          seatIds: [r.seatId],
-          blockName: r.blockName,
-          row: r.row,
-          seatSpan: r.seatNumber,
-        });
-        if (sbStatusFilter === "pushed" && !isSbRowPushed(sbEntry)) return false;
-        if (sbStatusFilter === "unpushed" && !isSbRowUnpushedForFilter(sbEntry)) return false;
-        if (sbStatusFilter === "deleted" && !isSbRowDeletedForFilter(sbEntry)) return false;
-      }
-
       if (!q) return true;
       const hay = [
         r.amount ?? "",
@@ -906,13 +875,69 @@ export function SockAvailablePanel(props: {
     minUsd,
     movement,
     row,
-    eventId,
     rows,
-    sbStatusFilter,
-    sbStatus.bySeatKey,
     search,
     seat,
+  ]);
+
+  const eligibleRows = useMemo(() => {
+    if (sbStatusFilter === "all" || !showSbColumn || !eventId) return filteredRowsBeforeSb;
+    return filteredRowsBeforeSb.filter((r) => {
+      const sbEntry = findSbListingEntryForRow(sbStatus.bySeatKey, {
+        seatIds: [r.seatId],
+        blockName: r.blockName,
+        row: r.row,
+        seatSpan: r.seatNumber,
+      });
+      if (sbStatusFilter === "pushed") return isSbRowPushed(sbEntry);
+      if (sbStatusFilter === "unpushed") return isSbRowUnpushedForFilter(sbEntry);
+      if (sbStatusFilter === "deleted") return isSbRowDeletedForFilter(sbEntry);
+      return true;
+    });
+  }, [filteredRowsBeforeSb, sbStatusFilter, showSbColumn, eventId, sbStatus.bySeatKey]);
+
+  const sbStatusFilterCounts = useMemo(() => {
+    if (!showSbColumn || !eventId) return { pushed: 0, unpushed: 0, deleted: 0 };
+
+    const sbEntryForRow = (r: SockAvailableDTO) =>
+      findSbListingEntryForRow(sbStatus.bySeatKey, {
+        seatIds: [r.seatId],
+        blockName: r.blockName,
+        row: r.row,
+        seatSpan: r.seatNumber,
+      });
+
+    const rowsForStatus = (status: "pushed" | "unpushed" | "deleted") =>
+      filteredRowsBeforeSb.filter((r) => {
+        const entry = sbEntryForRow(r);
+        if (status === "pushed") return isSbRowPushed(entry);
+        if (status === "deleted") return isSbRowDeletedForFilter(entry);
+        return isSbRowUnpushedForFilter(entry);
+      });
+
+    if (viewMode === "raw") {
+      return {
+        pushed: rowsForStatus("pushed").length,
+        unpushed: rowsForStatus("unpushed").length,
+        deleted: rowsForStatus("deleted").length,
+      };
+    }
+
+    const countGroups = (statusRows: SockAvailableDTO[]) =>
+      groupSockAvailableRows(statusRows).filter((g) => g.togetherCount >= seatsTogetherMin).length;
+
+    return {
+      pushed: countGroups(rowsForStatus("pushed")),
+      unpushed: countGroups(rowsForStatus("unpushed")),
+      deleted: countGroups(rowsForStatus("deleted")),
+    };
+  }, [
+    filteredRowsBeforeSb,
+    sbStatus.bySeatKey,
     showSbColumn,
+    eventId,
+    viewMode,
+    seatsTogetherMin,
   ]);
 
   const groupedFiltered = useMemo(() => {
