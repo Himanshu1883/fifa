@@ -59,6 +59,7 @@ type Props = {
   onCancelDelete?: () => void;
   ticketTypeId: string;
   onTicketTypeChange: (typeId: string) => void;
+  hidden?: boolean;
 };
 
 const btnPrimary =
@@ -159,7 +160,10 @@ export function SbBulkPushBar(props: Props) {
     onCancelDelete,
     ticketTypeId,
     onTicketTypeChange,
+    hidden = false,
   } = props;
+
+  if (hidden) return null;
 
   const pushRunning = Boolean(pushQueue?.running);
   const deleteRunning = Boolean(deleteQueue?.running);

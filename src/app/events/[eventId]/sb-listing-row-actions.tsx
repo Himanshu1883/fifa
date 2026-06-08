@@ -68,6 +68,7 @@ type Props = {
   omitTicketBlock?: boolean;
   onStatusChange: (entry: SbListingStatusEntry, meta: SbRowLookupMeta) => void;
   onDeleted?: (entry: SbListingStatusEntry, meta: SbRowLookupMeta) => void;
+  onPreviewOpenChange?: (open: boolean) => void;
 };
 
 const deleteBtnClass =
@@ -87,6 +88,7 @@ export function SbListingRowActions(props: Props) {
     omitTicketBlock = false,
     onStatusChange,
     onDeleted,
+    onPreviewOpenChange,
   } = props;
   const [previewOpen, setPreviewOpen] = useState(false);
   const [instantEntry, setInstantEntry] = useState<SbListingStatusEntry | null>(null);
@@ -103,6 +105,13 @@ export function SbListingRowActions(props: Props) {
       setInstantEntry(null);
     }
   }, [entry]);
+
+  useEffect(() => {
+    onPreviewOpenChange?.(previewOpen);
+    return () => {
+      if (previewOpen) onPreviewOpenChange?.(false);
+    };
+  }, [previewOpen, onPreviewOpenChange]);
 
   const displayEntry = (() => {
     const candidates = [instantEntry, entry].filter(Boolean) as SbListingStatusEntry[];

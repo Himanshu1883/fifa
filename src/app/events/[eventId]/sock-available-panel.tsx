@@ -6,7 +6,10 @@ import { SbBulkPushBar, type SbBulkPushQueueState } from "@/app/events/[eventId]
 import { SbListingRowActions } from "@/app/events/[eventId]/sb-listing-row-actions";
 import {
   isSbRowDeletable,
+  isSbRowDeletedForFilter,
+  isSbRowPushed,
   isSbRowPushable,
+  isSbRowUnpushedForFilter,
   type SbBulkDeleteItem,
   type SbBulkPushItem,
 } from "@/lib/sb-bulk-push-utils";
@@ -32,6 +35,8 @@ import { formatUsd, priceToNumber } from "@/lib/format-usd";
 import { DEFAULT_SB_TICKET_TYPE_ID } from "@/lib/sb-ticket-types";
 
 const SB_CATEGORY_FILTER_NUMS = [1, 2, 3, 4] as const satisfies readonly SbCategoryNum[];
+
+type SbStatusFilter = "all" | "pushed" | "unpushed" | "deleted";
 
 type BulkJobApi = {
   status?: "running" | "complete" | "failed" | "cancelled";
@@ -425,7 +430,8 @@ export function SockAvailablePanel(props: {
   );
   const [sbStatus, setSbStatus] = useState<SbListingStatusPayload>(emptySbStatus);
   const [sbConfigured, setSbConfigured] = useState(false);
-  const [sbOnSbOnly, setSbOnSbOnly] = useState(false);
+  const [sbStatusFilter, setSbStatusFilter] = useState<SbStatusFilter>("all");
+  const [pushPreviewOpenCount, setPushPreviewOpenCount] = useState(0);
   const [selectedCategoryNums, setSelectedCategoryNums] = useState<Set<SbCategoryNum>>(defaultCategoryNumFilter);
   const [selectedCustomCategoryNames, setSelectedCustomCategoryNames] = useState<Set<string>>(() => new Set());
   const [addedCustomCategoryNames, setAddedCustomCategoryNames] = useState<Set<string>>(() => new Set());
@@ -715,7 +721,30 @@ export function SockAvailablePanel(props: {
 
   const showSbColumn = Boolean(eventId) && resaleView;
 
+  const handlePushPreviewOpenChange = useCallback((open: boolean) => {
+    setPushPreviewOpenCount((c) => (open ? c + 1 : Math.max(0, c - 1)));
+  }, []);
+
   const sbDeletedCount = sbStatus.removed.filter((e) => e.status === "deleted").length;
+
+  const sbStatusFilterCounts = useMemo(() => {
+    let pushed = 0;
+    let unpushed = 0;
+    let deleted = 0;
+    for (const r of rows) {
+      if (r.kind !== "RESALE") continue;
+      const entry = findSbListingEntryForRow(sbStatus.bySeatKey, {
+        seatIds: [r.seatId],
+        blockName: r.blockName,
+        row: r.row,
+        seatSpan: r.seatNumber,
+      });
+      if (isSbRowPushed(entry)) pushed++;
+      else if (isSbRowDeletedForFilter(entry)) deleted++;
+      else if (isSbRowUnpushedForFilter(entry)) unpushed++;
+    }
+    return { pushed, unpushed, deleted };
+  }, [rows, sbStatus.bySeatKey]);
 
   const newKeySetByKind = useMemo(() => {
     return {
@@ -829,14 +858,16 @@ export function SockAvailablePanel(props: {
       if (hasFrom && (!Number.isFinite(createdMs) || createdMs < fromMs)) return false;
       if (hasTo && (!Number.isFinite(createdMs) || createdMs > toMs)) return false;
 
-      if (sbOnSbOnly && showSbColumn && eventId) {
+      if (sbStatusFilter !== "all" && showSbColumn && eventId) {
         const sbEntry = findSbListingEntryForRow(sbStatus.bySeatKey, {
           seatIds: [r.seatId],
           blockName: r.blockName,
           row: r.row,
           seatSpan: r.seatNumber,
         });
-        if (sbEntry?.status !== "pushed") return false;
+        if (sbStatusFilter === "pushed" && !isSbRowPushed(sbEntry)) return false;
+        if (sbStatusFilter === "unpushed" && !isSbRowUnpushedForFilter(sbEntry)) return false;
+        if (sbStatusFilter === "deleted" && !isSbRowDeletedForFilter(sbEntry)) return false;
       }
 
       if (!q) return true;
@@ -877,7 +908,7 @@ export function SockAvailablePanel(props: {
     row,
     eventId,
     rows,
-    sbOnSbOnly,
+    sbStatusFilter,
     sbStatus.bySeatKey,
     search,
     seat,
@@ -1780,7 +1811,7 @@ export function SockAvailablePanel(props: {
       createdFrom ||
       createdTo ||
       sortKey !== "amount_asc" ||
-      sbOnSbOnly ||
+      sbStatusFilter !== "all" ||
       !isDefaultCategoryFilter(
         selectedCategoryNums,
         selectedCustomCategoryNames,
@@ -1788,7 +1819,10 @@ export function SockAvailablePanel(props: {
       ),
   );
 
-  const sbActiveCount = sbStatus.active.length;
+  const sbStatusFilterChipClass = (active: boolean) =>
+    active
+      ? "min-h-8 rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] px-2.5 text-xs font-semibold text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_32%,transparent)] outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
+      : "min-h-8 rounded-lg px-2.5 text-xs font-semibold text-zinc-300 outline-none transition-colors hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]";
 
   return (
     <section className={`relative flex flex-col gap-3 sm:gap-4 ${sectionPad}`} aria-label="Sock available table">
@@ -1931,6 +1965,46 @@ export function SockAvailablePanel(props: {
               +
             </button>
           </div>
+          {showSbColumn ? (
+            <>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                SB status
+              </span>
+              <div
+                className="flex flex-wrap items-center rounded-xl bg-black/35 p-1 ring-1 ring-white/[0.10] shadow-inner shadow-black/35"
+                role="radiogroup"
+                aria-label="SB listing status filter"
+              >
+                {(
+                  [
+                    { value: "all" as const, label: "All" },
+                    { value: "pushed" as const, label: "Pushed", count: sbStatusFilterCounts.pushed },
+                    { value: "unpushed" as const, label: "Unpushed", count: sbStatusFilterCounts.unpushed },
+                    { value: "deleted" as const, label: "Deleted", count: sbStatusFilterCounts.deleted },
+                  ] as const
+                ).map((chip) => {
+                  const active = sbStatusFilter === chip.value;
+                  return (
+                    <button
+                      key={chip.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setSbStatusFilter(chip.value)}
+                      className={sbStatusFilterChipClass(active)}
+                    >
+                      {chip.label}
+                      {"count" in chip && chip.count > 0 ? (
+                        <span className="ml-1.5 rounded-full bg-black/35 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-zinc-300">
+                          {chip.count}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : null}
           {customCategoryChipNames.map((name) => {
             const active = selectedCustomCategoryNames.has(name);
             return (
@@ -2015,31 +2089,6 @@ export function SockAvailablePanel(props: {
                   enterKeyHint="search"
                 />
               </div>
-
-              {showSbColumn ? (
-                <button
-                  type="button"
-                  aria-pressed={sbOnSbOnly}
-                  title={
-                    sbOnSbOnly
-                      ? "Showing only rows with an SB listing — click to show all"
-                      : `Show only ${sbActiveCount} row(s) with SB listings`
-                  }
-                  onClick={() => setSbOnSbOnly((v) => !v)}
-                  className={
-                    sbOnSbOnly
-                      ? "flex min-h-10 shrink-0 items-center gap-2 rounded-lg border border-emerald-400/35 bg-emerald-500/12 px-3 py-2 text-sm font-semibold text-emerald-100 ring-1 ring-emerald-400/25 outline-none transition-colors hover:bg-emerald-500/18 focus-visible:ring-2 focus-visible:ring-emerald-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
-                      : "flex min-h-10 shrink-0 items-center gap-2 rounded-lg border border-white/[0.10] bg-black/30 px-3 py-2 text-sm font-semibold text-zinc-200 ring-1 ring-white/[0.04] outline-none transition-colors hover:border-white/16 hover:bg-black/40 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
-                  }
-                >
-                  On SB
-                  {sbActiveCount > 0 ? (
-                    <span className="rounded-full bg-black/35 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-zinc-300">
-                      {sbActiveCount}
-                    </span>
-                  ) : null}
-                </button>
-              ) : null}
 
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-2.5">
                 <div className="flex min-w-0 flex-col gap-1 sm:w-[15rem]">
@@ -2133,7 +2182,7 @@ export function SockAvailablePanel(props: {
                     setCreatedFrom("");
                     setCreatedTo("");
                     setSortKey("amount_asc");
-                    setSbOnSbOnly(false);
+                    setSbStatusFilter("all");
                     resetCategoryFilter();
                     setShowMoreFilters(false);
                     setFiltersExpanded(false);
@@ -2544,7 +2593,7 @@ export function SockAvailablePanel(props: {
                           setCreatedFrom("");
                           setCreatedTo("");
                           setSortKey("amount_asc");
-                          setSbOnSbOnly(false);
+                          setSbStatusFilter("all");
                           resetCategoryFilter();
                           setShowMoreFilters(false);
                           setFiltersExpanded(false);
@@ -2757,6 +2806,7 @@ export function SockAvailablePanel(props: {
                                 })}
                                 onStatusChange={handleSbStatusChange}
                                 onDeleted={handleSbDeleted}
+                                onPreviewOpenChange={handlePushPreviewOpenChange}
                               />
                             </td>
                           ) : null}
@@ -2973,6 +3023,7 @@ export function SockAvailablePanel(props: {
                               })}
                               onStatusChange={handleSbStatusChange}
                               onDeleted={handleSbDeleted}
+                              onPreviewOpenChange={handlePushPreviewOpenChange}
                             />
                           </td>
                         ) : null}
@@ -3028,6 +3079,7 @@ export function SockAvailablePanel(props: {
           onCancelDelete={() => void cancelBulkDeleteQueue()}
           ticketTypeId={bulkPushTicketTypeId}
           onTicketTypeChange={(typeId) => void saveBulkPushTicketType(typeId)}
+          hidden={pushPreviewOpenCount > 0}
         />
       ) : null}
 

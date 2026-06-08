@@ -24,6 +24,27 @@ export type SbBulkDeleteItem = {
   label: string;
 };
 
+export function isSbRowPushed(
+  entry: Pick<SbListingStatusEntry, "status"> | null | undefined,
+): boolean {
+  return entry?.status === "pushed";
+}
+
+export function isSbRowDeletedForFilter(
+  entry: Pick<SbListingStatusEntry, "status" | "sbDeletedAt"> | null | undefined,
+): boolean {
+  if (!entry) return false;
+  return entry.status === "deleted" || entry.status === "removed" || Boolean(entry.sbDeletedAt);
+}
+
+export function isSbRowUnpushedForFilter(
+  entry: Pick<SbListingStatusEntry, "status" | "sbDeletedAt"> | null | undefined,
+): boolean {
+  if (isSbRowPushed(entry)) return false;
+  if (isSbRowDeletedForFilter(entry)) return false;
+  return true;
+}
+
 export function isSbRowPushable(entry: Pick<SbListingStatusEntry, "status"> | null | undefined): boolean {
   return !entry || entry.status !== "pushed";
 }
