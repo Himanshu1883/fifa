@@ -33,20 +33,25 @@ export async function GET(req: Request, ctx: { params: Promise<{ eventId: string
   const url = new URL(req.url);
   const removedOnly = url.searchParams.get("removedOnly") === "1";
   const includeRemoved = url.searchParams.get("includeRemoved") !== "0";
+  // light=1 skips reconcile/repair for fast polls; all other callers keep the original full sync.
+  const light = url.searchParams.get("light") === "1";
 
   try {
     let reconcile: Awaited<ReturnType<typeof reconcileSbListingsAfterSockSync>> | undefined;
-    try {
-      reconcile = await reconcileSbListingsAfterSockSync(id);
-    } catch (reconcileErr) {
-      console.warn("[sb-listing-status] reconcile failed", reconcileErr);
-    }
-
     let repair: Awaited<ReturnType<typeof repairStaleSbDeleteLogs>> | undefined;
-    try {
-      repair = await repairStaleSbDeleteLogs({ eventId: id });
-    } catch (repairErr) {
-      console.warn("[sb-listing-status] stale delete repair failed", repairErr);
+
+    if (!light) {
+      try {
+        reconcile = await reconcileSbListingsAfterSockSync(id);
+      } catch (reconcileErr) {
+        console.warn("[sb-listing-status] reconcile failed", reconcileErr);
+      }
+
+      try {
+        repair = await repairStaleSbDeleteLogs({ eventId: id });
+      } catch (repairErr) {
+        console.warn("[sb-listing-status] stale delete repair failed", repairErr);
+      }
     }
 
     const status = await loadSbListingStatusForEvent(id);

@@ -61,6 +61,27 @@ export function sbListingEntryMatchesRow(
 /**
  * Resolve SB listing for a resale row — key lookup first, then scan all active listings.
  */
+export function sbLookupCacheKey(
+  meta: Pick<SbRowLookupMeta, "seatIds" | "blockName" | "row" | "seatSpan">,
+): string {
+  return `${seatKeyFromSeatIds(meta.seatIds)}|${meta.blockName ?? ""}|${meta.row ?? ""}|${meta.seatSpan ?? ""}`;
+}
+
+/** Precompute SB listing lookups for many rows in one pass (avoids repeated scans of `bySeatKey`). */
+export function warmSbEntryCache(
+  bySeatKey: Record<string, SbListingStatusEntry>,
+  metas: SbRowLookupMeta[],
+): Map<string, SbListingStatusEntry | null> {
+  const cache = new Map<string, SbListingStatusEntry | null>();
+  for (const meta of metas) {
+    const key = sbLookupCacheKey(meta);
+    if (!cache.has(key)) {
+      cache.set(key, findSbListingEntryForRow(bySeatKey, meta));
+    }
+  }
+  return cache;
+}
+
 export function findSbListingEntryForRow(
   bySeatKey: Record<string, SbListingStatusEntry>,
   meta: SbRowLookupMeta,

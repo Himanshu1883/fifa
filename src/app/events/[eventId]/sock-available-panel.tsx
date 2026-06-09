@@ -23,9 +23,12 @@ import {
   mergeSbListingBySeatKey,
   payloadFromBySeatKey,
   pinSbListingEntries,
+  sbLookupCacheKey,
   unpinSbListingEntries,
+  warmSbEntryCache,
   type SbRowLookupMeta,
 } from "@/lib/sb-listing-row-index";
+import { useVirtualWindow } from "@/app/events/[eventId]/use-virtual-window";
 import { resolvePlainSbCategoryNum, type SbCategoryNum } from "@/lib/sb-category";
 import {
   bulkDeleteJobToQueueState,
@@ -570,10 +573,12 @@ export function SockAvailablePanel(props: {
     });
   }, []);
 
-  const refreshSbStatus = useCallback(async () => {
+  const refreshSbStatus = useCallback(async (opts?: { light?: boolean }) => {
     if (!eventId) return;
     try {
-      const res = await fetch(`/api/events/${eventId}/sb-listing-status?includeRemoved=0`, {
+      const params = new URLSearchParams({ includeRemoved: "0" });
+      if (opts?.light) params.set("light", "1");
+      const res = await fetch(`/api/events/${eventId}/sb-listing-status?${params}`, {
         cache: "no-store",
       });
       const json = (await res.json()) as SbListingStatusPayload & {
@@ -626,15 +631,19 @@ export function SockAvailablePanel(props: {
       .join(",");
   }, [rows, resaleView]);
 
+  const initialInventoryKeyRef = useRef(resaleInventoryKey);
+
   useEffect(() => {
     if (!eventId || !resaleView) return;
+    if (resaleInventoryKey === initialInventoryKeyRef.current) return;
+    initialInventoryKeyRef.current = resaleInventoryKey;
     void refreshSbStatus();
   }, [eventId, resaleView, resaleInventoryKey, refreshSbStatus]);
 
   useEffect(() => {
     if (!eventId || !resaleView) return;
     const id = window.setInterval(() => {
-      void refreshSbStatus();
+      void refreshSbStatus({ light: true });
     }, 20_000);
     return () => window.clearInterval(id);
   }, [eventId, resaleView, refreshSbStatus]);
@@ -713,6 +722,16 @@ export function SockAvailablePanel(props: {
     return () => window.removeEventListener("sb-listing-row-deleted", onRowDeleted);
   }, [eventId, resaleView, handleSbDeleted, refreshSbStatus]);
 
+  const sbEntryCache = useMemo(() => {
+    const metas: SbRowLookupMeta[] = rows.map((r) => ({
+      seatIds: [r.seatId],
+      blockName: r.blockName,
+      row: r.row,
+      seatSpan: r.seatNumber,
+    }));
+    return warmSbEntryCache(sbStatus.bySeatKey, metas);
+  }, [rows, sbStatus.bySeatKey]);
+
   const lookupSbEntry = useCallback(
     (
       seatIds: string[],
@@ -724,9 +743,11 @@ export function SockAvailablePanel(props: {
         row: rowMeta?.row,
         seatSpan: rowMeta?.seatSpan,
       };
+      const key = sbLookupCacheKey(meta);
+      if (sbEntryCache.has(key)) return sbEntryCache.get(key) ?? null;
       return findSbListingEntryForRow(sbStatus.bySeatKey, meta);
     },
-    [sbStatus.bySeatKey],
+    [sbEntryCache, sbStatus.bySeatKey],
   );
 
   const showSbColumn = Boolean(eventId) && resaleView;
@@ -887,46 +908,55 @@ export function SockAvailablePanel(props: {
     seat,
   ]);
 
-  const eligibleRows = useMemo(() => {
-    if (sbStatusFilter === "all" || !showSbColumn || !eventId) return filteredRowsBeforeSb;
-    return filteredRowsBeforeSb.filter((r) => {
-      const sbEntry = findSbListingEntryForRow(sbStatus.bySeatKey, {
+  const sbEntryForSockRow = useCallback(
+    (r: SockAvailableDTO): SbListingStatusEntry | null => {
+      const key = sbLookupCacheKey({
         seatIds: [r.seatId],
         blockName: r.blockName,
         row: r.row,
         seatSpan: r.seatNumber,
       });
+      if (sbEntryCache.has(key)) return sbEntryCache.get(key) ?? null;
+      return findSbListingEntryForRow(sbStatus.bySeatKey, {
+        seatIds: [r.seatId],
+        blockName: r.blockName,
+        row: r.row,
+        seatSpan: r.seatNumber,
+      });
+    },
+    [sbEntryCache, sbStatus.bySeatKey],
+  );
+
+  const eligibleRows = useMemo(() => {
+    if (sbStatusFilter === "all" || !showSbColumn || !eventId) return filteredRowsBeforeSb;
+    return filteredRowsBeforeSb.filter((r) => {
+      const sbEntry = sbEntryForSockRow(r);
       if (sbStatusFilter === "pushed") return isSbRowPushed(sbEntry);
       if (sbStatusFilter === "unpushed") return isSbRowUnpushedForFilter(sbEntry);
       if (sbStatusFilter === "deleted") return isSbRowDeletedForFilter(sbEntry);
       return true;
     });
-  }, [filteredRowsBeforeSb, sbStatusFilter, showSbColumn, eventId, sbStatus.bySeatKey]);
+  }, [filteredRowsBeforeSb, sbStatusFilter, showSbColumn, eventId, sbEntryForSockRow]);
 
   const sbStatusFilterCounts = useMemo(() => {
     if (!showSbColumn || !eventId) return { pushed: 0, unpushed: 0, deleted: 0 };
 
-    const sbEntryForRow = (r: SockAvailableDTO) =>
-      findSbListingEntryForRow(sbStatus.bySeatKey, {
-        seatIds: [r.seatId],
-        blockName: r.blockName,
-        row: r.row,
-        seatSpan: r.seatNumber,
-      });
+    const pushedRows: SockAvailableDTO[] = [];
+    const unpushedRows: SockAvailableDTO[] = [];
+    const deletedRows: SockAvailableDTO[] = [];
 
-    const rowsForStatus = (status: "pushed" | "unpushed" | "deleted") =>
-      filteredRowsBeforeSb.filter((r) => {
-        const entry = sbEntryForRow(r);
-        if (status === "pushed") return isSbRowPushed(entry);
-        if (status === "deleted") return isSbRowDeletedForFilter(entry);
-        return isSbRowUnpushedForFilter(entry);
-      });
+    for (const r of filteredRowsBeforeSb) {
+      const entry = sbEntryForSockRow(r);
+      if (isSbRowPushed(entry)) pushedRows.push(r);
+      else if (isSbRowDeletedForFilter(entry)) deletedRows.push(r);
+      else if (isSbRowUnpushedForFilter(entry)) unpushedRows.push(r);
+    }
 
     if (viewMode === "raw") {
       return {
-        pushed: rowsForStatus("pushed").length,
-        unpushed: rowsForStatus("unpushed").length,
-        deleted: rowsForStatus("deleted").length,
+        pushed: pushedRows.length,
+        unpushed: unpushedRows.length,
+        deleted: deletedRows.length,
       };
     }
 
@@ -934,13 +964,13 @@ export function SockAvailablePanel(props: {
       groupSockAvailableRows(statusRows).filter((g) => g.togetherCount >= seatsTogetherMin).length;
 
     return {
-      pushed: countGroups(rowsForStatus("pushed")),
-      unpushed: countGroups(rowsForStatus("unpushed")),
-      deleted: countGroups(rowsForStatus("deleted")),
+      pushed: countGroups(pushedRows),
+      unpushed: countGroups(unpushedRows),
+      deleted: countGroups(deletedRows),
     };
   }, [
     filteredRowsBeforeSb,
-    sbStatus.bySeatKey,
+    sbEntryForSockRow,
     showSbColumn,
     eventId,
     viewMode,
@@ -1070,7 +1100,21 @@ export function SockAvailablePanel(props: {
   const shownCount = shownItems.length;
   const loadedCount = viewMode === "raw" ? rows.length : groupedLoadedCount;
 
+  const SOCK_TABLE_ROW_HEIGHT = 52;
+  const virtual = useVirtualWindow(shownCount, SOCK_TABLE_ROW_HEIGHT);
+  const virtualRawRows = useMemo(
+    () => rawSorted.slice(virtual.range.start, virtual.range.end),
+    [rawSorted, virtual.range.end, virtual.range.start],
+  );
+  const virtualGroupedRows = useMemo(
+    () => groupedSorted.slice(virtual.range.start, virtual.range.end),
+    [groupedSorted, virtual.range.end, virtual.range.start],
+  );
+
   const bulkPushEnabled = showSbColumn && Boolean(sbEventId) && sbConfigured;
+  const rawTableColSpan =
+    (bulkPushEnabled ? 2 : 0) + 15 + (showSbColumn ? 1 : 0) + 1;
+  const groupedTableColSpan = (bulkPushEnabled ? 2 : 0) + 9 + (showSbColumn ? 1 : 0) + 1;
 
   const pushableItems = useMemo((): SbBulkPushItem[] => {
     if (!bulkPushEnabled) return [];
@@ -2757,7 +2801,10 @@ export function SockAvailablePanel(props: {
             </div>
           ) : (
             <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-[color:var(--ticketing-surface-elevated)] shadow-[0_16px_48px_-20px_rgba(0,0,0,0.75)] ring-1 ring-white/[0.05]">
-              <div className="max-h-[70vh] overflow-auto [-webkit-overflow-scrolling:touch]">
+              <div
+                ref={virtual.containerRef}
+                className="max-h-[70vh] overflow-auto [-webkit-overflow-scrolling:touch]"
+              >
                 {viewMode === "raw" ? (
                   <table className="w-full min-w-[110rem] border-collapse text-sm">
                     <thead>
@@ -2846,7 +2893,12 @@ export function SockAvailablePanel(props: {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/[0.05]">
-                      {rawSorted.map((r) => {
+                      {virtual.paddingTop > 0 ? (
+                        <tr aria-hidden className="pointer-events-none border-0">
+                          <td colSpan={rawTableColSpan} style={{ height: virtual.paddingTop, padding: 0, border: 0 }} />
+                        </tr>
+                      ) : null}
+                      {virtualRawRows.map((r) => {
                         const pushKey = `raw|${r.id}`;
                         const bulkSelectable =
                           bulkPushEnabled &&
@@ -2967,6 +3019,11 @@ export function SockAvailablePanel(props: {
                         </tr>
                         );
                       })}
+                      {virtual.paddingBottom > 0 ? (
+                        <tr aria-hidden className="pointer-events-none border-0">
+                          <td colSpan={rawTableColSpan} style={{ height: virtual.paddingBottom, padding: 0, border: 0 }} />
+                        </tr>
+                      ) : null}
                     </tbody>
                   </table>
                 ) : (
@@ -3071,7 +3128,12 @@ export function SockAvailablePanel(props: {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/[0.05]">
-                    {groupedSorted.map((g) => {
+                    {virtual.paddingTop > 0 ? (
+                      <tr aria-hidden className="pointer-events-none border-0">
+                        <td colSpan={groupedTableColSpan} style={{ height: virtual.paddingTop, padding: 0, border: 0 }} />
+                      </tr>
+                    ) : null}
+                    {virtualGroupedRows.map((g) => {
                       const bulkSelectable =
                         bulkPushEnabled && (pushableKeySet.has(g.id) || deletableKeySet.has(g.id));
                       const bulkSelected = bulkSelectable && selectedPushKeys.has(g.id);
@@ -3196,6 +3258,11 @@ export function SockAvailablePanel(props: {
                       </tr>
                       );
                     })}
+                    {virtual.paddingBottom > 0 ? (
+                      <tr aria-hidden className="pointer-events-none border-0">
+                        <td colSpan={groupedTableColSpan} style={{ height: virtual.paddingBottom, padding: 0, border: 0 }} />
+                      </tr>
+                    ) : null}
                   </tbody>
                 </table>
                 )}
