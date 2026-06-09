@@ -7,6 +7,7 @@ import { formatUsd, priceToNumber } from "@/lib/format-usd";
 import { categoryNumFromCategoryName as catNumberFromSockCategoryName } from "@/lib/sb-category";
 import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
 import { AddEventDialog } from "@/app/add-event-dialog";
+import { BuyingCriteriaDialog } from "@/app/buying-criteria-dialog";
 import { EditEventDialog } from "@/app/edit-event-dialog";
 import { ApiDocumentationControls } from "@/app/api-documentation-controls";
 import { MarkupControls } from "@/app/markup-controls";
@@ -624,6 +625,13 @@ export async function HomePage({
   }
 
   const suggestedSortOrder = eventsAll.length === 0 ? 1 : Math.max(...eventsAll.map((e) => e.sortOrder)) + 1;
+  const criteriaEvents = [...eventsAll];
+  sortHomeEvents(criteriaEvents, listSort, listOrder);
+  const criteriaEventStubs = criteriaEvents.map((e) => ({
+    id: e.id,
+    matchLabel: e.matchLabel,
+    name: e.name,
+  }));
 
   const venueOptions = distinctNonEmptyCaseInsensitive(eventsAll.map((e) => e.venue));
   const countryOptions = distinctNonEmptyCaseInsensitive(eventsAll.map((e) => e.country));
@@ -780,6 +788,16 @@ export async function HomePage({
                   lastMinuteHref={homeKindHref("LAST_MINUTE")}
                   resaleHref={homeKindHref("RESALE")}
                 />
+                <BuyingCriteriaDialog
+                  events={criteriaEventStubs}
+                  triggerClassName="inline-flex min-h-10 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-5 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] sm:min-h-11 sm:px-6"
+                />
+                <Link
+                  href="/listing-changes"
+                  className="inline-flex min-h-10 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-5 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] sm:min-h-11 sm:px-6"
+                >
+                  Changes
+                </Link>
                 <Link
                 href={homeBuyingCriteriaMeetHref(!buyingCriteriaMeetActive)}
                 className={
@@ -788,7 +806,7 @@ export async function HomePage({
                     : "inline-flex min-h-10 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] px-5 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/35 transition-colors hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_35%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)] sm:min-h-11 sm:px-6"
                 }
               >
-                Buying Criteria
+                Meets criteria
               </Link>
               <Link
                 href={homeMissingPriceHref(!missingPriceActive)}

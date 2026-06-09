@@ -4,7 +4,7 @@ import {
   resolveFaceValueUsdForSb,
   type SbFaceValueLookup,
 } from "@/lib/sb-face-value";
-import type { SbCategoryNum } from "@/lib/sb-category";
+import { strictSbTicketCategoryIdFromListing, type SbCategoryNum } from "@/lib/sb-category";
 import {
   isValidSbTicketBlockValue,
   resolveSbBlockFromCatalog,
@@ -115,7 +115,8 @@ export function mapOfferToSeatsBrokersCreateTicket(
     matchedSbCategoryId,
     matchSource: sbBlockMatchSource,
   } = blockResolve;
-  const ticketCategory = blockResolve.matched ? matchedSbCategoryId : sbCategoryId;
+  const ticketCategory =
+    strictSbTicketCategoryIdFromListing(first.categoryName, first.categoryId) ?? sbCategoryId;
 
   const fields: Record<string, string> = {
     match_id: matchId,
@@ -270,22 +271,19 @@ export function enrichMappedTicketForPush(
 
   const clientFields = ticket.fields;
   const clientBlock = (clientFields.ticket_block ?? "").trim();
-  const clientCategory = (clientFields.ticket_category ?? "").trim();
-
   const useClientBlock =
     clientBlock.length > 0 &&
     !isLikelyFifaSnowflakeId(clientBlock) &&
     isValidSbTicketBlockValue(clientBlock, baseline.summary.sbBlockOptions);
 
-  const useClientCategory =
-    clientCategory.length > 0 &&
-    !isLikelyFifaSnowflakeId(clientCategory) &&
-    (catalog?.categories.some((c) => c.id === clientCategory) ?? false);
-
   const ticketBlock = useClientBlock
     ? resolveSbTicketBlockRowId(clientBlock, baseline.summary.sbBlockOptions, baseline.summary.sbBlockId)
     : baseline.summary.sbBlockId;
-  const ticketCategory = useClientCategory ? clientCategory : baseline.fields.ticket_category;
+  const firstSeat = offer.seats[0];
+  const ticketCategory =
+    (firstSeat
+      ? strictSbTicketCategoryIdFromListing(firstSeat.categoryName, firstSeat.categoryId)
+      : null) ?? baseline.fields.ticket_category;
   const sbBlockCode =
     sbBlockCodeForRowId(ticketBlock, baseline.summary.sbBlockOptions) || baseline.summary.sbBlockCode;
 
@@ -332,6 +330,7 @@ export function enrichMappedTicketForPush(
     summary: {
       ...baseline.summary,
       priceUsd,
+      sbCategoryId: ticketCategory,
       sbBlockId: ticketBlock,
       sbBlockCode,
       sbBlockMatched,

@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { AddSbIdDialog } from "@/app/add-sb-id-dialog";
 import { ApiDocumentationControls } from "@/app/api-documentation-controls";
+import { BuyingCriteriaDialog } from "@/app/buying-criteria-dialog";
 import { MarkupControls } from "@/app/markup-controls";
 import { SbApiControls } from "@/app/sb-api-controls";
 import { SeatListingsPanel } from "./seat-listings-panel";
@@ -363,6 +364,16 @@ export default async function EventDetailPage({ params, searchParams }: Props) {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
+                    <BuyingCriteriaDialog
+                      events={[{ id: event.id, matchLabel: event.matchLabel, name: event.name }]}
+                      triggerClassName="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/[0.12] bg-white/[0.06] px-4 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/25 transition-colors hover:bg-white/[0.10] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                    />
+                    <Link
+                      href="/listing-changes"
+                      className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/[0.12] bg-white/[0.06] px-4 text-sm font-semibold text-zinc-100 shadow-sm shadow-black/25 transition-colors hover:bg-white/[0.10] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+                    >
+                      Changes
+                    </Link>
                     <MarkupControls />
                     <ApiDocumentationControls sampleEventId={event.id} />
                     <SbApiControls

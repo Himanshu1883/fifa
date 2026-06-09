@@ -1,6 +1,29 @@
 /** FIFA / sock category label → SeatsBrokers ticket_category (1–4). */
 export type SbCategoryNum = 1 | 2 | 3 | 4;
 
+/**
+ * Fixed SeatsBrokers `ticket_category` id per FIFA Category 1–4.
+ * Never overridden by catalog lookup or cross-category block match.
+ */
+export const STRICT_SB_TICKET_CATEGORY_BY_NUM: Record<SbCategoryNum, string> = {
+  1: "16",
+  2: "15",
+  3: "14",
+  4: "13",
+};
+
+export function strictSbTicketCategoryId(categoryNum: SbCategoryNum): string {
+  return STRICT_SB_TICKET_CATEGORY_BY_NUM[categoryNum];
+}
+
+export function strictSbTicketCategoryIdFromListing(
+  categoryName: string,
+  categoryId?: string | null,
+): string | null {
+  const categoryNum = resolveSbCategoryNum(categoryName, categoryId);
+  return categoryNum != null ? strictSbTicketCategoryId(categoryNum) : null;
+}
+
 const CATEGORY_VARIANT_RE = /\b(front|wheelchair|accessible|accessibility|ada)\b/i;
 
 function normalizedCategoryName(name: string): string {
@@ -71,14 +94,14 @@ export function resolveSbCategoryNum(
   return categoryNumFromCategoryName(categoryName) ?? categoryNumFromCategoryId(categoryId);
 }
 
-/** Value for SB `ticket_category` form field (1–4). Falls back to raw id if unmappable. */
+/** Value for SB `ticket_category` form field. Uses strict 16/15/14/13 when mappable to Cat 1–4. */
 export function sbTicketCategoryField(
   categoryName: string,
   categoryId?: string | null,
 ): { ticketCategory: string; categoryNum: SbCategoryNum | null } {
   const categoryNum = resolveSbCategoryNum(categoryName, categoryId);
   if (categoryNum != null) {
-    return { ticketCategory: String(categoryNum), categoryNum };
+    return { ticketCategory: strictSbTicketCategoryId(categoryNum), categoryNum };
   }
   const id = String(categoryId ?? "").trim();
   return { ticketCategory: id, categoryNum: null };

@@ -247,6 +247,44 @@ if (!config) {
     assert(mapped.summary.fifaBlockId === "10229531540407", "fifa block preserved in summary");
   }
 
+  section("strict ticket_category (16/15/14/13 — never cross-category override)");
+  const crossCatOffer: TransformedSeatOffer = {
+    ...mockOffer,
+    seats: [
+      {
+        ...mockOffer.seats[0]!,
+        categoryName: "Category 3",
+        categoryId: "3",
+        blockName: "T2-09",
+      },
+    ],
+  };
+  const crossMapped = mapOfferToSeatsBrokersCreateTicket(
+    crossCatOffer,
+    "5680",
+    config,
+    0,
+    "2026-06-11",
+    crossVenueCatalog,
+  );
+  assert(
+    crossMapped?.fields.ticket_category === "14",
+    "cat 3 always sends 14 even when block cross-matches SB cat 15",
+  );
+
+  const cat2Mapped = mapOfferToSeatsBrokersCreateTicket(
+    {
+      ...mockOffer,
+      seats: [{ ...mockOffer.seats[0]!, categoryName: "Category 2", categoryId: "2" }],
+    },
+    "5680",
+    config,
+    0,
+    "2026-06-11",
+    crossVenueCatalog,
+  );
+  assert(cat2Mapped?.fields.ticket_category === "15", "cat 2 always sends 15");
+
   section("enrichMappedTicketForPush (old preview with section code)");
   if (mapped) {
     const stale = {
@@ -292,6 +330,22 @@ if (!config) {
       mockCatalog,
     );
     assert(enrichedSplit?.fields.split_type === "5", "enrich fixes stale split_type for single");
+    const wrongCategoryPreview = {
+      ...mapped,
+      fields: { ...mapped.fields, ticket_category: "15" },
+    };
+    const enrichedCat = enrichMappedTicketForPush(
+      wrongCategoryPreview,
+      [mockOffer],
+      "5680",
+      config,
+      "2026-06-11",
+      mockCatalog,
+    );
+    assert(
+      enrichedCat?.fields.ticket_category === "16",
+      "enrich ignores client ticket_category override — Front Cat 1 stays 16",
+    );
   }
 }
 
