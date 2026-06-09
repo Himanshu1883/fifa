@@ -1341,6 +1341,40 @@ export function SockAvailablePanel(props: {
     return n;
   }, [selectedPushKeys, omitBlockKeys, pushableKeySet]);
 
+  const omitBlockPushableCount = pushableRowsInOrder.length;
+
+  const omitBlockOnCount = useMemo(() => {
+    let n = 0;
+    for (const k of pushableRowsInOrder) {
+      if (omitBlockKeys.has(k)) n++;
+    }
+    return n;
+  }, [pushableRowsInOrder, omitBlockKeys]);
+
+  const allPushableOmitBlock =
+    omitBlockPushableCount > 0 && omitBlockOnCount >= omitBlockPushableCount;
+
+  const toggleAllOmitBlockPushable = useCallback(() => {
+    const keys = pushableRowsInOrder;
+    if (keys.length === 0) return;
+    const allOn = keys.every((k) => omitBlockKeys.has(k));
+    if (allOn) {
+      setOmitBlockKeys((prev) => {
+        const next = new Set(prev);
+        let changed = false;
+        for (const k of keys) {
+          if (next.has(k)) {
+            next.delete(k);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+      return;
+    }
+    applyOmitBlockToPushableKeys(keys);
+  }, [pushableRowsInOrder, omitBlockKeys, applyOmitBlockToPushableKeys]);
+
   const selectAllPushable = useCallback(() => {
     const keys = pushableItems.map((item) => item.key);
     setSelectedPushKeys((prev) => {
@@ -1418,12 +1452,19 @@ export function SockAvailablePanel(props: {
   const selectableCount = selectableKeySet.size;
   const allSelectableSelected = selectableCount > 0 && selectedBulkCount >= selectableCount;
   const selectAllHeaderRef = useRef<HTMLInputElement>(null);
+  const omitBlockHeaderRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const el = selectAllHeaderRef.current;
     if (!el) return;
     el.indeterminate = selectedBulkCount > 0 && selectedBulkCount < selectableCount;
   }, [selectedBulkCount, selectableCount]);
+
+  useEffect(() => {
+    const el = omitBlockHeaderRef.current;
+    if (!el) return;
+    el.indeterminate = omitBlockOnCount > 0 && omitBlockOnCount < omitBlockPushableCount;
+  }, [omitBlockOnCount, omitBlockPushableCount]);
 
   const toggleSelectAllSelectable = useCallback(() => {
     const allSelected = [...selectableKeySet].every((k) => selectedPushKeys.has(k));
@@ -2762,15 +2803,28 @@ export function SockAvailablePanel(props: {
                                 </select>
                               </div>
                             </th>
-                            <th
-                              scope="col"
-                              className="w-12 px-1 py-3 text-center font-medium text-zinc-400"
-                              title="Omit ticket_block from SB payload"
-                            >
-                              <span className="sr-only">Omit block</span>
-                              <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-200/80">
-                                No blk
-                              </span>
+                            <th scope="col" className="w-12 px-1 py-3 text-center font-medium text-zinc-400">
+                              <div className="flex flex-col items-center gap-1">
+                                <input
+                                  ref={omitBlockHeaderRef}
+                                  type="checkbox"
+                                  checked={allPushableOmitBlock}
+                                  disabled={bulkActionRunning || omitBlockPushableCount === 0}
+                                  className="size-4 rounded border-amber-400/30 bg-black/40 accent-amber-400"
+                                  aria-label="Toggle omit ticket_block for all pushable listings"
+                                  title={
+                                    omitBlockPushableCount === 0
+                                      ? "No pushable listings"
+                                      : allPushableOmitBlock
+                                        ? "Clear omit ticket_block for all pushable listings"
+                                        : `Omit ticket_block for all pushable listings (${omitBlockPushableCount})`
+                                  }
+                                  onChange={toggleAllOmitBlockPushable}
+                                />
+                                <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-200/80">
+                                  No blk
+                                </span>
+                              </div>
                             </th>
                           </>
                         ) : null}
@@ -2961,15 +3015,28 @@ export function SockAvailablePanel(props: {
                               </select>
                             </div>
                           </th>
-                          <th
-                            scope="col"
-                            className="w-12 px-1 py-3 text-center font-medium text-zinc-400"
-                            title="Omit ticket_block from SB payload"
-                          >
-                            <span className="sr-only">Omit block</span>
-                            <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-200/80">
-                              No blk
-                            </span>
+                          <th scope="col" className="w-12 px-1 py-3 text-center font-medium text-zinc-400">
+                            <div className="flex flex-col items-center gap-1">
+                              <input
+                                ref={omitBlockHeaderRef}
+                                type="checkbox"
+                                checked={allPushableOmitBlock}
+                                disabled={bulkActionRunning || omitBlockPushableCount === 0}
+                                className="size-4 rounded border-amber-400/30 bg-black/40 accent-amber-400"
+                                aria-label="Toggle omit ticket_block for all pushable listings"
+                                title={
+                                  omitBlockPushableCount === 0
+                                    ? "No pushable listings"
+                                    : allPushableOmitBlock
+                                      ? "Clear omit ticket_block for all pushable listings"
+                                      : `Omit ticket_block for all pushable listings (${omitBlockPushableCount})`
+                                }
+                                onChange={toggleAllOmitBlockPushable}
+                              />
+                              <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-200/80">
+                                No blk
+                              </span>
+                            </div>
                           </th>
                         </>
                       ) : null}
