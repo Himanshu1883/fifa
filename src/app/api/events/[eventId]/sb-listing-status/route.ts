@@ -6,12 +6,33 @@ import { loadSbListingStatusForEvent } from "@/lib/sb-listing-status";
 
 export const runtime = "nodejs";
 
-export async function GET(_req: Request, ctx: { params: Promise<{ eventId: string }> }) {
+function removedSummaryFromEntries(removed: Awaited<ReturnType<typeof loadSbListingStatusForEvent>>["removed"]) {
+  let deleted = 0;
+  let failed = 0;
+  for (const entry of removed) {
+    if (entry.status === "deleted") deleted += 1;
+    else if (entry.status === "delete_failed") failed += 1;
+  }
+  return {
+    removedCount: removed.length,
+    removedSummary: {
+      deleted,
+      pending: removed.length - deleted - failed,
+      failed,
+    },
+  };
+}
+
+export async function GET(req: Request, ctx: { params: Promise<{ eventId: string }> }) {
   const { eventId } = await ctx.params;
   const id = Number.parseInt(eventId, 10);
   if (!Number.isFinite(id) || id <= 0) {
     return NextResponse.json({ ok: false, error: "Invalid eventId." }, { status: 400 });
   }
+
+  const url = new URL(req.url);
+  const removedOnly = url.searchParams.get("removedOnly") === "1";
+  const includeRemoved = url.searchParams.get("includeRemoved") !== "0";
 
   try {
     let reconcile: Awaited<ReturnType<typeof reconcileSbListingsAfterSockSync>> | undefined;
@@ -29,10 +50,36 @@ export async function GET(_req: Request, ctx: { params: Promise<{ eventId: strin
     }
 
     const status = await loadSbListingStatusForEvent(id);
+    const removedMeta = removedSummaryFromEntries(status.removed);
+
+    if (removedOnly) {
+      return NextResponse.json({
+        ok: true,
+        configured: Boolean(getSeatsBrokersConfig()),
+        removed: status.removed,
+        ...removedMeta,
+        reconcile,
+        repair,
+      });
+    }
+
+    if (!includeRemoved) {
+      const { removed: _removed, ...rest } = status;
+      return NextResponse.json({
+        ok: true,
+        configured: Boolean(getSeatsBrokersConfig()),
+        ...rest,
+        ...removedMeta,
+        reconcile,
+        repair,
+      });
+    }
+
     return NextResponse.json({
       ok: true,
       configured: Boolean(getSeatsBrokersConfig()),
       ...status,
+      ...removedMeta,
       reconcile,
       repair,
     });
@@ -50,6 +97,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ eventId: strin
         bySeatKey: {},
         active: [],
         removed: [],
+        removedCount: 0,
+        removedSummary: { deleted: 0, pending: 0, failed: 0 },
         warning: "Run prisma migrate deploy for SB removal tracking.",
       });
     }

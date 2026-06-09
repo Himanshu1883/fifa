@@ -429,6 +429,7 @@ export function SockAvailablePanel(props: {
     [],
   );
   const [sbStatus, setSbStatus] = useState<SbListingStatusPayload>(emptySbStatus);
+  const [removedCount, setRemovedCount] = useState(0);
   const [sbConfigured, setSbConfigured] = useState(false);
   const [sbStatusFilter, setSbStatusFilter] = useState<SbStatusFilter>("all");
   const [pushPreviewOpenCount, setPushPreviewOpenCount] = useState(0);
@@ -571,8 +572,14 @@ export function SockAvailablePanel(props: {
   const refreshSbStatus = useCallback(async () => {
     if (!eventId) return;
     try {
-      const res = await fetch(`/api/events/${eventId}/sb-listing-status`, { cache: "no-store" });
-      const json = (await res.json()) as SbListingStatusPayload & { ok?: boolean; configured?: boolean };
+      const res = await fetch(`/api/events/${eventId}/sb-listing-status?includeRemoved=0`, {
+        cache: "no-store",
+      });
+      const json = (await res.json()) as SbListingStatusPayload & {
+        ok?: boolean;
+        configured?: boolean;
+        removedCount?: number;
+      };
       if (res.ok && json.ok !== false) {
         setSbStatus((prev) => {
           const serverBySeatKey = json.bySeatKey ?? {};
@@ -581,8 +588,10 @@ export function SockAvailablePanel(props: {
             mergeSbListingBySeatKey(prev.bySeatKey, pins, serverBySeatKey),
             pins,
           );
-          return payloadFromBySeatKey(mergedBySeatKey);
+          const payload = payloadFromBySeatKey(mergedBySeatKey);
+          return { ...payload, removed: [], active: payload.active };
         });
+        setRemovedCount(json.removedCount ?? 0);
         if (json.configured != null) setSbConfigured(Boolean(json.configured));
       }
     } catch {
@@ -724,8 +733,6 @@ export function SockAvailablePanel(props: {
   const handlePushPreviewOpenChange = useCallback((open: boolean) => {
     setPushPreviewOpenCount((c) => (open ? c + 1 : Math.max(0, c - 1)));
   }, []);
-
-  const sbDeletedCount = sbStatus.removed.filter((e) => e.status === "deleted").length;
 
   const newKeySetByKind = useMemo(() => {
     return {
@@ -1972,19 +1979,6 @@ export function SockAvailablePanel(props: {
           <h2 className="text-base font-semibold tracking-tight text-white sm:text-lg">
             Sock available rows
           </h2>
-          {resaleView && sbStatus.removed.length > 0 ? (
-            <p className="mt-1 text-xs text-zinc-500">
-              {sbDeletedCount > 0 ? (
-                <span className="font-medium text-zinc-400">
-                  {sbDeletedCount} listing{sbDeletedCount === 1 ? "" : "s"} deleted on SB after scrape
-                </span>
-              ) : (
-                <span className="text-amber-200/90">
-                  {sbStatus.removed.length} removed from scrape — see below
-                </span>
-              )}
-            </p>
-          ) : null}
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
           <div className="flex items-center gap-2">
@@ -2747,8 +2741,8 @@ export function SockAvailablePanel(props: {
             </div>
           ) : null}
 
-          {resaleView && sbStatus.removed.length > 0 ? (
-            <SbRemovedListingsSection entries={sbStatus.removed} />
+          {resaleView && eventId && removedCount > 0 ? (
+            <SbRemovedListingsSection eventId={eventId} removedCount={removedCount} />
           ) : null}
 
           {shownItems.length === 0 ? (
