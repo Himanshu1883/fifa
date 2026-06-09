@@ -2,6 +2,7 @@
 
 import { fetchBuyingCriteriaAction, setCat3FrontRowAction } from "@/app/actions/buying-criteria";
 import { ModalPortal } from "@/app/modal-portal";
+import { useReportEventOverlay } from "@/app/use-event-overlay";
 import {
   fetchBuyingCriteriaRulesAction,
   replaceBuyingCriteriaRulesAction,
@@ -107,6 +108,8 @@ export function BuyingCriteriaDialog({
   triggerClassName = defaultTriggerClassName,
 }: BuyingCriteriaDialogProps) {
   const [open, setOpen] = useState(false);
+  useReportEventOverlay(open);
+  useReportEventOverlay(open);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);

@@ -1,6 +1,7 @@
 "use client";
 
 import { ModalPortal } from "@/app/modal-portal";
+import { useReportEventOverlay } from "@/app/use-event-overlay";
 import { parseMarkupPercentInput } from "@/lib/markup";
 import { useMarkup } from "@/app/markup-context";
 import { useEffect, useId, useRef, useState } from "react";
@@ -21,6 +22,7 @@ type Props = {
 export function MarkupControls({ className }: Props) {
   const { markupPercent, setMarkupPercent, clearMarkup } = useMarkup();
   const [open, setOpen] = useState(false);
+  useReportEventOverlay(open);
   const [inputValue, setInputValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const titleId = useId();

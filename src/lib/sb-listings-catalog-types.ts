@@ -47,6 +47,8 @@ export type SbCatalogMatch = {
   eventId: number;
   eventName: string;
   sbEventId: string | null;
+  /** SeatsBrokers match display name (resolved server-side in one batch). */
+  sbMatchLabel: string | null;
   eventDate: string | null;
   venue: string | null;
   stage: string | null;
@@ -60,8 +62,13 @@ export type SbCatalogMatch = {
   deletedCount: number;
   failedCount: number;
   pendingCount: number;
-  listings: SbCatalogListing[];
+  /** Omitted on summary API; loaded per match when accordion opens. */
+  listings?: SbCatalogListing[];
 };
+
+export function totalCatalogListingCount(match: SbCatalogMatch): number {
+  return match.activeCount + match.deletedCount + match.failedCount + match.pendingCount;
+}
 
 export function formatMatchDate(isoDate: string | null): string | null {
   if (!isoDate) return null;

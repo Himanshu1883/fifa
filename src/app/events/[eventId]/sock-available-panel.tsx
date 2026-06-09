@@ -1,6 +1,7 @@
 "use client";
 
 import { ModalPortal } from "@/app/modal-portal";
+import { useEventOverlayOpen, useReportEventOverlay } from "@/app/use-event-overlay";
 import { SbRemovedListingsSection } from "@/app/events/[eventId]/sb-removed-listings-section";
 import { SbBulkPushBar, type SbBulkPushQueueState } from "@/app/events/[eventId]/sb-bulk-push-bar";
 import { SbListingRowActions } from "@/app/events/[eventId]/sb-listing-row-actions";
@@ -432,7 +433,7 @@ export function SockAvailablePanel(props: {
   const [removedCount, setRemovedCount] = useState(0);
   const [sbConfigured, setSbConfigured] = useState(false);
   const [sbStatusFilter, setSbStatusFilter] = useState<SbStatusFilter>("all");
-  const [pushPreviewOpenCount, setPushPreviewOpenCount] = useState(0);
+  const overlayOpen = useEventOverlayOpen();
   const [selectedCategoryNums, setSelectedCategoryNums] = useState<Set<SbCategoryNum>>(defaultCategoryNumFilter);
   const [selectedCustomCategoryNames, setSelectedCustomCategoryNames] = useState<Set<string>>(() => new Set());
   const [addedCustomCategoryNames, setAddedCustomCategoryNames] = useState<Set<string>>(() => new Set());
@@ -730,9 +731,8 @@ export function SockAvailablePanel(props: {
 
   const showSbColumn = Boolean(eventId) && resaleView;
 
-  const handlePushPreviewOpenChange = useCallback((open: boolean) => {
-    setPushPreviewOpenCount((c) => (open ? c + 1 : Math.max(0, c - 1)));
-  }, []);
+  useReportEventOverlay(categoryPickerOpen);
+  useReportEventOverlay(Boolean(openGroup));
 
   const newKeySetByKind = useMemo(() => {
     return {
@@ -2951,7 +2951,6 @@ export function SockAvailablePanel(props: {
                                 })}
                                 onStatusChange={handleSbStatusChange}
                                 onDeleted={handleSbDeleted}
-                                onPreviewOpenChange={handlePushPreviewOpenChange}
                               />
                             </td>
                           ) : null}
@@ -3181,7 +3180,6 @@ export function SockAvailablePanel(props: {
                               })}
                               onStatusChange={handleSbStatusChange}
                               onDeleted={handleSbDeleted}
-                              onPreviewOpenChange={handlePushPreviewOpenChange}
                             />
                           </td>
                         ) : null}
@@ -3237,7 +3235,7 @@ export function SockAvailablePanel(props: {
           onCancelDelete={() => void cancelBulkDeleteQueue()}
           ticketTypeId={bulkPushTicketTypeId}
           onTicketTypeChange={(typeId) => void saveBulkPushTicketType(typeId)}
-          hidden={pushPreviewOpenCount > 0}
+          hidden={overlayOpen}
         />
       ) : null}
 

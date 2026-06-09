@@ -2,7 +2,7 @@
 
 import { ModalPortal, stackedModalBackdropClass } from "@/app/modal-portal";
 import type { SbCatalogListing } from "@/lib/sb-listings-catalog-types";
-import { useEffect, useId } from "react";
+import { useEffect, useId, useState } from "react";
 
 const sectionTitle = "text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500";
 
@@ -38,13 +38,17 @@ function MetaRow(props: { label: string; value: string | null | undefined }) {
 
 type Props = {
   open: boolean;
-  listing: SbCatalogListing | null;
+  logId: number | null;
   eventName: string;
+  preview?: SbCatalogListing | null;
   onClose: () => void;
 };
 
-export function SbCatalogListingDetailsModal({ open, listing, eventName, onClose }: Props) {
+export function SbCatalogListingDetailsModal({ open, logId, eventName, preview, onClose }: Props) {
   const titleId = useId();
+  const [listing, setListing] = useState<SbCatalogListing | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -55,13 +59,53 @@ export function SbCatalogListingDetailsModal({ open, listing, eventName, onClose
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open || !listing) return null;
+  useEffect(() => {
+    if (!open || logId == null) {
+      setListing(null);
+      setLoadError(null);
+      setLoading(false);
+      return;
+    }
 
-  const hasResponse = listing.responseBody != null;
-  const responseText = listing.errorMessage
-    ? listing.errorMessage
+    let cancelled = false;
+    setListing(preview ?? null);
+    setLoadError(null);
+    setLoading(true);
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/sb-listings-catalog?logId=${logId}`, { cache: "no-store" });
+        const json = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          listing?: SbCatalogListing;
+        };
+        if (cancelled) return;
+        if (!res.ok || !json.ok || !json.listing) {
+          setLoadError(json.error ?? `Failed to load details (${res.status})`);
+          return;
+        }
+        setListing(json.listing);
+      } catch (e) {
+        if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, logId, preview]);
+
+  if (!open || logId == null) return null;
+
+  const display = listing;
+  const hasResponse = display?.responseBody != null;
+  const responseText = display?.errorMessage
+    ? display.errorMessage
     : hasResponse
-      ? prettyJson(listing.responseBody)
+      ? prettyJson(display?.responseBody)
       : "No response body stored for this push log.";
 
   return (
@@ -84,7 +128,7 @@ export function SbCatalogListingDetailsModal({ open, listing, eventName, onClose
               SB push details
             </h2>
             <p className="mt-1 truncate text-xs text-zinc-500">
-              {eventName} · ticket {listing.sbTicketId ?? "—"} · log #{listing.logId}
+              {eventName} · ticket {display?.sbTicketId ?? preview?.sbTicketId ?? "—"} · log #{logId}
             </p>
           </div>
           <button
@@ -97,24 +141,34 @@ export function SbCatalogListingDetailsModal({ open, listing, eventName, onClose
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4" style={{ scrollbarGutter: "stable" }}>
+          {loading && !display ? (
+            <p className="text-sm text-zinc-400">Loading push log details…</p>
+          ) : loadError && !display ? (
+            <p className="rounded-lg border border-rose-500/30 bg-rose-950/25 px-3 py-2 text-sm text-rose-100">
+              {loadError}
+            </p>
+          ) : !display ? (
+            <p className="text-sm text-zinc-500">No details available.</p>
+          ) : (
+          <>
           <section className="mb-4 rounded-xl border border-white/[0.06] bg-black/25 p-3">
             <p className={sectionTitle}>Push log metadata</p>
             <dl className="mt-2 grid gap-2 sm:grid-cols-2">
-              {listing.pushApiUrl ? (
+              {display.pushApiUrl ? (
                 <div className="sm:col-span-2 rounded-lg border border-white/[0.06] bg-black/35 px-3 py-2">
                   <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                     Push API
                   </dt>
                   <dd className="mt-1 font-mono text-[11px] leading-relaxed text-zinc-200 break-all">
-                    POST {listing.pushApiUrl}
+                    POST {display.pushApiUrl}
                   </dd>
                   <dd className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-[10px] text-zinc-500">
                     <span>
                       Base{" "}
-                      <span className="text-zinc-400">{listing.sbApiBaseUrl ?? "—"}</span>
+                      <span className="text-zinc-400">{display.sbApiBaseUrl ?? "—"}</span>
                     </span>
                     <span>
-                      Endpoint <span className="text-zinc-400">{listing.pushEndpoint}</span>
+                      Endpoint <span className="text-zinc-400">{display.pushEndpoint}</span>
                     </span>
                   </dd>
                 </div>
@@ -126,42 +180,42 @@ export function SbCatalogListingDetailsModal({ open, listing, eventName, onClose
                   />
                 </div>
               )}
-              {listing.deleteApiUrl ? (
+              {display.deleteApiUrl ? (
                 <div className="sm:col-span-2 rounded-lg border border-white/[0.06] bg-black/35 px-3 py-2">
                   <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
                     Delete API
                   </dt>
                   <dd className="mt-1 font-mono text-[11px] leading-relaxed text-zinc-200 break-all">
-                    POST {listing.deleteApiUrl}
+                    POST {display.deleteApiUrl}
                   </dd>
                   <dd className="mt-1.5 font-mono text-[10px] text-zinc-500">
                     Endpoint{" "}
-                    <span className="text-zinc-400">{listing.deleteEndpoint ?? "ticket/delete"}</span>
+                    <span className="text-zinc-400">{display.deleteEndpoint ?? "ticket/delete"}</span>
                   </dd>
                 </div>
               ) : null}
-              <MetaRow label="Match ID" value={listing.matchId} />
-              <MetaRow label="Trigger" value={listing.trigger} />
-              <MetaRow label="HTTP status" value={listing.httpStatus != null ? String(listing.httpStatus) : null} />
-              <MetaRow label="SB ticket ID" value={listing.sbTicketId} />
-              <MetaRow label="Offer index" value={listing.offerIndex != null ? String(listing.offerIndex) : null} />
-              <MetaRow label="Fingerprint" value={listing.listingFingerprint} />
-              <MetaRow label="Pushed at" value={formatWhen(listing.pushedAt)} />
-              <MetaRow label="Status" value={listing.status} />
-              <MetaRow label="Inventory removed" value={formatWhen(listing.inventoryRemovedAt)} />
-              <MetaRow label="SB deleted at" value={formatWhen(listing.sbDeletedAt)} />
+              <MetaRow label="Match ID" value={display.matchId} />
+              <MetaRow label="Trigger" value={display.trigger} />
+              <MetaRow label="HTTP status" value={display.httpStatus != null ? String(display.httpStatus) : null} />
+              <MetaRow label="SB ticket ID" value={display.sbTicketId} />
+              <MetaRow label="Offer index" value={display.offerIndex != null ? String(display.offerIndex) : null} />
+              <MetaRow label="Fingerprint" value={display.listingFingerprint} />
+              <MetaRow label="Pushed at" value={formatWhen(display.pushedAt)} />
+              <MetaRow label="Status" value={display.status} />
+              <MetaRow label="Inventory removed" value={formatWhen(display.inventoryRemovedAt)} />
+              <MetaRow label="SB deleted at" value={formatWhen(display.sbDeletedAt)} />
               <MetaRow
                 label="Delete HTTP"
-                value={listing.sbDeleteHttpStatus != null ? String(listing.sbDeleteHttpStatus) : null}
+                value={display.sbDeleteHttpStatus != null ? String(display.sbDeleteHttpStatus) : null}
               />
-              {listing.sbDeleteError ? (
+              {display.sbDeleteError ? (
                 <div className="sm:col-span-2">
-                  <MetaRow label="Delete error" value={listing.sbDeleteError} />
+                  <MetaRow label="Delete error" value={display.sbDeleteError} />
                 </div>
               ) : null}
-              {listing.errorMessage ? (
+              {display.errorMessage ? (
                 <div className="sm:col-span-2">
-                  <MetaRow label="Error message" value={listing.errorMessage} />
+                  <MetaRow label="Error message" value={display.errorMessage} />
                 </div>
               ) : null}
             </dl>
@@ -170,19 +224,19 @@ export function SbCatalogListingDetailsModal({ open, listing, eventName, onClose
           <div className="space-y-4">
             <div>
               <p className={sectionTitle}>
-                Request — POST {listing.pushEndpoint}
-                {listing.pushApiUrl ? (
+                Request — POST {display.pushEndpoint}
+                {display.pushApiUrl ? (
                   <span className="mt-0.5 block font-mono text-[9px] font-normal normal-case tracking-normal text-zinc-600">
-                    {listing.pushApiUrl}
+                    {display.pushApiUrl}
                   </span>
                 ) : null}
               </p>
-              <pre className={preClass}>{prettyJson(listing.requestFields)}</pre>
+              <pre className={preClass}>{prettyJson(display.requestFields)}</pre>
             </div>
 
             <div>
               <p className={sectionTitle}>Request summary (app)</p>
-              <pre className={preClass}>{prettyJson(listing.requestSummary)}</pre>
+              <pre className={preClass}>{prettyJson(display.requestSummary)}</pre>
             </div>
 
             <div>
@@ -190,6 +244,8 @@ export function SbCatalogListingDetailsModal({ open, listing, eventName, onClose
               <pre className={preClass}>{responseText}</pre>
             </div>
           </div>
+          </>
+          )}
         </div>
       </div>
     </ModalPortal>

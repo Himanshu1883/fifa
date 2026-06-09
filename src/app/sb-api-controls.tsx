@@ -3,6 +3,8 @@
 import { updateSbEventIdAction } from "@/app/actions/event-sb-id";
 import { syncEventDateAction } from "@/app/actions/sync-event-date";
 import { ModalPortal } from "@/app/modal-portal";
+import { useReportEventOverlay } from "@/app/use-event-overlay";
+import { formatMappedSbLabel, useSbMatchLabel } from "@/app/use-sb-match-label";
 import { SbBlockMappingTable } from "@/app/sb-block-mapping-table";
 import { SbListingHistoryModal } from "@/app/sb-listing-history-modal";
 import type { SbBlockMappingRow } from "@/lib/seatsbrokers-catalog";
@@ -268,6 +270,9 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
   const [autoDeleteToggling, setAutoDeleteToggling] = useState(false);
   const [eventAutoPushEligible, setEventAutoPushEligible] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  useReportEventOverlay(open);
+  useReportEventOverlay(historyOpen);
+  useReportEventOverlay(pushConfirmOpen);
   const [ticketTypeId, setTicketTypeId] = useState(DEFAULT_SB_TICKET_TYPE_ID);
   const titleId = useId();
   const pushConfirmTitleId = useId();
@@ -288,6 +293,8 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
   const sbEventIdFromProps = fixedSbId ?? selectedFromList?.sbEventId ?? null;
   const sbEventId = localSbEventId ?? sbEventIdFromProps;
   const hasSbId = Boolean((sbEventId ?? "").trim());
+  const sbMatchLabel = useSbMatchLabel(hasSbId ? sbEventId : null);
+  const sbMatchDisplay = hasSbId ? formatMappedSbLabel(sbEventId!, sbMatchLabel, eventName) : "—";
 
   eventNameRef.current = eventName;
   tournamentIdRef.current = tournamentId;
@@ -1027,7 +1034,7 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
                   </div>
                   <div className="flex justify-between gap-2">
                     <dt className="text-zinc-500">SB match_id</dt>
-                    <dd className="font-mono text-sky-300/90">{hasSbId ? sbEventId : "—"}</dd>
+                    <dd className="text-right text-sky-300/90">{sbMatchDisplay}</dd>
                   </div>
                   {previewMeta?.eventDate ? (
                     <div className="flex justify-between gap-2">
@@ -1598,7 +1605,7 @@ export function SbApiControls({ className, eventId: fixedEventId, eventName: fix
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-zinc-500">SB match_id</dt>
-                <dd className="font-mono text-sky-300/90">{sbEventId}</dd>
+                <dd className="text-right text-sky-300/90">{sbMatchDisplay}</dd>
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-zinc-500">Listings to push</dt>

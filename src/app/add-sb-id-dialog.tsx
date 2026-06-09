@@ -2,6 +2,8 @@
 
 import { updateSbEventIdAction } from "@/app/actions/event-sb-id";
 import { ModalPortal } from "@/app/modal-portal";
+import { useReportEventOverlay } from "@/app/use-event-overlay";
+import { formatMappedSbLabel, useSbMatchLabel } from "@/app/use-sb-match-label";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
@@ -46,6 +48,7 @@ type SbEventsFetchResponse = {
 type MatchDetailResponse = {
   ok?: boolean;
   matchId?: string;
+  matchLabel?: string;
   tickets?: unknown;
   ticketsError?: string;
   ticketsRaw?: string;
@@ -75,11 +78,19 @@ type Props = {
   eventId: number;
   eventName?: string;
   sbEventId: string | null;
+  sbMatchLabel?: string | null;
   className?: string;
   trigger?: "button" | "inline";
 };
 
-export function AddSbIdDialog({ eventId, eventName, sbEventId, className, trigger = "button" }: Props) {
+export function AddSbIdDialog({
+  eventId,
+  eventName,
+  sbEventId,
+  sbMatchLabel: sbMatchLabelProp,
+  className,
+  trigger = "button",
+}: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
@@ -98,6 +109,11 @@ export function AddSbIdDialog({ eventId, eventName, sbEventId, className, trigge
   const detailDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const trimmed = (sbEventId ?? "").trim();
   const hasSbId = Boolean(trimmed);
+  const sbMatchLabel = useSbMatchLabel(hasSbId ? trimmed : null, {
+    initialLabel: sbMatchLabelProp,
+    enabled: sbMatchLabelProp === undefined,
+  });
+  useReportEventOverlay(open);
 
   const loadMatchDetail = useCallback(async (matchId: string) => {
     setDetailLoading(true);
@@ -226,7 +242,7 @@ export function AddSbIdDialog({ eventId, eventName, sbEventId, className, trigge
     detailDebounceRef.current = setTimeout(() => void loadMatchDetail(id), 400);
   };
 
-  const label = hasSbId ? `SB: ${trimmed}` : "Add SB ID";
+  const label = hasSbId ? formatMappedSbLabel(trimmed, sbMatchLabel, eventName) : "Add SB ID";
   const openDialog = () => {
     setFieldErrors({});
     setOpen(true);
@@ -243,7 +259,7 @@ export function AddSbIdDialog({ eventId, eventName, sbEventId, className, trigge
   const buttonTriggerClass =
     className ??
     (hasSbId
-      ? "inline-flex shrink-0 items-center justify-center rounded-md border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_12%,transparent)] px-2 py-1 font-mono text-[11px] font-medium text-[color:color-mix(in_oklab,var(--ticketing-accent)_85%,white_10%)] ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
+      ? "inline-flex max-w-[min(18rem,100%)] shrink-0 items-center justify-center rounded-md border border-[color:color-mix(in_oklab,var(--ticketing-accent)_28%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_12%,transparent)] px-2 py-1 text-[11px] font-medium text-[color:color-mix(in_oklab,var(--ticketing-accent)_85%,white_10%)] ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] transition-colors hover:bg-[color:color-mix(in_oklab,var(--ticketing-accent)_18%,transparent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]"
       : "inline-flex shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] font-medium text-zinc-300 ring-1 ring-white/[0.06] transition-colors hover:bg-white/[0.08] hover:text-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_50%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--ticketing-surface)]");
 
   const matches = sbData?.matches ?? [];
@@ -277,14 +293,14 @@ export function AddSbIdDialog({ eventId, eventName, sbEventId, className, trigge
           type="button"
           onClick={openDialog}
           className={buttonTriggerClass}
-          title={hasSbId ? `SeatsBrokers event id: ${trimmed}` : "Add SeatsBrokers event id"}
+          title={hasSbId ? `Mapped SB event: ${label}` : "Add SeatsBrokers event id"}
           aria-label={
             hasSbId
               ? `Edit SB event id for ${eventName ?? `event ${eventId}`}`
               : `Add SB event id for ${eventName ?? `event ${eventId}`}`
           }
         >
-          {label}
+          <span className="min-w-0 truncate">{label}</span>
         </button>
       )}
 

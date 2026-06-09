@@ -14,6 +14,8 @@ import { MarkupControls } from "@/app/markup-controls";
 import { SbApiControls } from "@/app/sb-api-controls";
 import { EventImportantToggle } from "@/app/event-important-toggle";
 import { EventPrefsEditCell } from "@/app/event-prefs-edit-cell";
+import { SbMatchLabelHydrator } from "@/app/sb-match-label-hydrator";
+import { resolveSbMatchLabels } from "@/lib/sb-match-labels-service";
 import type { HomeImportantFilter, HomeSortKey } from "@/app/home-event-sort-controls";
 import { HomeEventSortControls } from "@/app/home-event-sort-controls";
 import {
@@ -58,6 +60,7 @@ type HomeEventRow = {
   prefId: string;
   resalePrefId: string | null;
   sbEventId: string | null;
+  sbMatchLabel: string | null;
   eventDate: string | null;
   ticketsCount: number;
   lowestPriceCents: string | null;
@@ -486,6 +489,20 @@ export async function HomePage({
     });
 
     const eventIds = rows.map((r) => r.id);
+    const sbIds = [
+      ...new Set(
+        rows.map((r) => r.sbEventId?.trim() ?? "").filter(Boolean),
+      ),
+    ];
+    let sbLabelsById: Record<string, string> = {};
+    if (sbIds.length > 0) {
+      try {
+        sbLabelsById = await resolveSbMatchLabels(sbIds);
+      } catch {
+        /* SB API unavailable — labels fall back to FIFA event name in UI */
+      }
+    }
+
     const [{ sockAgg, sockAggByCategory }, categoryCounts, buyingCriteriaPriceLimitRules] = await Promise.all([
       getHomeSockAggregates(eventIds, sockKind),
       getHomeEventCategoryCounts(eventIds),
@@ -547,9 +564,11 @@ export async function HomePage({
       const counts = countsByEventId.get(e.id);
       const cats = catMinByEvent.get(e.id);
       const limits = limitByEventId.get(e.id);
+      const sbId = e.sbEventId?.trim() ?? "";
       return {
         ...e,
         eventDate: e.eventDate?.toISOString().slice(0, 10) ?? null,
+        sbMatchLabel: sbId ? (sbLabelsById[sbId] ?? null) : null,
         matchNum: parseEventMatchNumber(e.matchLabel, e.name),
         ticketsCount: agg?.ticketsCount ?? 0,
         lowestPriceCents: agg?.lowestPriceCents ?? null,
@@ -712,8 +731,19 @@ export async function HomePage({
   const alertShell =
     "rounded-xl border border-red-400/30 bg-[color:color-mix(in_oklab,red_12%,transparent)] px-4 py-3 text-sm text-red-200 shadow-sm shadow-black/30 ring-1 ring-red-500/15";
 
+  const sbLabelHydration = Object.fromEntries(
+    eventsAll
+      .map((e) => {
+        const id = e.sbEventId?.trim();
+        if (!id) return null;
+        return [id, e.sbMatchLabel] as const;
+      })
+      .filter((entry): entry is readonly [string, string | null] => entry != null),
+  );
+
   return (
     <div className="bg-[color:var(--ticketing-surface)] font-sans text-zinc-100">
+      <SbMatchLabelHydrator labels={sbLabelHydration} />
       <div
         className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_85%_55%_at_50%_-18%,var(--ticketing-accent-dim),transparent_52%),radial-gradient(ellipse_55%_45%_at_100%_0%,color-mix(in_oklab,var(--ticketing-accent)_10%,transparent),transparent_45%),radial-gradient(ellipse_50%_40%_at_0%_100%,rgba(255,255,255,0.03),transparent_50%)]"
         aria-hidden
@@ -1103,6 +1133,7 @@ export async function HomePage({
                                 prefId={event.prefId}
                                 resalePrefId={event.resalePrefId}
                                 sbEventId={event.sbEventId}
+                                sbMatchLabel={event.sbMatchLabel}
                                 eventName={event.name}
                               />
                             </div>
@@ -1328,6 +1359,7 @@ export async function HomePage({
                                     prefId={event.prefId}
                                     resalePrefId={event.resalePrefId}
                                     sbEventId={event.sbEventId}
+                                    sbMatchLabel={event.sbMatchLabel}
                                     eventName={event.name}
                                   />
                                 </td>

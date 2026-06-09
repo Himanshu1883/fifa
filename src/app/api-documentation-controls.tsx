@@ -1,6 +1,7 @@
 "use client";
 
 import { ModalPortal } from "@/app/modal-portal";
+import { useReportEventOverlay } from "@/app/use-event-overlay";
 import { useEffect, useId, useState } from "react";
 
 const btnSecondary =
@@ -50,6 +51,7 @@ function DocTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
 
 export function ApiDocumentationControls({ className, sampleEventId = 1 }: Props) {
   const [open, setOpen] = useState(false);
+  useReportEventOverlay(open);
   const titleId = useId();
   const eventId = sampleEventId > 0 ? sampleEventId : 1;
   const baseUrl =

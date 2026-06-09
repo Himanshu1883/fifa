@@ -104,6 +104,23 @@ export function parseSbEventsResponse(data: unknown): SbMatchOption[] {
   return out.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
 }
 
+/** Human-readable SB match name without the trailing id suffix from {@link parseMatchRow}. */
+export function sbMatchDisplayName(option: SbMatchOption): string {
+  const name = pickString(option.raw, [
+    "match_name",
+    "event_name",
+    "name",
+    "title",
+    "label",
+    "description",
+    "match_title",
+  ]);
+  if (name) return name;
+  const suffix = ` (${option.matchId})`;
+  if (option.label.endsWith(suffix)) return option.label.slice(0, -suffix.length);
+  return option.label;
+}
+
 export type SbTournamentOption = { id: string; name: string };
 
 export function parseSbTournaments(data: unknown): SbTournamentOption[] {

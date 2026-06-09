@@ -6,8 +6,10 @@ import {
   SbCatalogListingDetailsModal,
   SbCatalogListingInfoButton,
 } from "@/app/sb-listings/sb-catalog-listing-details-modal";
+import { formatMappedSbLabel } from "@/app/use-sb-match-label";
+import { SbMatchLabelHydrator } from "@/app/sb-match-label-hydrator";
 import type { SbCatalogListing, SbCatalogMatch } from "@/lib/sb-listings-catalog-types";
-import { formatMatchDate } from "@/lib/sb-listings-catalog-types";
+import { formatMatchDate, totalCatalogListingCount } from "@/lib/sb-listings-catalog-types";
 import type { SbListingUiStatus } from "@/lib/sb-listing-status";
 
 type StatusFilter = "all" | "active" | "deleted" | "other";
@@ -68,6 +70,13 @@ function listingMatchesFilter(listing: SbCatalogListing, filter: StatusFilter): 
   if (filter === "active") return listing.status === "pushed";
   if (filter === "deleted") return listing.status === "deleted";
   return listing.status === "removed" || listing.status === "delete_failed";
+}
+
+function matchMatchesStatusFilter(match: SbCatalogMatch, filter: StatusFilter): boolean {
+  if (filter === "all") return totalCatalogListingCount(match) > 0;
+  if (filter === "active") return match.activeCount > 0;
+  if (filter === "deleted") return match.deletedCount > 0;
+  return match.pendingCount > 0 || match.failedCount > 0;
 }
 
 function matchHaystack(match: SbCatalogMatch): string {
@@ -159,24 +168,72 @@ function scrapePresenceMeta(
   }
 }
 
-export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbConfigured: boolean }) {
-  const { matches: initialMatches, sbConfigured } = props;
-  const [matches, setMatches] = useState(initialMatches);
+export function SbListingsCatalogClient(props: { sbConfigured: boolean }) {
+  const { sbConfigured } = props;
+  const [matches, setMatches] = useState<SbCatalogMatch[]>([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [openIds, setOpenIds] = useState<Set<number>>(() => new Set());
+  const [loadedEventIds, setLoadedEventIds] = useState<Set<number>>(() => new Set());
+  const [loadingEventIds, setLoadingEventIds] = useState<Set<number>>(() => new Set());
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [detailsListing, setDetailsListing] = useState<{
-    listing: SbCatalogListing;
+  const [eventLoadErrors, setEventLoadErrors] = useState<Record<number, string>>({});
+  const [detailsTarget, setDetailsTarget] = useState<{
+    logId: number;
     eventName: string;
+    preview: SbCatalogListing;
   } | null>(null);
 
+  const loadEventListings = useCallback(async (eventId: number, opts?: { force?: boolean }) => {
+    if (loadedEventIds.has(eventId) && !opts?.force) return;
+    setLoadingEventIds((prev) => new Set(prev).add(eventId));
+    setEventLoadErrors((prev) => {
+      const next = { ...prev };
+      delete next[eventId];
+      return next;
+    });
+    try {
+      const repair = opts?.force ? "&repair=1" : "";
+      const res = await fetch(`/api/sb-listings-catalog?eventId=${eventId}${repair}`, {
+        cache: "no-store",
+      });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        match?: SbCatalogMatch;
+      };
+      if (!res.ok || !json.ok || !json.match) {
+        const err = json.error ?? `Failed to load listings (${res.status})`;
+        setEventLoadErrors((prev) => ({ ...prev, [eventId]: err }));
+        return;
+      }
+      const match = json.match;
+      setMatches((prev) =>
+        prev.map((m) => (m.eventId === eventId ? { ...m, ...match, listings: match.listings ?? [] } : m)),
+      );
+      setLoadedEventIds((prev) => new Set(prev).add(eventId));
+    } catch (e) {
+      const err = e instanceof Error ? e.message : String(e);
+      setEventLoadErrors((prev) => ({ ...prev, [eventId]: err }));
+    } finally {
+      setLoadingEventIds((prev) => {
+        const next = new Set(prev);
+        next.delete(eventId);
+        return next;
+      });
+    }
+  }, [loadedEventIds]);
+
   const refreshCatalog = useCallback(async () => {
-    setLoading(true);
+    setRefreshing(true);
     setLoadError(null);
+    setLoadedEventIds(new Set());
+    setEventLoadErrors({});
+    const openSnapshot = new Set(openIds);
     try {
       const res = await fetch("/api/sb-listings-catalog", { cache: "no-store" });
       const json = (await res.json()) as {
@@ -189,16 +246,21 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
         return;
       }
       setMatches(json.matches);
+      for (const id of openSnapshot) {
+        void loadEventListings(id, { force: true });
+      }
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      setRefreshing(false);
+      setSummaryLoading(false);
     }
-  }, []);
+  }, [loadEventListings, openIds]);
 
   useEffect(() => {
     void refreshCatalog();
-  }, [refreshCatalog]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only summary load
+  }, []);
 
   const totals = useMemo(() => {
     let active = 0;
@@ -207,39 +269,57 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
     for (const m of matches) {
       active += m.activeCount;
       deleted += m.deletedCount;
-      listings += m.listings.length;
+      listings += totalCatalogListingCount(m);
     }
     return { matches: matches.length, listings, active, deleted };
   }, [matches]);
 
   const q = search.trim().toLowerCase();
 
+  const sbLabelHydration = useMemo(() => {
+    const out: Record<string, string | null> = {};
+    for (const match of matches) {
+      const id = match.sbEventId?.trim();
+      if (id) out[id] = match.sbMatchLabel ?? null;
+    }
+    return out;
+  }, [matches]);
+
   const filteredMatches = useMemo(() => {
     return matches
       .map((match) => {
-        const listings = match.listings.filter((l) => {
-          if (!listingMatchesFilter(l, statusFilter)) return false;
-          if (!q) return true;
-          return listingHaystack(l).includes(q) || matchHaystack(match).includes(q);
-        });
-        if (listings.length === 0) {
-          if (q && matchHaystack(match).includes(q)) {
-            return { ...match, listings: match.listings.filter((l) => listingMatchesFilter(l, statusFilter)) };
-          }
-          return null;
+        if (!matchMatchesStatusFilter(match, statusFilter)) return null;
+        if (q && matchHaystack(match).includes(q)) {
+          return match;
         }
-        return { ...match, listings };
+        const loaded = match.listings ?? [];
+        if (loaded.length > 0 && q) {
+          const listings = loaded.filter(
+            (l) => listingMatchesFilter(l, statusFilter) && listingHaystack(l).includes(q),
+          );
+          if (listings.length === 0) return null;
+          return { ...match, listings };
+        }
+        if (q) return null;
+        if (loaded.length > 0) {
+          const listings = loaded.filter((l) => listingMatchesFilter(l, statusFilter));
+          if (listings.length === 0) return null;
+          return { ...match, listings };
+        }
+        return match;
       })
-      .filter((m): m is SbCatalogMatch => m != null && m.listings.length > 0);
+      .filter((m): m is SbCatalogMatch => m != null);
   }, [matches, q, statusFilter]);
 
   const toggleMatch = (eventId: number) => {
+    const willOpen = !openIds.has(eventId);
     setOpenIds((prev) => {
       const next = new Set(prev);
       if (next.has(eventId)) next.delete(eventId);
       else next.add(eventId);
       return next;
     });
+    if (willOpen) void loadEventListings(eventId);
   };
 
   const expandAll = () => setOpenIds(new Set(filteredMatches.map((m) => m.eventId)));
@@ -264,7 +344,7 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
       setMatches((prev) =>
         prev.map((m) => {
           if (m.eventId !== match.eventId) return m;
-          const listings = m.listings.map((l) => {
+          const listings = (m.listings ?? []).map((l) => {
             if (l.logId !== listing.logId) return l;
             if (failed) {
               const err = json.error ?? json.entry?.sbDeleteError ?? "Delete failed";
@@ -379,6 +459,7 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
 
   return (
     <div className="min-h-screen bg-[color:var(--ticketing-surface)] font-sans text-zinc-100">
+      <SbMatchLabelHydrator labels={sbLabelHydration} />
       <div
         className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_85%_55%_at_50%_-18%,var(--ticketing-accent-dim),transparent_52%)]"
         aria-hidden
@@ -449,11 +530,11 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
           <div className="flex flex-wrap gap-2 sm:ml-auto">
             <button
               type="button"
-              disabled={loading}
+              disabled={summaryLoading || refreshing}
               onClick={() => void refreshCatalog()}
               className="min-h-9 rounded-lg border border-white/[0.10] bg-black/25 px-3 text-xs font-semibold text-zinc-200 hover:bg-white/[0.05] disabled:opacity-50"
             >
-              {loading ? "Refreshing…" : "Refresh"}
+              {summaryLoading || refreshing ? "Refreshing…" : "Refresh"}
             </button>
             <button
               type="button"
@@ -494,11 +575,11 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
         {filteredMatches.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-white/[0.12] bg-black/20 px-8 py-16 text-center">
             <p className="text-lg font-medium text-zinc-200">
-              {loading ? "Loading listings…" : "No listings match your filters"}
+              {summaryLoading ? "Loading matches…" : "No listings match your filters"}
             </p>
             <p className="mt-2 text-sm text-zinc-500">
-              {loading
-                ? "Reading push logs from the database."
+              {summaryLoading
+                ? "Loading match summaries — open a match to load its listings."
                 : matches.length === 0
                   ? "No successful SB pushes are in the database yet. Push from a match resale panel, then click Refresh."
                   : "Try clearing search or changing the status filter."}
@@ -540,7 +621,9 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
                           <span className="font-medium text-zinc-400">{dateLabel}</span>
                         ) : null}
                         {match.sbEventId ? (
-                          <span className="font-mono text-[10px] text-zinc-600">SB {match.sbEventId}</span>
+                          <span className="text-[10px] text-zinc-500">
+                            {formatMappedSbLabel(match.sbEventId, match.sbMatchLabel, match.eventName)}
+                          </span>
                         ) : null}
                         {match.lastScrapeAt ? (
                           <span
@@ -578,7 +661,7 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
                         </span>
                       ) : null}
                       <span className="rounded-lg border border-white/[0.08] bg-black/30 px-2.5 py-1 font-mono text-xs tabular-nums text-zinc-400">
-                        {match.listings.length}
+                        {totalCatalogListingCount(match)}
                       </span>
                     </div>
                   </button>
@@ -594,6 +677,23 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
                           Open match resale →
                         </Link>
                       </div>
+                      {loadingEventIds.has(match.eventId) ? (
+                        <div className="flex items-center justify-center gap-2 px-4 py-10 text-sm text-zinc-400">
+                          <span className="inline-block size-4 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-200" />
+                          Loading listings…
+                        </div>
+                      ) : eventLoadErrors[match.eventId] ? (
+                        <div className="px-4 py-8 text-center">
+                          <p className="text-sm text-rose-200">{eventLoadErrors[match.eventId]}</p>
+                          <button
+                            type="button"
+                            className="mt-3 min-h-9 rounded-lg border border-white/[0.10] bg-black/25 px-3 text-xs font-semibold text-zinc-200 hover:bg-white/[0.05]"
+                            onClick={() => void loadEventListings(match.eventId, { force: true })}
+                          >
+                            Retry
+                          </button>
+                        </div>
+                      ) : (
                       <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
                         <table className="w-full min-w-[58rem] border-collapse text-left text-sm">
                           <thead>
@@ -614,7 +714,9 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
                             </tr>
                           </thead>
                           <tbody>
-                            {match.listings.map((listing) => {
+                            {(match.listings ?? [])
+                              .filter((l) => listingMatchesFilter(l, statusFilter))
+                              .map((listing) => {
                               const meta = statusMeta(listing.status);
                               const scrapeMeta = scrapePresenceMeta(listing, match.lastScrapeAt);
                               const isDeleted = listing.status === "deleted";
@@ -701,7 +803,11 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
                                   <td className="whitespace-nowrap px-2 py-3 text-center">
                                     <SbCatalogListingInfoButton
                                       onClick={() =>
-                                        setDetailsListing({ listing, eventName: match.eventName })
+                                        setDetailsTarget({
+                                          logId: listing.logId,
+                                          eventName: match.eventName,
+                                          preview: listing,
+                                        })
                                       }
                                     />
                                   </td>
@@ -711,6 +817,7 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
                           </tbody>
                         </table>
                       </div>
+                      )}
                     </div>
                   ) : null}
                 </section>
@@ -721,10 +828,11 @@ export function SbListingsCatalogClient(props: { matches: SbCatalogMatch[]; sbCo
       </div>
 
       <SbCatalogListingDetailsModal
-        open={detailsListing != null}
-        listing={detailsListing?.listing ?? null}
-        eventName={detailsListing?.eventName ?? ""}
-        onClose={() => setDetailsListing(null)}
+        open={detailsTarget != null}
+        logId={detailsTarget?.logId ?? null}
+        eventName={detailsTarget?.eventName ?? ""}
+        preview={detailsTarget?.preview ?? null}
+        onClose={() => setDetailsTarget(null)}
       />
     </div>
   );

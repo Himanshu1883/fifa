@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { sbGetTournament, sbListEvents, sbListTickets } from "@/lib/seatsbrokers-client";
 import { getSeatsBrokersConfig } from "@/lib/seatsbrokers-config";
 import { formatSeatsBrokersFetchError } from "@/lib/seatsbrokers-errors";
+import { resolveSbMatchLabel, resolveSbMatchLabels } from "@/lib/sb-match-labels-service";
 import {
   parseSbEventsResponse,
   parseSbTournaments,
@@ -25,14 +26,38 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const tournamentIdParam = url.searchParams.get("tournamentId")?.trim() ?? "";
   const matchIdParam = url.searchParams.get("matchId")?.trim() ?? "";
+  const matchIdsParam = url.searchParams.get("matchIds")?.trim() ?? "";
+  const labelOnly = url.searchParams.get("labelOnly") === "1";
   const eventNameParam = url.searchParams.get("eventName")?.trim() ?? "";
 
   try {
+    if (matchIdsParam && labelOnly) {
+      const matchIds = matchIdsParam
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean)
+        .slice(0, 500);
+      const labels = await resolveSbMatchLabels(matchIds, { tournamentId: tournamentIdParam || undefined });
+      return NextResponse.json({ ok: true, labels });
+    }
+
+    if (matchIdParam && labelOnly) {
+      const matchLabel = await resolveSbMatchLabel(matchIdParam);
+      return NextResponse.json({
+        ok: true,
+        matchId: matchIdParam,
+        matchLabel,
+      });
+    }
+
     if (matchIdParam) {
       const tickets = await sbListTickets(matchIdParam, config);
+      const matchLabel = await resolveSbMatchLabel(matchIdParam);
+
       return NextResponse.json({
         ok: tickets.ok,
         matchId: matchIdParam,
+        matchLabel,
         tickets: tickets.ok ? tickets.data : null,
         ticketsError: tickets.ok ? undefined : tickets.error,
         ticketsStatus: tickets.status,

@@ -57,15 +57,14 @@ export type SbListingPushLogStatusRow = {
   sbDeleteError?: string | null;
 };
 
-const catalogLogSelectFull = {
+/** Accordion table: skip large JSON blobs (loaded on demand for detail modal). */
+const catalogLogSelectTable = {
   id: true,
   eventId: true,
   matchId: true,
   trigger: true,
   sbTicketId: true,
-  requestFields: true,
   requestSummary: true,
-  responseBody: true,
   httpStatus: true,
   errorMessage: true,
   offerIndex: true,
@@ -75,6 +74,12 @@ const catalogLogSelectFull = {
   sbDeletedAt: true,
   sbDeleteError: true,
   sbDeleteHttpStatus: true,
+} as const;
+
+const catalogLogSelectFull = {
+  ...catalogLogSelectTable,
+  requestFields: true,
+  responseBody: true,
 } as const;
 
 const catalogLogSelectBase = {
@@ -99,9 +104,9 @@ export type SbListingPushLogCatalogRow = {
   matchId: string;
   trigger: string;
   sbTicketId: string | null;
-  requestFields: unknown;
+  requestFields?: unknown;
   requestSummary: unknown;
-  responseBody: unknown;
+  responseBody?: unknown;
   httpStatus: number | null;
   errorMessage: string | null;
   offerIndex: number | null;
@@ -112,6 +117,58 @@ export type SbListingPushLogCatalogRow = {
   sbDeleteError?: string | null;
   sbDeleteHttpStatus?: number | null;
 };
+
+/** Successful push logs for one event (catalog detail / lazy accordion). */
+export async function findSbListingPushLogsForCatalogByEvent(
+  eventId: number,
+): Promise<SbListingPushLogCatalogRow[]> {
+  const where = {
+    eventId,
+    ok: true,
+    ...sbPushLogExcludingClaimWhere(),
+  };
+
+  try {
+    return await prisma.sbListingPushLog.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: catalogLogSelectTable,
+    });
+  } catch (e) {
+    if (!isSbListingRemovalMigrationMissingError(e)) throw e;
+    const { inventoryRemovedAt: _i, sbDeletedAt: _s, sbDeleteError: _e, sbDeleteHttpStatus: _h, ...base } =
+      catalogLogSelectTable;
+    return await prisma.sbListingPushLog.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: base,
+    });
+  }
+}
+
+/** Full push log payload for the catalog detail modal. */
+export async function findSbListingPushLogDetailById(
+  logId: number,
+): Promise<SbListingPushLogCatalogRow | null> {
+  const where = {
+    id: logId,
+    ok: true,
+    ...sbPushLogExcludingClaimWhere(),
+  };
+
+  try {
+    return await prisma.sbListingPushLog.findFirst({
+      where,
+      select: catalogLogSelectFull,
+    });
+  } catch (e) {
+    if (!isSbListingRemovalMigrationMissingError(e)) throw e;
+    return await prisma.sbListingPushLog.findFirst({
+      where,
+      select: catalogLogSelectBase,
+    });
+  }
+}
 
 /** All successful SB push logs (every event) for the global listings catalog. */
 export async function findAllSbListingPushLogsForCatalog(): Promise<SbListingPushLogCatalogRow[]> {

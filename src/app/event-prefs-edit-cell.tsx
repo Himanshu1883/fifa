@@ -2,6 +2,7 @@
 
 import { AddSbIdDialog } from "@/app/add-sb-id-dialog";
 import { ModalPortal } from "@/app/modal-portal";
+import { formatMappedSbLabel, useSbMatchLabel } from "@/app/use-sb-match-label";
 import { useEffect, useId, useState } from "react";
 import { updateEventPrefs } from "@/app/actions/event-prefs";
 
@@ -38,10 +39,18 @@ type Props = {
   prefId: string;
   resalePrefId: string | null;
   sbEventId?: string | null;
+  sbMatchLabel?: string | null;
   eventName?: string;
 };
 
-export function EventPrefsEditCell({ eventId, prefId, resalePrefId, sbEventId, eventName }: Props) {
+export function EventPrefsEditCell({
+  eventId,
+  prefId,
+  resalePrefId,
+  sbEventId,
+  sbMatchLabel: sbMatchLabelProp,
+  eventName,
+}: Props) {
   const [open, setOpen] = useState(false);
   const titleId = useId();
 
@@ -59,7 +68,11 @@ export function EventPrefsEditCell({ eventId, prefId, resalePrefId, sbEventId, e
   const showResale = Boolean(resaleTrim) && resaleTrim !== prefTrim;
   const resaleDisplay = cellText(showResale ? resaleTrim : null);
   const sbTrim = (sbEventId ?? "").trim();
-  const sbDisplay = cellText(sbTrim || null);
+  const sbMatchLabel = useSbMatchLabel(sbTrim || null, {
+    initialLabel: sbMatchLabelProp,
+    enabled: sbMatchLabelProp === undefined,
+  });
+  const sbDisplay = sbTrim ? formatMappedSbLabel(sbTrim, sbMatchLabel, eventName) : "—";
 
   const prefBoxClass =
     "min-w-0 flex-1 rounded-lg border border-white/[0.06] bg-black/20 px-2 py-1.5 font-mono text-[12px] leading-snug text-zinc-200 ring-1 ring-white/[0.03]";
@@ -89,9 +102,9 @@ export function EventPrefsEditCell({ eventId, prefId, resalePrefId, sbEventId, e
           </button>
         </div>
         <div className="flex min-w-0 max-w-[min(14rem,100%)] flex-wrap items-center gap-2">
-          <div className={prefBoxClass} title={sbTrim ? `SeatsBrokers event id: ${sbTrim}` : undefined}>
+          <div className={prefBoxClass} title={sbTrim ? `Mapped SB event: ${sbDisplay}` : undefined}>
             <span className="text-zinc-500">SB:</span>{" "}
-            <span className="break-all text-zinc-100">{sbDisplay}</span>
+            <span className="break-words text-zinc-100">{sbDisplay}</span>
           </div>
           <AddSbIdDialog
             eventId={eventId}
