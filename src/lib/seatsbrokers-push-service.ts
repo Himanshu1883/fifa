@@ -17,7 +17,11 @@ import {
   listingDedupeKeysForMappedTicket,
   listingFingerprintForMappedTicket,
 } from "@/lib/sb-listing-fingerprint";
-import { sbPushLogExcludingClaimWhere } from "@/lib/sb-listing-push-log-query";
+import {
+  isSbListingRemovalMigrationMissingError,
+  sbPushLogActiveOnSbWhere,
+  sbPushLogExcludingClaimWhere,
+} from "@/lib/sb-listing-push-log-query";
 import { computeDateToShip } from "@/lib/sb-date-to-ship";
 import { formatSbMissingFaceValueWarning, loadSbFaceValueLookup } from "@/lib/sb-face-value";
 import { loadSbMatchCatalogForOffers } from "@/lib/seatsbrokers-catalog";
@@ -108,14 +112,27 @@ async function expireStalePushClaims(eventId: number): Promise<void> {
   });
 }
 
+async function findActiveSbPushLogsForDedupe(eventId: number) {
+  const where = { eventId, ok: true, ...sbPushLogExcludingClaimWhere(), ...sbPushLogActiveOnSbWhere() };
+  try {
+    return await prisma.sbListingPushLog.findMany({
+      where,
+      select: { listingFingerprint: true, requestSummary: true },
+    });
+  } catch (e) {
+    if (!isSbListingRemovalMigrationMissingError(e)) throw e;
+    return await prisma.sbListingPushLog.findMany({
+      where: { eventId, ok: true, ...sbPushLogExcludingClaimWhere() },
+      select: { listingFingerprint: true, requestSummary: true },
+    });
+  }
+}
+
 /** All dedupe keys for listings already created on SB for this event. */
 export async function getPushedListingDedupeKeys(eventId: number): Promise<Set<string>> {
   await expireStalePushClaims(eventId);
 
-  const rows = await prisma.sbListingPushLog.findMany({
-    where: { eventId, ok: true, ...sbPushLogExcludingClaimWhere() },
-    select: { listingFingerprint: true, requestSummary: true },
-  });
+  const rows = await findActiveSbPushLogsForDedupe(eventId);
 
   const keys = new Set<string>();
   for (const row of rows) {
@@ -132,32 +149,56 @@ export async function findExistingSbTicketIdForKeys(
   dedupeKeys: string[],
   listingFingerprint?: string | null,
 ): Promise<string | null> {
+  const activeOnSbWhere = sbPushLogActiveOnSbWhere();
+
   if (listingFingerprint) {
-    const direct = await prisma.sbListingPushLog.findFirst({
+    try {
+      const direct = await prisma.sbListingPushLog.findFirst({
+        where: {
+          eventId,
+          listingFingerprint,
+          ok: true,
+          sbTicketId: { not: null },
+          ...sbPushLogExcludingClaimWhere(),
+          ...activeOnSbWhere,
+        },
+        orderBy: { createdAt: "desc" },
+        select: { sbTicketId: true },
+      });
+      if (direct?.sbTicketId) return direct.sbTicketId;
+    } catch (e) {
+      if (!isSbListingRemovalMigrationMissingError(e)) throw e;
+    }
+  }
+
+  let logs: Array<{ sbTicketId: string | null; listingFingerprint: string; requestSummary: unknown }>;
+  try {
+    logs = await prisma.sbListingPushLog.findMany({
       where: {
         eventId,
-        listingFingerprint,
+        ok: true,
+        sbTicketId: { not: null },
+        ...sbPushLogExcludingClaimWhere(),
+        ...activeOnSbWhere,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 300,
+      select: { sbTicketId: true, listingFingerprint: true, requestSummary: true },
+    });
+  } catch (e) {
+    if (!isSbListingRemovalMigrationMissingError(e)) throw e;
+    logs = await prisma.sbListingPushLog.findMany({
+      where: {
+        eventId,
         ok: true,
         sbTicketId: { not: null },
         ...sbPushLogExcludingClaimWhere(),
       },
       orderBy: { createdAt: "desc" },
-      select: { sbTicketId: true },
+      take: 300,
+      select: { sbTicketId: true, listingFingerprint: true, requestSummary: true },
     });
-    if (direct?.sbTicketId) return direct.sbTicketId;
   }
-
-  const logs = await prisma.sbListingPushLog.findMany({
-    where: {
-      eventId,
-      ok: true,
-      sbTicketId: { not: null },
-      ...sbPushLogExcludingClaimWhere(),
-    },
-    orderBy: { createdAt: "desc" },
-    take: 300,
-    select: { sbTicketId: true, listingFingerprint: true, requestSummary: true },
-  });
 
   for (const row of logs) {
     const keys = dedupeKeysFromPushLog(row.listingFingerprint, row.requestSummary);
@@ -176,11 +217,26 @@ export async function resolveAlreadyPushedOnSb(
   const existingKeys = await getPushedListingDedupeKeys(eventId);
   const keyHit = dedupeKeys.some((k) => existingKeys.has(k));
 
-  const fpRow = await prisma.sbListingPushLog.findFirst({
-    where: { eventId, listingFingerprint, ok: true },
-    orderBy: { createdAt: "desc" },
-    select: { id: true },
-  });
+  let fpRow: { id: number } | null = null;
+  try {
+    fpRow = await prisma.sbListingPushLog.findFirst({
+      where: {
+        eventId,
+        listingFingerprint,
+        ok: true,
+        ...sbPushLogActiveOnSbWhere(),
+      },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+  } catch (e) {
+    if (!isSbListingRemovalMigrationMissingError(e)) throw e;
+    fpRow = await prisma.sbListingPushLog.findFirst({
+      where: { eventId, listingFingerprint, ok: true },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+  }
 
   if (!keyHit && !fpRow) {
     return { alreadyPushed: false, existingSbTicketId: null };

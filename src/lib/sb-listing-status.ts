@@ -9,14 +9,14 @@ import { inventoryRowLookupKey, seatSpanFromNumbers } from "@/lib/sb-ticket-id";
 
 function listingEntryPriority(entry: SbListingStatusEntry): number {
   switch (entry.status) {
-    case "deleted":
-      return 0;
-    case "delete_failed":
-      return 1;
-    case "removed":
-      return 2;
     case "pushed":
-      return entry.sbTicketId ? 4 : 3;
+      return entry.sbTicketId ? 0 : 1;
+    case "delete_failed":
+      return 2;
+    case "removed":
+      return 3;
+    case "deleted":
+      return 4;
     default:
       return 5;
   }

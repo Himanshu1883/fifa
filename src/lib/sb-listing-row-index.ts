@@ -65,20 +65,19 @@ export function findSbListingEntryForRow(
   bySeatKey: Record<string, SbListingStatusEntry>,
   meta: SbRowLookupMeta,
 ): SbListingStatusEntry | null {
+  let best: SbListingStatusEntry | null = null;
   for (const k of lookupKeysForSbRow(meta)) {
     const hit = bySeatKey[k];
-    if (hit?.sbTicketId) return hit;
+    if (hit) best = preferListingEntry(best ?? undefined, hit) ?? hit;
   }
+  if (best) return best;
 
-  let best: SbListingStatusEntry | null = null;
   const seenLog = new Set<number>();
-
   for (const entry of Object.values(bySeatKey)) {
     if (seenLog.has(entry.logId)) continue;
     if (!sbListingEntryMatchesRow(entry, meta)) continue;
     seenLog.add(entry.logId);
-    if (entry.sbTicketId) return entry;
-    if (!best || entry.pushedAt > best.pushedAt) best = entry;
+    best = preferListingEntry(best ?? undefined, entry) ?? entry;
   }
 
   return best;
@@ -141,14 +140,14 @@ export function removeSbListingEntryFromIndex(
 
 function listingEntryPriority(entry: SbListingStatusEntry): number {
   switch (entry.status) {
-    case "deleted":
-      return 0;
-    case "delete_failed":
-      return 1;
-    case "removed":
-      return 2;
     case "pushed":
-      return entry.sbTicketId ? 4 : 3;
+      return entry.sbTicketId ? 0 : 1;
+    case "delete_failed":
+      return 2;
+    case "removed":
+      return 3;
+    case "deleted":
+      return 4;
     default:
       return 5;
   }

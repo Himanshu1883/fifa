@@ -45,8 +45,12 @@ export function isSbRowUnpushedForFilter(
   return true;
 }
 
+/** True when the resale row can be pushed (or re-pushed after SB delete). */
 export function isSbRowPushable(entry: Pick<SbListingStatusEntry, "status"> | null | undefined): boolean {
-  return !entry || entry.status !== "pushed";
+  if (!entry) return true;
+  if (entry.status === "pushed") return false;
+  if (entry.status === "removed" || entry.status === "delete_failed") return false;
+  return true;
 }
 
 export function isSbRowDeletable(

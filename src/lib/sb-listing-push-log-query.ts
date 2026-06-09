@@ -15,6 +15,11 @@ export function sbPushLogExcludingClaimWhere() {
   };
 }
 
+/** Push logs that still occupy a live SB listing slot (excludes deleted-on-SB rows). */
+export function sbPushLogActiveOnSbWhere() {
+  return { sbDeletedAt: null };
+}
+
 /** True when DB is missing sb_listing_push_logs removal-tracking columns (migration not applied). */
 export function isSbListingRemovalMigrationMissingError(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e);

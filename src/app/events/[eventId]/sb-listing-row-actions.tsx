@@ -284,39 +284,72 @@ export function SbListingRowActions(props: Props) {
   }
 
   if (displayEntry && displayEntry.status !== "pushed") {
+    const canPushAgain = displayEntry.status === "deleted";
     return (
-      <div className="flex min-w-0 flex-col items-end gap-1.5">
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {statusBadge(displayEntry.status)}
-          {displayEntry.status === "delete_failed" && displayEntry.sbTicketId && sbConfigured ? (
-            <button
-              type="button"
-              className={deleteBtnClass}
-              disabled={deleting}
-              title="Retry delete on SeatsBrokers"
-              aria-label={`Retry delete SB listing ${displayEntry.sbTicketId}`}
-              onClick={() => void handleDelete()}
-            >
-              {deleting ? "Retrying…" : "Retry delete"}
-            </button>
+      <>
+        <div className="flex min-w-0 flex-col items-end gap-1.5">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {statusBadge(displayEntry.status)}
+            {canPushAgain ? (
+              <button
+                type="button"
+                className={pushBtnClass}
+                disabled={!sbConfigured}
+                title={
+                  !sbConfigured
+                    ? "Set SEATS_BROKERS_API_KEY in .env.local"
+                    : "Create a new SeatsBrokers listing for these seats"
+                }
+                onClick={() => setPreviewOpen(true)}
+                aria-label="Push listing to SeatsBrokers again"
+              >
+                Push again
+              </button>
+            ) : null}
+            {displayEntry.status === "delete_failed" && displayEntry.sbTicketId && sbConfigured ? (
+              <button
+                type="button"
+                className={deleteBtnClass}
+                disabled={deleting}
+                title="Retry delete on SeatsBrokers"
+                aria-label={`Retry delete SB listing ${displayEntry.sbTicketId}`}
+                onClick={() => void handleDelete()}
+              >
+                {deleting ? "Retrying…" : "Retry delete"}
+              </button>
+            ) : null}
+          </div>
+          {displayEntry.sbTicketId ? (
+            <code className="max-w-[10rem] truncate font-mono text-[11px] text-zinc-400" title={displayEntry.sbTicketId}>
+              was {displayEntry.sbTicketId}
+            </code>
+          ) : null}
+          {displayEntry.status === "delete_failed" && displayEntry.sbDeleteError ? (
+            <span className="max-w-[12rem] truncate text-[10px] text-rose-300/90" title={displayEntry.sbDeleteError}>
+              {displayEntry.sbDeleteError}
+            </span>
+          ) : null}
+          {deleteError ? (
+            <span className="max-w-[12rem] truncate text-[10px] text-rose-300/90" title={deleteError}>
+              {deleteError}
+            </span>
           ) : null}
         </div>
-        {displayEntry.sbTicketId ? (
-          <code className="max-w-[10rem] truncate font-mono text-[11px] text-zinc-400" title={displayEntry.sbTicketId}>
-            was {displayEntry.sbTicketId}
-          </code>
+
+        {canPushAgain && previewOpen ? (
+          <SbPushPreviewModal
+            open
+            eventId={eventId}
+            seatIds={seatIds}
+            blockName={blockName}
+            rowLabel={rowLabel}
+            seatSpan={seatSpan}
+            omitTicketBlock={omitTicketBlock}
+            onClose={() => setPreviewOpen(false)}
+            onPushed={handlePushed}
+          />
         ) : null}
-        {displayEntry.status === "delete_failed" && displayEntry.sbDeleteError ? (
-          <span className="max-w-[12rem] truncate text-[10px] text-rose-300/90" title={displayEntry.sbDeleteError}>
-            {displayEntry.sbDeleteError}
-          </span>
-        ) : null}
-        {deleteError ? (
-          <span className="max-w-[12rem] truncate text-[10px] text-rose-300/90" title={deleteError}>
-            {deleteError}
-          </span>
-        ) : null}
-      </div>
+      </>
     );
   }
 

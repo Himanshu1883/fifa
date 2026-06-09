@@ -1184,6 +1184,21 @@ export function SockAvailablePanel(props: {
     return keys;
   }, [viewMode, rawSorted, groupedSorted, selectableKeySet]);
 
+  const pushableRowsInOrder = useMemo(() => {
+    const keys: string[] = [];
+    if (viewMode === "raw") {
+      for (const r of rawSorted) {
+        const key = `raw|${r.id}`;
+        if (pushableKeySet.has(key)) keys.push(key);
+      }
+    } else {
+      for (const g of groupedSorted) {
+        if (pushableKeySet.has(g.id)) keys.push(g.id);
+      }
+    }
+    return keys;
+  }, [viewMode, rawSorted, groupedSorted, pushableKeySet]);
+
   useEffect(() => {
     setSelectedPushKeys((prev) => {
       const next = new Set([...prev].filter((k) => selectableKeySet.has(k)));
@@ -1228,21 +1243,42 @@ export function SockAvailablePanel(props: {
     });
   }, []);
 
-  const selectBatchFromKey = useCallback(
-    (key: string, count: number) => {
-      setSelectedPushKeys((prev) => {
-        const index = selectableRowsInOrder.indexOf(key);
-        if (index === -1) return prev;
+  const applyOmitBlockToPushableKeys = useCallback(
+    (keys: Iterable<string>) => {
+      setOmitBlockKeys((prev) => {
         const next = new Set(prev);
-        let added = 0;
-        for (let i = index; i < selectableRowsInOrder.length && added < count; i++) {
-          next.add(selectableRowsInOrder[i]);
-          added++;
+        let changed = false;
+        for (const k of keys) {
+          if (pushableKeySet.has(k) && !next.has(k)) {
+            next.add(k);
+            changed = true;
+          }
         }
-        return next;
+        return changed ? next : prev;
       });
     },
-    [selectableRowsInOrder],
+    [pushableKeySet],
+  );
+
+  const selectBatchFromKey = useCallback(
+    (key: string, count: number, syncOmitBlock = false) => {
+      const index = selectableRowsInOrder.indexOf(key);
+      if (index === -1) return;
+      const keysToAdd: string[] = [];
+      for (let i = index; i < selectableRowsInOrder.length && keysToAdd.length < count; i++) {
+        keysToAdd.push(selectableRowsInOrder[i]!);
+      }
+      if (keysToAdd.length === 0) return;
+
+      setSelectedPushKeys((prev) => {
+        const next = new Set(prev);
+        for (const k of keysToAdd) next.add(k);
+        return next;
+      });
+
+      if (syncOmitBlock) applyOmitBlockToPushableKeys(keysToAdd);
+    },
+    [selectableRowsInOrder, applyOmitBlockToPushableKeys],
   );
 
   const handlePushSelectionChange = useCallback(
@@ -1254,7 +1290,7 @@ export function SockAvailablePanel(props: {
       if (currentlySelected) {
         togglePushSelection(key);
       } else {
-        selectBatchFromKey(key, batchSelectSize);
+        selectBatchFromKey(key, batchSelectSize, true);
       }
     },
     [togglePushSelection, selectBatchFromKey, batchSelectSize],
@@ -1269,6 +1305,34 @@ export function SockAvailablePanel(props: {
     });
   }, []);
 
+  const selectOmitBlockBatchFromKey = useCallback(
+    (key: string, count: number) => {
+      const index = pushableRowsInOrder.indexOf(key);
+      if (index === -1) return;
+      const keysToAdd: string[] = [];
+      for (let i = index; i < pushableRowsInOrder.length && keysToAdd.length < count; i++) {
+        keysToAdd.push(pushableRowsInOrder[i]!);
+      }
+      applyOmitBlockToPushableKeys(keysToAdd);
+    },
+    [pushableRowsInOrder, applyOmitBlockToPushableKeys],
+  );
+
+  const handleOmitBlockChange = useCallback(
+    (key: string, currentlyOmit: boolean) => {
+      if (batchSelectSize === 1) {
+        toggleOmitBlock(key);
+        return;
+      }
+      if (currentlyOmit) {
+        toggleOmitBlock(key);
+      } else {
+        selectOmitBlockBatchFromKey(key, batchSelectSize);
+      }
+    },
+    [batchSelectSize, toggleOmitBlock, selectOmitBlockBatchFromKey],
+  );
+
   const omitBlockSelectedCount = useMemo(() => {
     let n = 0;
     for (const k of selectedPushKeys) {
@@ -1278,23 +1342,27 @@ export function SockAvailablePanel(props: {
   }, [selectedPushKeys, omitBlockKeys, pushableKeySet]);
 
   const selectAllPushable = useCallback(() => {
+    const keys = pushableItems.map((item) => item.key);
     setSelectedPushKeys((prev) => {
       const next = new Set(prev);
-      for (const item of pushableItems) next.add(item.key);
+      for (const key of keys) next.add(key);
       return next;
     });
-  }, [pushableItems]);
+    applyOmitBlockToPushableKeys(keys);
+  }, [pushableItems, applyOmitBlockToPushableKeys]);
 
   const selectFirstNPushable = useCallback(
     (n: number) => {
       const count = Math.min(Math.max(1, Math.floor(n)), pushableItems.length, 999);
+      const keys = pushableItems.slice(0, count).map((item) => item.key);
       setSelectedPushKeys((prev) => {
         const next = new Set(prev);
-        for (let i = 0; i < count; i++) next.add(pushableItems[i]!.key);
+        for (const key of keys) next.add(key);
         return next;
       });
+      applyOmitBlockToPushableKeys(keys);
     },
-    [pushableItems],
+    [pushableItems, applyOmitBlockToPushableKeys],
   );
 
   const toggleBulkSelectCategoryNum = useCallback((num: SbCategoryNum) => {
@@ -1330,8 +1398,9 @@ export function SockAvailablePanel(props: {
         for (const key of keysToAdd) next.add(key);
         return next;
       });
+      applyOmitBlockToPushableKeys(keysToAdd);
     },
-    [pushableItems],
+    [pushableItems, applyOmitBlockToPushableKeys],
   );
 
   const selectAllDeletable = useCallback(() => {
@@ -1357,12 +1426,15 @@ export function SockAvailablePanel(props: {
   }, [selectedBulkCount, selectableCount]);
 
   const toggleSelectAllSelectable = useCallback(() => {
-    setSelectedPushKeys((prev) => {
-      const allSelected = [...selectableKeySet].every((k) => prev.has(k));
-      if (allSelected) return new Set();
-      return new Set(selectableKeySet);
-    });
-  }, [selectableKeySet]);
+    const allSelected = [...selectableKeySet].every((k) => selectedPushKeys.has(k));
+    if (allSelected) {
+      setSelectedPushKeys(new Set());
+      return;
+    }
+    setSelectedPushKeys(new Set(selectableKeySet));
+    const pushableKeys = [...selectableKeySet].filter((k) => pushableKeySet.has(k));
+    applyOmitBlockToPushableKeys(pushableKeys);
+  }, [selectableKeySet, pushableKeySet, selectedPushKeys, applyOmitBlockToPushableKeys]);
 
   const bulkActionRunning = Boolean(bulkPushQueue?.running || bulkDeleteQueue?.running);
 
@@ -2763,7 +2835,7 @@ export function SockAvailablePanel(props: {
                                     className="size-4 rounded border-amber-400/30 bg-black/40 accent-amber-400"
                                     title="Omit ticket_block from SB payload"
                                     aria-label={`Omit ticket_block for ${r.blockName} row ${r.row} seat ${r.seatNumber}`}
-                                    onChange={() => toggleOmitBlock(pushKey)}
+                                    onChange={() => handleOmitBlockChange(pushKey, omitBlock)}
                                   />
                                 ) : (
                                   <span className="text-xs text-zinc-700">—</span>
@@ -2974,7 +3046,7 @@ export function SockAvailablePanel(props: {
                                   className="size-4 rounded border-amber-400/30 bg-black/40 accent-amber-400"
                                   title="Omit ticket_block from SB payload"
                                   aria-label={`Omit ticket_block for ${g.blockName} row ${g.row} seats ${g.seatSpan}`}
-                                  onChange={() => toggleOmitBlock(g.id)}
+                                  onChange={() => handleOmitBlockChange(g.id, omitBlock)}
                                 />
                               ) : (
                                 <span className="text-xs text-zinc-700">—</span>
