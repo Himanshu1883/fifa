@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { ensureAllShopMatches } from "@/lib/shop-match-grid";
 import { maybeNotifyShopDiscord } from "@/lib/shop-discord-notify";
 import {
@@ -28,31 +28,36 @@ function jsonPayload(payload: ShopLatestPayload, extraHeaders?: Record<string, s
   });
 }
 
-function scheduleShopBackgroundWork(payload: ShopLatestPayload): void {
-  void (async () => {
-    try {
-      const metaByMatch = await safeLoadShopEventMetaLookup();
-      const enriched: ShopLatestPayload = {
-        ...payload,
-        events: ensureAllShopMatches(payload.events, metaByMatch),
-      };
-      const previousEvents = await loadShopEventsFromDatabase(metaByMatch);
-      const summary = await maybeNotifyShopDiscord({ payload: enriched, previousEvents });
-      if (summary.mode !== "skipped") {
-        shopLog(
-          `Discord shop ${summary.mode} ${summary.ok ? "OK" : "failed"} (${summary.changedCount} matches)`,
-        );
-      }
-      await syncShopMarketplaceToDatabase(enriched);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      shopLog(`Discord shop notify/sync error: ${msg}`);
+async function runShopBackgroundWork(payload: ShopLatestPayload): Promise<void> {
+  try {
+    const metaByMatch = await safeLoadShopEventMetaLookup();
+    const enriched: ShopLatestPayload = {
+      ...payload,
+      events: ensureAllShopMatches(payload.events, metaByMatch),
+    };
+    const previousEvents = await loadShopEventsFromDatabase(metaByMatch);
+    const summary = await maybeNotifyShopDiscord({ payload: enriched, previousEvents });
+    if (summary.mode !== "skipped") {
+      shopLog(
+        `Discord shop ${summary.mode} ${summary.ok ? "OK" : "failed"} (${summary.changedCount} matches)`,
+      );
     }
-  })();
+    await syncShopMarketplaceToDatabase(enriched);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    shopLog(`Discord shop notify/sync error: ${msg}`);
+  }
+}
+
+/** Cron awaits notify+sync; UI uses `after()` so Vercel keeps the function alive post-response. */
+function scheduleShopBackgroundWork(payload: ShopLatestPayload, isCron: boolean): void | Promise<void> {
+  if (isCron) return runShopBackgroundWork(payload);
+  after(() => runShopBackgroundWork(payload));
 }
 
 export async function GET(request: Request) {
-  if (request.headers.get("x-vercel-cron") === "1") {
+  const isCron = request.headers.get("x-vercel-cron") === "1";
+  if (isCron) {
     shopLog("Cron poll started");
   }
 
@@ -65,7 +70,7 @@ export async function GET(request: Request) {
     };
 
     shopLog("UI updated (API response ready)");
-    scheduleShopBackgroundWork(payload);
+    await scheduleShopBackgroundWork(payload, isCron);
     return jsonPayload(payload);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
@@ -75,7 +80,7 @@ export async function GET(request: Request) {
     const cached = await loadShopLatestPayloadFromDatabase(metaByMatch);
     if (cached) {
       shopLog("Serving cached DB payload (Viva API unavailable)");
-      scheduleShopBackgroundWork(cached);
+      await scheduleShopBackgroundWork(cached, isCron);
       return jsonPayload(cached, { "X-Shop-Data-Source": "cache" });
     }
 
