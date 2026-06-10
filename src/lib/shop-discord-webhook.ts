@@ -1,5 +1,6 @@
 import type { ShopMarketEvent, ShopMarketListing } from "@/lib/shop-marketplace-types";
 import { formatShopPrice } from "@/app/shop/shop-utils";
+import { buildMatchBuyUrl } from "@/lib/shop-buy-urls";
 import { maskWebhookUrl, resolveDiscordShopWebhookUrl } from "@/lib/webhook-settings";
 
 export type ShopDiscordNotifyResult = {
@@ -98,18 +99,39 @@ function deltaEmbedTitle(event: ShopMarketEvent): string {
   return `M${event.matchNum} · ${event.catalogue.eventName}`;
 }
 
+/** Prefer event.buyUrl; fall back to FIFA checkout mapping by match number. */
+export function resolveShopBuyUrl(event: ShopMarketEvent): string | null {
+  const direct = event.buyUrl?.trim();
+  if (direct) return direct;
+  return buildMatchBuyUrl(event.matchNum);
+}
+
+function buildShopDeltaEmbed(event: ShopMarketEvent, description: string): Record<string, unknown> {
+  const buyUrl = resolveShopBuyUrl(event);
+  const descriptionWithBuyLink = buyUrl
+    ? `${description}\n\n[Click here to buy](${buyUrl})`
+    : description;
+  const embed: Record<string, unknown> = {
+    title: deltaEmbedTitle(event),
+    description: descriptionWithBuyLink.slice(0, 3900),
+    color: SHOP_EMBED_COLOR_IN_STOCK,
+    timestamp: new Date().toISOString(),
+  };
+  if (buyUrl) {
+    embed.url = buyUrl;
+  } else {
+    embed.fields = [{ name: "Buy", value: "Checkout link unavailable for this match", inline: false }];
+  }
+  return embed;
+}
+
 export function buildShopDeltaEmbeds(changed: ShopMarketEvent[]): Array<Record<string, unknown>> {
   const embeds: Array<Record<string, unknown>> = [];
   for (const event of changed) {
     if (availableListings(event).length === 0) continue;
     const description = matchSummaryLine(event, false).trim();
     if (!description) continue;
-    embeds.push({
-      title: deltaEmbedTitle(event),
-      description: description.slice(0, 3900),
-      color: SHOP_EMBED_COLOR_IN_STOCK,
-      timestamp: new Date().toISOString(),
-    });
+    embeds.push(buildShopDeltaEmbed(event, description));
     if (embeds.length >= 10) break;
   }
   return embeds;
@@ -127,7 +149,10 @@ export async function sendShopDiscordPayload(input: {
   if (!webhookUrl) return { attempted: false, ok: false, provider };
 
   const body: Record<string, unknown> = { content: input.content, embeds: input.embeds };
-  if (input.components?.length) body.components = input.components;
+  // Discord requires action rows at message level (sibling to embeds), not inside embeds.
+  if (input.components !== undefined && input.components.length > 0) {
+    body.components = input.components;
+  }
   const requestMeta = {
     webhookUrlMasked: maskWebhookUrl(webhookUrl),
     method: "POST" as const,
@@ -213,7 +238,7 @@ export async function sendShopBaselineToDiscord(events: ShopMarketEvent[]): Prom
     const res = await sendShopDiscordPayload({
       content: i === 0 ? "**SHOP** — Initial full listing dump (all matches)" : "",
       embeds: [embed],
-      components: batch.length === 1 ? buildShopBuyNowComponents(batch[0].buyUrl) : undefined,
+      components: batch.length === 1 ? buildShopBuyNowComponents(resolveShopBuyUrl(batch[0])) : undefined,
       mode: "baseline",
       matchCount: events.length,
     });
@@ -233,20 +258,14 @@ export async function sendShopDeltaToDiscord(changed: ShopMarketEvent[]): Promis
   for (let i = 0; i < notifyEvents.length; i++) {
     const event = notifyEvents[i];
     const description = matchSummaryLine(event, false).trim();
+    const buyUrl = resolveShopBuyUrl(event);
     const res = await sendShopDiscordPayload({
       content:
         i === 0
           ? `**SHOP updates** — ${inStockCount} match${inStockCount === 1 ? "" : "es"} changed`
           : "",
-      embeds: [
-        {
-          title: deltaEmbedTitle(event),
-          description: description.slice(0, 3900),
-          color: SHOP_EMBED_COLOR_IN_STOCK,
-          timestamp: new Date().toISOString(),
-        },
-      ],
-      components: buildShopBuyNowComponents(event.buyUrl),
+      embeds: [buildShopDeltaEmbed(event, description)],
+      components: buildShopBuyNowComponents(buyUrl),
       mode: "delta",
       matchCount: 1,
     });

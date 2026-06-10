@@ -5,7 +5,7 @@ import type {
   ShopMarketEvent,
   ShopMarketListing,
 } from "@/lib/shop-marketplace-types";
-import { shopLog } from "@/lib/shop-service";
+import { shopDiscordNotifyFingerprint, shopLog } from "@/lib/shop-service";
 import {
   sendShopBaselineToDiscord,
   sendShopDeltaToDiscord,
@@ -17,7 +17,11 @@ import {
   resolveDiscordShopWebhookUrl,
 } from "@/lib/webhook-settings";
 import { persistShopDiscordNotifyLog } from "@/lib/shop-discord-log";
-import { ensureAllShopMatches } from "@/lib/shop-match-grid";
+import { emptyShopMarketEvent, ensureAllShopMatches } from "@/lib/shop-match-grid";
+import {
+  bootstrapShopDiscordNotifyFingerprints,
+  loadShopDiscordNotifyFingerprints,
+} from "@/lib/shop-sync-service";
 
 export type ShopDiscordNotifySummary = {
   attempted: boolean;
@@ -25,6 +29,8 @@ export type ShopDiscordNotifySummary = {
   mode: "baseline" | "delta" | "skipped";
   results: ShopDiscordNotifyResult[];
   changedCount: number;
+  /** Matches successfully sent — persist fingerprints after DB sync. */
+  notifiedEvents: ShopMarketEvent[];
 };
 
 function listingByCategory(listings: ShopMarketListing[]): Map<string, ShopMarketListing> {
@@ -32,28 +38,55 @@ function listingByCategory(listings: ShopMarketListing[]): Map<string, ShopMarke
 }
 
 /**
- * True when `next` has in-stock listings worth reporting: at least one available
- * category AND (newly available OR any price change on a still-available category).
- * Ignores stock-outs and all-dash matches; no minimum price delta.
+ * True when an available category's price changed vs the previous scrape.
+ * Ignores availability-only flips, stock-outs, and unpriced listings.
  */
-function isMatchNotifyWorthy(prev: ShopMarketEvent | undefined, next: ShopMarketEvent): boolean {
-  const nextAvailable = next.listings.filter((l) => l.available);
-  if (nextAvailable.length === 0) return false;
+function isMatchPriceChanged(prev: ShopMarketEvent | undefined, next: ShopMarketEvent): boolean {
+  const nextPriced = next.listings.filter((l) => l.available && l.price !== null);
+  if (nextPriced.length === 0) return false;
 
   const prevByCategory = listingByCategory(prev?.listings ?? []);
 
-  for (const nextListing of nextAvailable) {
+  for (const nextListing of nextPriced) {
     const prevListing = prevByCategory.get(nextListing.categoryKey);
-    if (!prevListing?.available) return true;
-    if (prevListing.price !== nextListing.price) return true;
+    if (prevListing?.available && prevListing.price !== nextListing.price) {
+      return true;
+    }
   }
 
   return false;
 }
 
-function diffChangedEvents(prev: ShopMarketEvent[], next: ShopMarketEvent[]): ShopMarketEvent[] {
+/**
+ * Delta candidate: priced stock, fingerprint differs from last notify, and either
+ * an available category price changed vs previous scrape or this is a new price state.
+ */
+function shouldSendDelta(
+  prev: ShopMarketEvent | undefined,
+  next: ShopMarketEvent,
+  storedFingerprint: string | null | undefined,
+): boolean {
+  const fingerprint = shopDiscordNotifyFingerprint(next);
+  if (!fingerprint) return false;
+  if (fingerprint === (storedFingerprint ?? null)) return false;
+
+  if (isMatchPriceChanged(prev, next)) return true;
+
+  const prevFingerprint = shopDiscordNotifyFingerprint(
+    prev ?? emptyShopMarketEvent(next.matchNum),
+  );
+  return fingerprint !== prevFingerprint;
+}
+
+function diffDeltaEvents(
+  prev: ShopMarketEvent[],
+  next: ShopMarketEvent[],
+  storedFingerprints: Map<number, string | null>,
+): ShopMarketEvent[] {
   const prevMap = new Map(prev.map((e) => [e.matchNum, e]));
-  return next.filter((e) => isMatchNotifyWorthy(prevMap.get(e.matchNum), e));
+  return next.filter((e) =>
+    shouldSendDelta(prevMap.get(e.matchNum), e, storedFingerprints.get(e.matchNum)),
+  );
 }
 
 async function finishShopNotify(summary: ShopDiscordNotifySummary): Promise<ShopDiscordNotifySummary> {
@@ -67,18 +100,28 @@ export async function maybeNotifyShopDiscord(input: {
 }): Promise<ShopDiscordNotifySummary> {
   const webhook = await resolveDiscordShopWebhookUrl();
   if (!webhook) {
-    return { attempted: false, ok: false, mode: "skipped", results: [], changedCount: 0 };
+    return {
+      attempted: false,
+      ok: false,
+      mode: "skipped",
+      results: [],
+      changedCount: 0,
+      notifiedEvents: [],
+    };
   }
 
   const allMatches = ensureAllShopMatches(input.payload.events);
   const previousAll = ensureAllShopMatches(input.previousEvents);
+  const storedFingerprints = await loadShopDiscordNotifyFingerprints();
   const baselineSent = await isShopDiscordBaselineSent();
 
   if (!baselineSent) {
     shopLog("Discord shop baseline send started");
     const results = await sendShopBaselineToDiscord(allMatches);
     const ok = results.length > 0 && results.every((r) => r.ok);
-    if (ok) await markShopDiscordBaselineSent();
+    if (ok) {
+      await markShopDiscordBaselineSent();
+    }
     shopLog(`Discord shop baseline ${ok ? "OK" : "failed"}`);
     return finishShopNotify({
       attempted: true,
@@ -86,15 +129,25 @@ export async function maybeNotifyShopDiscord(input: {
       mode: "baseline",
       results,
       changedCount: allMatches.length,
+      notifiedEvents: ok ? allMatches : [],
     });
   }
 
-  const changed = diffChangedEvents(previousAll, allMatches);
+  await bootstrapShopDiscordNotifyFingerprints(allMatches, previousAll, storedFingerprints);
+
+  const changed = diffDeltaEvents(previousAll, allMatches, storedFingerprints);
   if (changed.length === 0) {
-    return { attempted: false, ok: true, mode: "skipped", results: [], changedCount: 0 };
+    return {
+      attempted: false,
+      ok: true,
+      mode: "skipped",
+      results: [],
+      changedCount: 0,
+      notifiedEvents: [],
+    };
   }
 
-  shopLog(`Discord shop delta send (${changed.length} matches with stock)`);
+  shopLog(`Discord shop delta send (${changed.length} matches with price changes)`);
   const results = await sendShopDeltaToDiscord(changed);
   const attempted = results.some((r) => r.attempted);
   const ok = results.length > 0 && results.every((r) => r.ok);
@@ -104,5 +157,6 @@ export async function maybeNotifyShopDiscord(input: {
     mode: "delta",
     results,
     changedCount: changed.length,
+    notifiedEvents: ok ? changed : [],
   });
 }

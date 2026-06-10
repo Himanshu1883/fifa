@@ -33,7 +33,12 @@ export function ensureAllShopMatches(
   const map = new Map(events.map((e) => [e.matchNum, e]));
   const out: ShopMarketEvent[] = [];
   for (let m = 1; m <= SHOP_MATCH_COUNT; m++) {
-    out.push(map.get(m) ?? emptyShopMarketEvent(m, metaByMatch?.get(m)));
+    const existing = map.get(m);
+    if (existing) {
+      out.push(existing.buyUrl ? existing : { ...existing, buyUrl: buildMatchBuyUrl(m) });
+    } else {
+      out.push(emptyShopMarketEvent(m, metaByMatch?.get(m)));
+    }
   }
   return out;
 }

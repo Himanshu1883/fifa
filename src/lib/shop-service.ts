@@ -189,6 +189,15 @@ export async function fetchVivaLatestMarketplace(signal?: AbortSignal): Promise<
   return parsed;
 }
 
+/** Available priced categories only — used for Discord delta dedup (matches 1–104). */
+export function shopDiscordNotifyFingerprint(event: ShopMarketEvent): string {
+  const parts = event.listings
+    .filter((l) => l.available && l.price !== null)
+    .sort((a, b) => a.categoryKey.localeCompare(b.categoryKey, undefined, { numeric: true }))
+    .map((l) => `${l.categoryKey}:${l.price}`);
+  return parts.join(";");
+}
+
 /** Stable fingerprint for smart refresh (per event). */
 export function shopEventFingerprint(event: ShopMarketEvent): string {
   const parts = event.listings.map(

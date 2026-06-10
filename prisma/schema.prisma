@@ -556,9 +556,10 @@ model ShopMarketplaceEventRecord {
   averagePrice    Int?      @map("average_price")
   availableCount  Int       @default(0) @map("available_count")
   listingsCount   Int       @default(0) @map("listings_count")
-  rawPayload      Json      @map("raw_payload")
-  scannedAt       DateTime  @map("scanned_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  rawPayload                    Json      @map("raw_payload")
+  scannedAt                     DateTime  @map("scanned_at")
+  lastDiscordNotifyFingerprint  String?   @map("last_discord_notify_fingerprint") @db.Text
+  updatedAt                     DateTime  @updatedAt @map("updated_at")
 
   @@index([linkedEventId])
   @@index([scannedAt])

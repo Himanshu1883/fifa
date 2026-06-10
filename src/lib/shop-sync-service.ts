@@ -6,7 +6,7 @@ import { buildMatchBuyUrl } from "@/lib/shop-buy-urls";
 import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
 import type { ShopEventCatalogueMeta, ShopLatestPayload, ShopMarketEvent } from "@/lib/shop-marketplace-types";
 import { ensureAllShopMatches } from "@/lib/shop-match-grid";
-import { shopLog, type ShopEventMetaLookup } from "@/lib/shop-service";
+import { shopLog, shopDiscordNotifyFingerprint, type ShopEventMetaLookup } from "@/lib/shop-service";
 import type { ShopMarketListing } from "@/lib/shop-marketplace-types";
 
 export async function loadShopEventMetaLookup(): Promise<ShopEventMetaLookup> {
@@ -125,6 +125,71 @@ export async function loadShopEventsFromDatabase(
     shopLog(`DB load previous events failed: ${msg}`);
     return ensureAllShopMatches([], metaByMatch);
   }
+}
+
+export async function loadShopDiscordNotifyFingerprints(): Promise<Map<number, string | null>> {
+  const map = new Map<number, string | null>();
+  try {
+    const rows = await prisma.shopMarketplaceEventRecord.findMany({
+      select: { matchNum: true, lastDiscordNotifyFingerprint: true },
+    });
+    for (const row of rows) {
+      map.set(row.matchNum, row.lastDiscordNotifyFingerprint);
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    shopLog(`DB load notify fingerprints failed: ${msg}`);
+  }
+  return map;
+}
+
+/** Persist last-notified price fingerprints after a successful Discord send. */
+export async function updateShopDiscordNotifyFingerprints(
+  events: ShopMarketEvent[],
+): Promise<void> {
+  if (events.length === 0) return;
+  try {
+    await prisma.$transaction(
+      events.map((event) =>
+        prisma.shopMarketplaceEventRecord.updateMany({
+          where: { matchNum: event.matchNum },
+          data: { lastDiscordNotifyFingerprint: shopDiscordNotifyFingerprint(event) },
+        }),
+      ),
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    shopLog(`DB update notify fingerprints failed: ${msg}`);
+  }
+}
+
+/**
+ * Bootstrap null fingerprints from unchanged scrape state (post-migration)
+ * without sending duplicate deltas.
+ */
+export async function bootstrapShopDiscordNotifyFingerprints(
+  events: ShopMarketEvent[],
+  previousEvents: ShopMarketEvent[],
+  stored: Map<number, string | null>,
+): Promise<void> {
+  const prevMap = new Map(previousEvents.map((e) => [e.matchNum, e]));
+  const toBootstrap: ShopMarketEvent[] = [];
+  for (const event of events) {
+    const storedFp = stored.get(event.matchNum);
+    if (storedFp !== null && storedFp !== undefined) continue;
+    const prev = prevMap.get(event.matchNum);
+    const fp = shopDiscordNotifyFingerprint(event);
+    const prevFp = shopDiscordNotifyFingerprint(prev ?? event);
+    if (fp === prevFp) {
+      toBootstrap.push(event);
+    }
+  }
+  if (toBootstrap.length === 0) return;
+  await updateShopDiscordNotifyFingerprints(toBootstrap);
+  for (const event of toBootstrap) {
+    stored.set(event.matchNum, shopDiscordNotifyFingerprint(event));
+  }
+  shopLog(`Discord notify fingerprints bootstrapped (${toBootstrap.length} matches)`);
 }
 
 export async function syncShopMarketplaceToDatabase(payload: ShopLatestPayload): Promise<void> {

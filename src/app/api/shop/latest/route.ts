@@ -10,6 +10,7 @@ import {
   loadShopEventMetaLookup,
   loadShopEventsFromDatabase,
   syncShopMarketplaceToDatabase,
+  updateShopDiscordNotifyFingerprints,
 } from "@/lib/shop-sync-service";
 
 export const runtime = "nodejs";
@@ -28,22 +29,23 @@ export async function GET() {
 
     shopLog("UI updated (API response ready)");
 
-    void maybeNotifyShopDiscord({ payload, previousEvents })
-      .then((summary) => {
+    void (async () => {
+      try {
+        const summary = await maybeNotifyShopDiscord({ payload, previousEvents });
         if (summary.mode !== "skipped") {
           shopLog(
             `Discord shop ${summary.mode} ${summary.ok ? "OK" : "failed"} (${summary.changedCount} matches)`,
           );
         }
-      })
-      .catch((err) => {
+        await syncShopMarketplaceToDatabase(payload);
+        if (summary.notifiedEvents.length > 0) {
+          await updateShopDiscordNotifyFingerprints(summary.notifiedEvents);
+        }
+      } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        shopLog(`Discord shop notify error: ${msg}`);
-      });
-
-    void syncShopMarketplaceToDatabase(payload).catch(() => {
-      /* logged inside sync */
-    });
+        shopLog(`Discord shop notify/sync error: ${msg}`);
+      }
+    })();
 
     return NextResponse.json(payload, {
       headers: { "Cache-Control": "no-store" },
