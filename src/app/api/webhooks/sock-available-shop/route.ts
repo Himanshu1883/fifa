@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { CataloguePayloadError } from "@/lib/price-range-catalogue";
 import { parseSockAvailableGeojsonBody } from "@/lib/parse-sock-available-geojson-webhook";
 import { computeSockAvailableDiff } from "@/lib/sock-available-diff";
-import { maybeNotifySockAvailableDiff, summarizeNotifyForDiffLog } from "@/lib/notify-sock-available-diff";
+import { summarizeNotifyForDiffLog, type SockAvailableNotifyResponse } from "@/lib/notify-sock-available-diff";
 import { syncSockAvailableForEvent } from "@/lib/sync-sock-available";
 
 export const runtime = "nodejs";
@@ -169,23 +169,12 @@ export async function POST(req: NextRequest) {
 
     const diff = txnResult.diff!;
 
-    const notify = await maybeNotifySockAvailableDiff({
-      prefId,
-      event: {
-        id: txnResult.ev.id,
-        label: txnResult.ev.matchLabel || txnResult.ev.name,
-        name: txnResult.ev.name,
-        matchLabel: txnResult.ev.matchLabel,
-      },
-      diff: {
-        kind: "LAST_MINUTE",
-        newCount: diff.newCount,
-        changedCount: diff.changedCount,
-        priceChangedCount: diff.priceChangedCount,
-        newSeatIds: diff.newSeatIds,
-        sample: diff.sample,
-      },
-    });
+    // Shop (LAST_MINUTE) sock scrapes must not hit the resale Discord webhook.
+    // Marketplace poll alerts use DISCORD_SHOP_WEBHOOK_URL via maybeNotifyShopDiscord.
+    const notify: SockAvailableNotifyResponse = {
+      whatsapp: { attempted: false, ok: false, provider: "ultramsg" },
+      discord: { attempted: false, ok: false, provider: "discord" },
+    };
 
     if (txnResult.diffLogId != null) {
       try {

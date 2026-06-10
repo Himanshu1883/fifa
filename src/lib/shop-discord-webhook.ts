@@ -19,19 +19,25 @@ export type ShopDiscordNotifyResult = {
   response?: { status: number; body: string };
 };
 
-const SHOP_EMBED_COLOR = 0xf97316;
-const SHOP_DELTA_COLOR = 0x8b5cf6;
+const SHOP_EMBED_COLOR_IN_STOCK = 0x3b82f6;
+const SHOP_EMBED_COLOR_NO_STOCK = 0xef4444;
 
-function listingLine(listing: ShopMarketListing, currency: string): string {
-  if (!listing.available) return `${listing.categoryLabel}: —`;
-  if (listing.price !== null) return `${listing.categoryLabel}: **${formatShopPrice(listing.price, currency)}**`;
+function availableListings(event: ShopMarketEvent): ShopMarketListing[] {
+  return event.listings.filter((l) => l.available);
+}
+
+function formatAvailableListingLine(listing: ShopMarketListing, currency: string): string {
+  if (listing.price !== null) {
+    return `${listing.categoryLabel}: **${formatShopPrice(listing.price, currency)}**`;
+  }
   return `${listing.categoryLabel}: Avail`;
 }
 
 function matchSummaryLine(event: ShopMarketEvent, compact: boolean): string {
   const title = event.catalogue.matchLabel ?? `Match ${event.matchNum}`;
   const name = event.catalogue.eventName;
-  const avail = event.listings.filter((l) => l.available);
+  const avail = availableListings(event);
+
   if (compact) {
     if (avail.length === 0) return `**M${event.matchNum}** ${title} — _no stock_`;
     const prices = avail
@@ -40,8 +46,9 @@ function matchSummaryLine(event: ShopMarketEvent, compact: boolean): string {
       .join(" · ");
     return `**M${event.matchNum}** ${name} — ${prices || `${avail.length} avail`}`;
   }
-  const lines = event.listings.map((l) => `  ${listingLine(l, event.currency)}`);
-  return `**M${event.matchNum} · ${title}**\n${name}\n${lines.join("\n")}`;
+
+  const lines = avail.map((l) => formatAvailableListingLine(l, event.currency));
+  return lines.join("\n");
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -53,21 +60,32 @@ function chunk<T>(items: T[], size: number): T[][] {
 export function buildShopBaselineEmbeds(events: ShopMarketEvent[]): Array<Record<string, unknown>> {
   const sorted = [...events].sort((a, b) => a.matchNum - b.matchNum);
   const batches = chunk(sorted, 12);
+  const hasAnyStock = sorted.some((e) => availableListings(e).length > 0);
   return batches.map((batch, idx) => ({
     title: idx === 0 ? "🛒 SHOP — Full marketplace snapshot" : `🛒 SHOP snapshot (cont. ${idx + 1})`,
     description: batch.map((e) => matchSummaryLine(e, true)).join("\n").slice(0, 3900),
-    color: SHOP_EMBED_COLOR,
+    color: hasAnyStock ? SHOP_EMBED_COLOR_IN_STOCK : SHOP_EMBED_COLOR_NO_STOCK,
     footer: { text: `Matches ${batch[0]?.matchNum}–${batch[batch.length - 1]?.matchNum}` },
   }));
 }
 
+function deltaEmbedTitle(event: ShopMarketEvent): string {
+  return `M${event.matchNum} · ${event.catalogue.eventName}`;
+}
+
 export function buildShopDeltaEmbeds(changed: ShopMarketEvent[]): Array<Record<string, unknown>> {
-  return changed.slice(0, 10).map((event) => ({
-    title: `🆕 M${event.matchNum} · ${event.catalogue.eventName}`,
-    description: matchSummaryLine(event, false).slice(0, 3900),
-    color: SHOP_DELTA_COLOR,
-    timestamp: new Date().toISOString(),
-  }));
+  return changed
+    .filter((event) => availableListings(event).length > 0)
+    .slice(0, 10)
+    .map((event) => {
+      const inStock = availableListings(event).length > 0;
+      return {
+        title: deltaEmbedTitle(event),
+        description: matchSummaryLine(event, false).slice(0, 3900),
+        color: inStock ? SHOP_EMBED_COLOR_IN_STOCK : SHOP_EMBED_COLOR_NO_STOCK,
+        timestamp: new Date().toISOString(),
+      };
+    });
 }
 
 export async function sendShopDiscordPayload(input: {
@@ -157,10 +175,14 @@ export async function sendShopBaselineToDiscord(events: ShopMarketEvent[]): Prom
 
 export async function sendShopDeltaToDiscord(changed: ShopMarketEvent[]): Promise<ShopDiscordNotifyResult> {
   const embeds = buildShopDeltaEmbeds(changed);
+  if (embeds.length === 0) {
+    return { attempted: false, ok: true, provider: "discord-shop", mode: "delta", matchCount: 0 };
+  }
+  const inStockCount = changed.filter((e) => availableListings(e).length > 0).length;
   return sendShopDiscordPayload({
-    content: `**SHOP updates** — ${changed.length} match${changed.length === 1 ? "" : "es"} changed`,
+    content: `**SHOP updates** — ${inStockCount} match${inStockCount === 1 ? "" : "es"} changed`,
     embeds,
     mode: "delta",
-    matchCount: changed.length,
+    matchCount: inStockCount,
   });
 }

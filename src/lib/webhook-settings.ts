@@ -68,6 +68,12 @@ export async function getAppWebhookSettings(): Promise<AppWebhookSettingsView> {
   const envShop = envTrim("DISCORD_SHOP_WEBHOOK_URL");
   const resolvedShop = dbShop || envShop || null;
 
+  if (dbResale && dbShop && dbResale === dbShop) {
+    console.warn(
+      "[webhook-settings] app_webhook_settings has the same URL for resale and shop webhooks; update via Webhook logs tab.",
+    );
+  }
+
   return {
     discordNewListingsWebhookUrl: resolvedResale,
     discordNewListingsWebhookUrlMasked: resolvedResale ? maskWebhookUrl(resolvedResale) : null,
@@ -96,6 +102,11 @@ export async function setDiscordNewListingsWebhookUrl(raw: string | null): Promi
   if (next && !isDiscordWebhookUrl(next)) {
     throw new Error("URL must be a Discord webhook (https://discord.com/api/webhooks/…).");
   }
+  const row = await readSettingsRow();
+  const shopUrl = row?.discordShopWebhookUrl?.trim() || envTrim("DISCORD_SHOP_WEBHOOK_URL");
+  if (next && shopUrl && next === shopUrl) {
+    throw new Error("Resale webhook URL must differ from the shop webhook URL.");
+  }
   await prisma.appWebhookSettings.upsert({
     where: { id: SETTINGS_ID },
     create: { id: SETTINGS_ID, discordNewListingsWebhookUrl: next },
@@ -111,6 +122,10 @@ export async function setDiscordShopWebhookUrl(raw: string | null): Promise<AppW
     throw new Error("URL must be a Discord webhook (https://discord.com/api/webhooks/…).");
   }
   const prev = await readSettingsRow();
+  const resaleUrl = prev?.discordNewListingsWebhookUrl?.trim() || envTrim("DISCORD_NEW_LISTINGS_WEBHOOK_URL");
+  if (next && resaleUrl && next === resaleUrl) {
+    throw new Error("Shop webhook URL must differ from the resale webhook URL.");
+  }
   const urlChanged = (prev?.discordShopWebhookUrl?.trim() ?? "") !== (next ?? "");
   await prisma.appWebhookSettings.upsert({
     where: { id: SETTINGS_ID },

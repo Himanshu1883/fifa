@@ -61,12 +61,14 @@ export async function maybeNotifyShopDiscord(input: {
     });
   }
 
-  const changed = diffChangedEvents(previousAll, allMatches);
+  const changed = diffChangedEvents(previousAll, allMatches).filter((e) =>
+    e.listings.some((l) => l.available),
+  );
   if (changed.length === 0) {
     return { attempted: false, ok: true, mode: "skipped", results: [], changedCount: 0 };
   }
 
-  shopLog(`Discord shop delta send (${changed.length} matches)`);
+  shopLog(`Discord shop delta send (${changed.length} matches with stock)`);
   const result = await sendShopDeltaToDiscord(changed);
   return finishShopNotify({
     attempted: result.attempted,

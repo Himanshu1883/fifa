@@ -269,6 +269,8 @@ function MatchRow({ event, zebra, isOpen, categoryFilter, hideFinalFan, onToggle
   const title = catalogue.eventName || `Match ${event.matchNum}`;
   const venue = catalogue.venue?.trim();
   const hasListings = event.listingsCount > 0;
+  const hasStock = event.availableCount > 0;
+  const titleClass = hasStock ? "text-sky-300" : "text-rose-300";
   const highlightCategory: ShopMainCategoryKey | null =
     categoryFilter === "all" ? null : categoryFilter;
 
@@ -313,7 +315,7 @@ function MatchRow({ event, zebra, isOpen, categoryFilter, hideFinalFan, onToggle
         </td>
         <td className={`${tdClass} w-9 font-mono text-[10px] font-semibold text-zinc-500`}>M{event.matchNum}</td>
         <td className={`${tdClass} min-w-[9rem] max-w-[16rem]`}>
-          <p className="truncate text-xs font-semibold leading-tight text-zinc-100">{title}</p>
+          <p className={`truncate text-xs font-semibold leading-tight ${titleClass}`}>{title}</p>
           {venue ? (
             <p className="truncate text-[10px] leading-tight text-zinc-500">{venue}</p>
           ) : !hasListings ? (

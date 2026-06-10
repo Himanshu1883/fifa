@@ -129,7 +129,7 @@ export async function maybeNotifySockAvailableDiff(input: {
   if (!event) return { whatsapp: emptyWhatsApp, discord: emptyDiscord };
 
   const discord =
-    diff.newCount > 0
+    diff.kind === "RESALE" && diff.newCount > 0
       ? await sendDiscordNewListingsMessage({
           eventLabel: event.matchLabel || event.label,
           eventName: event.name,
