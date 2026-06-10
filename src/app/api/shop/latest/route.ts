@@ -10,7 +10,6 @@ import {
   loadShopEventMetaLookup,
   loadShopEventsFromDatabase,
   syncShopMarketplaceToDatabase,
-  updateShopDiscordNotifyFingerprints,
 } from "@/lib/shop-sync-service";
 
 export const runtime = "nodejs";
@@ -38,9 +37,6 @@ export async function GET() {
           );
         }
         await syncShopMarketplaceToDatabase(payload);
-        if (summary.notifiedEvents.length > 0) {
-          await updateShopDiscordNotifyFingerprints(summary.notifiedEvents);
-        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         shopLog(`Discord shop notify/sync error: ${msg}`);

@@ -143,23 +143,60 @@ export async function loadShopDiscordNotifyFingerprints(): Promise<Map<number, s
   return map;
 }
 
+/** Fresh DB read for one match — used right before send to beat concurrent polls. */
+export async function loadShopDiscordNotifyFingerprintForMatch(
+  matchNum: number,
+): Promise<string | null> {
+  try {
+    const row = await prisma.shopMarketplaceEventRecord.findUnique({
+      where: { matchNum },
+      select: { lastDiscordNotifyFingerprint: true },
+    });
+    return row?.lastDiscordNotifyFingerprint ?? null;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    shopLog(`DB load notify fingerprint M${matchNum} failed: ${msg}`);
+    return null;
+  }
+}
+
+/** Persist fingerprint immediately after a successful Discord send (per match). */
+export async function persistShopDiscordNotifyFingerprint(
+  event: ShopMarketEvent,
+  scannedAt?: Date,
+): Promise<boolean> {
+  const fp = shopDiscordNotifyFingerprint(event);
+  if (!fp) return false;
+
+  try {
+    const updated = await prisma.shopMarketplaceEventRecord.updateMany({
+      where: { matchNum: event.matchNum },
+      data: { lastDiscordNotifyFingerprint: fp },
+    });
+    if (updated.count > 0) return true;
+
+    const scanned = scannedAt ?? new Date();
+    const row = eventToDbRow(event, scanned);
+    await prisma.shopMarketplaceEventRecord.upsert({
+      where: { matchNum: event.matchNum },
+      create: { ...row, lastDiscordNotifyFingerprint: fp },
+      update: { lastDiscordNotifyFingerprint: fp },
+    });
+    return true;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    shopLog(`DB persist notify fingerprint M${event.matchNum} failed: ${msg}`);
+    return false;
+  }
+}
+
 /** Persist last-notified price fingerprints after a successful Discord send. */
 export async function updateShopDiscordNotifyFingerprints(
   events: ShopMarketEvent[],
 ): Promise<void> {
   if (events.length === 0) return;
-  try {
-    await prisma.$transaction(
-      events.map((event) =>
-        prisma.shopMarketplaceEventRecord.updateMany({
-          where: { matchNum: event.matchNum },
-          data: { lastDiscordNotifyFingerprint: shopDiscordNotifyFingerprint(event) },
-        }),
-      ),
-    );
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    shopLog(`DB update notify fingerprints failed: ${msg}`);
+  for (const event of events) {
+    await persistShopDiscordNotifyFingerprint(event);
   }
 }
 

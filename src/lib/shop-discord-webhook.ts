@@ -209,9 +209,18 @@ export async function sendShopDiscordPayload(input: {
   }
 }
 
+/** One event per matchNum — last occurrence wins (defensive against duplicate inputs). */
+export function dedupeShopEventsByMatchNum(events: ShopMarketEvent[]): ShopMarketEvent[] {
+  const map = new Map<number, ShopMarketEvent>();
+  for (const event of events) {
+    map.set(event.matchNum, event);
+  }
+  return [...map.values()].sort((a, b) => a.matchNum - b.matchNum);
+}
+
 function deltaEventsForNotify(changed: ShopMarketEvent[]): ShopMarketEvent[] {
   const out: ShopMarketEvent[] = [];
-  for (const event of changed) {
+  for (const event of dedupeShopEventsByMatchNum(changed)) {
     if (availableListings(event).length === 0) continue;
     const description = matchSummaryLine(event, false).trim();
     if (!description) continue;
@@ -219,6 +228,21 @@ function deltaEventsForNotify(changed: ShopMarketEvent[]): ShopMarketEvent[] {
     if (out.length >= 10) break;
   }
   return out;
+}
+
+export async function sendOneShopDeltaToDiscord(
+  event: ShopMarketEvent,
+  options: { batchHeader?: string },
+): Promise<ShopDiscordNotifyResult> {
+  const description = matchSummaryLine(event, false).trim();
+  const buyUrl = resolveShopBuyUrl(event);
+  return sendShopDiscordPayload({
+    content: options.batchHeader ?? "",
+    embeds: [buildShopDeltaEmbed(event, description)],
+    components: buildShopBuyNowComponents(buyUrl),
+    mode: "delta",
+    matchCount: 1,
+  });
 }
 
 /** Baseline may require multiple Discord messages (embed limit). */
@@ -257,17 +281,11 @@ export async function sendShopDeltaToDiscord(changed: ShopMarketEvent[]): Promis
   const results: ShopDiscordNotifyResult[] = [];
   for (let i = 0; i < notifyEvents.length; i++) {
     const event = notifyEvents[i];
-    const description = matchSummaryLine(event, false).trim();
-    const buyUrl = resolveShopBuyUrl(event);
-    const res = await sendShopDiscordPayload({
-      content:
+    const res = await sendOneShopDeltaToDiscord(event, {
+      batchHeader:
         i === 0
           ? `**SHOP updates** — ${inStockCount} match${inStockCount === 1 ? "" : "es"} changed`
           : "",
-      embeds: [buildShopDeltaEmbed(event, description)],
-      components: buildShopBuyNowComponents(buyUrl),
-      mode: "delta",
-      matchCount: 1,
     });
     results.push(res);
     if (!res.ok) break;
