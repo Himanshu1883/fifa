@@ -436,6 +436,7 @@ export function SockAvailablePanel(props: {
   const [removedCount, setRemovedCount] = useState(0);
   const [sbConfigured, setSbConfigured] = useState(false);
   const [sbStatusFilter, setSbStatusFilter] = useState<SbStatusFilter>("all");
+  const [freshFirst, setFreshFirst] = useState(false);
   const overlayOpen = useEventOverlayOpen();
   const [selectedCategoryNums, setSelectedCategoryNums] = useState<Set<SbCategoryNum>>(defaultCategoryNumFilter);
   const [selectedCustomCategoryNames, setSelectedCustomCategoryNames] = useState<Set<string>>(() => new Set());
@@ -908,6 +909,14 @@ export function SockAvailablePanel(props: {
     seat,
   ]);
 
+  const freshListingsCount = useMemo(() => {
+    const freshRows = rows.filter(isRowNew);
+    if (viewMode === "raw") return freshRows.length;
+    return groupSockAvailableRows(freshRows).filter((g) => g.togetherCount >= seatsTogetherMin).length;
+  }, [rows, isRowNew, viewMode, seatsTogetherMin]);
+
+  const hasDiffFreshListings = freshListingsCount > 0;
+
   const sbEntryForSockRow = useCallback(
     (r: SockAvailableDTO): SbListingStatusEntry | null => {
       const key = sbLookupCacheKey({
@@ -983,6 +992,18 @@ export function SockAvailablePanel(props: {
 
   const groupedSorted = useMemo(() => {
     const sorted = [...groupedFiltered].sort((a, b) => {
+      if (freshFirst) {
+        const aFresh = a.seats.some(isRowNew) ? 0 : 1;
+        const bFresh = b.seats.some(isRowNew) ? 0 : 1;
+        if (aFresh !== bFresh) return aFresh - bFresh;
+        if (!hasDiffFreshListings) {
+          const av = Number.isFinite(a.updatedAtMaxMs) ? a.updatedAtMaxMs : Number.NEGATIVE_INFINITY;
+          const bv = Number.isFinite(b.updatedAtMaxMs) ? b.updatedAtMaxMs : Number.NEGATIVE_INFINITY;
+          const updCmp = bv - av;
+          if (updCmp !== 0) return updCmp;
+        }
+      }
+
       let cmp = 0;
       switch (sortKey) {
         case "created_desc": {
@@ -1041,10 +1062,20 @@ export function SockAvailablePanel(props: {
     });
 
     return sorted;
-  }, [groupedFiltered, sortKey]);
+  }, [groupedFiltered, sortKey, freshFirst, isRowNew, hasDiffFreshListings]);
 
   const rawSorted = useMemo(() => {
     const sorted = [...eligibleRows].sort((a, b) => {
+      if (freshFirst) {
+        const aFresh = isRowNew(a) ? 0 : 1;
+        const bFresh = isRowNew(b) ? 0 : 1;
+        if (aFresh !== bFresh) return aFresh - bFresh;
+        if (!hasDiffFreshListings) {
+          const updCmp = Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
+          if (updCmp !== 0) return updCmp;
+        }
+      }
+
       let cmp = 0;
       switch (sortKey) {
         case "created_desc":
@@ -1093,7 +1124,7 @@ export function SockAvailablePanel(props: {
       return a.id - b.id;
     });
     return sorted;
-  }, [eligibleRows, sortKey]);
+  }, [eligibleRows, sortKey, freshFirst, isRowNew, hasDiffFreshListings]);
 
   const groupedLoadedCount = useMemo(() => groupSockAvailableRows(rows).length, [rows]);
   const shownItems = viewMode === "raw" ? rawSorted : groupedSorted;
@@ -2001,6 +2032,7 @@ export function SockAvailablePanel(props: {
       createdTo ||
       sortKey !== "amount_asc" ||
       sbStatusFilter !== "all" ||
+      freshFirst ||
       !isDefaultCategoryFilter(
         selectedCategoryNums,
         selectedCustomCategoryNames,
@@ -2110,7 +2142,7 @@ export function SockAvailablePanel(props: {
           <div
             className="flex flex-wrap items-center rounded-xl bg-black/35 p-1 ring-1 ring-white/[0.10] shadow-inner shadow-black/35"
             role="group"
-            aria-label="Category filter"
+            aria-label="Category and freshness filters"
           >
             {SB_CATEGORY_FILTER_NUMS.map((num) => {
               const active = selectedCategoryNums.has(num);
@@ -2139,6 +2171,34 @@ export function SockAvailablePanel(props: {
               title="Add category"
             >
               +
+            </button>
+            <span className="mx-0.5 h-5 w-px bg-white/10" aria-hidden />
+            <button
+              type="button"
+              onClick={() => setFreshFirst((v) => !v)}
+              className={
+                freshFirst
+                  ? "min-h-8 rounded-lg bg-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] px-2.5 text-xs font-semibold text-zinc-50 ring-1 ring-[color:color-mix(in_oklab,var(--ticketing-accent)_32%,transparent)] outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
+                  : "min-h-8 rounded-lg px-2.5 text-xs font-semibold text-zinc-300 outline-none transition-colors hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ticketing-accent)_45%,transparent)]"
+              }
+              aria-pressed={freshFirst}
+              aria-label={
+                hasDiffFreshListings
+                  ? `Show fresh listings first (${freshListingsCount} new in latest scrape)`
+                  : "Show freshest listings first by last updated"
+              }
+              title={
+                hasDiffFreshListings
+                  ? "Sort listings from the latest scrape to the top"
+                  : "Latest scrape had no new listings — sorts by most recently updated instead"
+              }
+            >
+              Fresh
+              {hasDiffFreshListings ? (
+                <span className="ml-1.5 rounded-full bg-black/35 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-zinc-300">
+                  {freshListingsCount}
+                </span>
+              ) : null}
             </button>
           </div>
           {showSbColumn ? (
@@ -2359,6 +2419,7 @@ export function SockAvailablePanel(props: {
                     setCreatedTo("");
                     setSortKey("amount_asc");
                     setSbStatusFilter("all");
+                    setFreshFirst(false);
                     resetCategoryFilter();
                     setShowMoreFilters(false);
                     setFiltersExpanded(false);
@@ -2770,6 +2831,7 @@ export function SockAvailablePanel(props: {
                           setCreatedTo("");
                           setSortKey("amount_asc");
                           setSbStatusFilter("all");
+                          setFreshFirst(false);
                           resetCategoryFilter();
                           setShowMoreFilters(false);
                           setFiltersExpanded(false);
