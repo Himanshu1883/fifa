@@ -64,6 +64,24 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
+/** Discord link button (style 5) — omitted when buyUrl is null. */
+export function buildShopBuyNowComponents(buyUrl: string | null): Array<Record<string, unknown>> | undefined {
+  if (!buyUrl) return undefined;
+  return [
+    {
+      type: 1,
+      components: [
+        {
+          type: 2,
+          style: 5,
+          label: "Buy Now",
+          url: buyUrl,
+        },
+      ],
+    },
+  ];
+}
+
 export function buildShopBaselineEmbeds(events: ShopMarketEvent[]): Array<Record<string, unknown>> {
   const sorted = [...events].sort((a, b) => a.matchNum - b.matchNum);
   const batches = chunk(sorted, 12);
@@ -100,6 +118,7 @@ export function buildShopDeltaEmbeds(changed: ShopMarketEvent[]): Array<Record<s
 export async function sendShopDiscordPayload(input: {
   content: string;
   embeds: Array<Record<string, unknown>>;
+  components?: Array<Record<string, unknown>>;
   mode: "baseline" | "delta";
   matchCount: number;
 }): Promise<ShopDiscordNotifyResult> {
@@ -107,7 +126,8 @@ export async function sendShopDiscordPayload(input: {
   const webhookUrl = await resolveDiscordShopWebhookUrl();
   if (!webhookUrl) return { attempted: false, ok: false, provider };
 
-  const body = { content: input.content, embeds: input.embeds };
+  const body: Record<string, unknown> = { content: input.content, embeds: input.embeds };
+  if (input.components?.length) body.components = input.components;
   const requestMeta = {
     webhookUrlMasked: maskWebhookUrl(webhookUrl),
     method: "POST" as const,
@@ -164,15 +184,36 @@ export async function sendShopDiscordPayload(input: {
   }
 }
 
+function deltaEventsForNotify(changed: ShopMarketEvent[]): ShopMarketEvent[] {
+  const out: ShopMarketEvent[] = [];
+  for (const event of changed) {
+    if (availableListings(event).length === 0) continue;
+    const description = matchSummaryLine(event, false).trim();
+    if (!description) continue;
+    out.push(event);
+    if (out.length >= 10) break;
+  }
+  return out;
+}
+
 /** Baseline may require multiple Discord messages (embed limit). */
 export async function sendShopBaselineToDiscord(events: ShopMarketEvent[]): Promise<ShopDiscordNotifyResult[]> {
-  const embeds = buildShopBaselineEmbeds(events);
+  const sorted = [...events].sort((a, b) => a.matchNum - b.matchNum);
+  const batches = chunk(sorted, 12);
+  const hasAnyStock = sorted.some((e) => availableListings(e).length > 0);
   const results: ShopDiscordNotifyResult[] = [];
-  for (let i = 0; i < embeds.length; i++) {
-    const batch = embeds[i];
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i];
+    const embed = {
+      title: i === 0 ? "🛒 SHOP — Full marketplace snapshot" : `🛒 SHOP snapshot (cont. ${i + 1})`,
+      description: batch.map((e) => matchSummaryLine(e, true)).join("\n").slice(0, 3900),
+      color: hasAnyStock ? SHOP_EMBED_COLOR_IN_STOCK : SHOP_EMBED_COLOR_NO_STOCK,
+      footer: { text: `Matches ${batch[0]?.matchNum}–${batch[batch.length - 1]?.matchNum}` },
+    };
     const res = await sendShopDiscordPayload({
       content: i === 0 ? "**SHOP** — Initial full listing dump (all matches)" : "",
-      embeds: [batch],
+      embeds: [embed],
+      components: batch.length === 1 ? buildShopBuyNowComponents(batch[0].buyUrl) : undefined,
       mode: "baseline",
       matchCount: events.length,
     });
@@ -182,16 +223,35 @@ export async function sendShopBaselineToDiscord(events: ShopMarketEvent[]): Prom
   return results;
 }
 
-export async function sendShopDeltaToDiscord(changed: ShopMarketEvent[]): Promise<ShopDiscordNotifyResult> {
-  const embeds = buildShopDeltaEmbeds(changed);
-  if (embeds.length === 0) {
-    return { attempted: false, ok: true, provider: "discord-shop", mode: "delta", matchCount: 0 };
+export async function sendShopDeltaToDiscord(changed: ShopMarketEvent[]): Promise<ShopDiscordNotifyResult[]> {
+  const notifyEvents = deltaEventsForNotify(changed);
+  if (notifyEvents.length === 0) {
+    return [{ attempted: false, ok: true, provider: "discord-shop", mode: "delta", matchCount: 0 }];
   }
-  const inStockCount = changed.filter((e) => availableListings(e).length > 0).length;
-  return sendShopDiscordPayload({
-    content: `**SHOP updates** — ${inStockCount} match${inStockCount === 1 ? "" : "es"} changed`,
-    embeds,
-    mode: "delta",
-    matchCount: inStockCount,
-  });
+  const inStockCount = notifyEvents.length;
+  const results: ShopDiscordNotifyResult[] = [];
+  for (let i = 0; i < notifyEvents.length; i++) {
+    const event = notifyEvents[i];
+    const description = matchSummaryLine(event, false).trim();
+    const res = await sendShopDiscordPayload({
+      content:
+        i === 0
+          ? `**SHOP updates** — ${inStockCount} match${inStockCount === 1 ? "" : "es"} changed`
+          : "",
+      embeds: [
+        {
+          title: deltaEmbedTitle(event),
+          description: description.slice(0, 3900),
+          color: SHOP_EMBED_COLOR_IN_STOCK,
+          timestamp: new Date().toISOString(),
+        },
+      ],
+      components: buildShopBuyNowComponents(event.buyUrl),
+      mode: "delta",
+      matchCount: 1,
+    });
+    results.push(res);
+    if (!res.ok) break;
+  }
+  return results;
 }

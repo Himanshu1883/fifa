@@ -2,8 +2,8 @@ import type { SockAvailableKind } from "@/generated/prisma/enums";
 import type { SockAvailableNewListingKey } from "@/lib/sock-available-diff";
 import { maskWebhookUrl, resolveDiscordNewListingsWebhookUrl } from "@/lib/webhook-settings";
 
-/** Left accent bar on resale new-listing embeds (Tailwind green-500). */
-const RESALE_NEW_LISTINGS_EMBED_COLOR = 0x22c55e;
+/** Left accent bar on resale new-listing embeds (Tailwind blue-500). */
+const RESALE_NEW_LISTINGS_EMBED_COLOR = 0x3b82f6;
 
 export type DiscordNotifyResult = {
   attempted: boolean;
@@ -43,7 +43,8 @@ export function amountRawToUsdString(raw: number | null): string {
 
 function formatNewListingLine(item: SockAvailableNewListingKey): string {
   const cat = item.categoryName?.trim() || item.categoryId?.trim() || "—";
-  return `• ${item.blockName} · Row ${item.row} · Seat ${item.seatNumber} · ${cat} · ${amountRawToUsdString(item.amountRaw)}`;
+  const price = amountRawToUsdString(item.amountRaw);
+  return `• **${item.blockName}** · Row ${item.row} · Seat ${item.seatNumber} · ${cat} · **${price}**`;
 }
 
 export function buildDiscordNewListingsPayload(input: {
@@ -55,15 +56,15 @@ export function buildDiscordNewListingsPayload(input: {
   newCount: number;
   newSeatIds: SockAvailableNewListingKey[];
 }): { embeds: Array<Record<string, unknown>> } {
-  const { eventLabel, eventName, eventId, prefId, kind, newCount, newSeatIds } = input;
+  const { eventLabel, eventName, eventId, prefId, newCount, newSeatIds } = input;
   const appBase = envTrim("APP_BASE_URL").replace(/\/+$/, "");
-  const eventPath = `/events/${eventId}?kind=${kind === "LAST_MINUTE" ? "LAST_MINUTE" : "RESALE"}&panel=sock`;
+  const eventPath = `/events/${eventId}?kind=RESALE&panel=sock`;
   const eventUrl = appBase ? `${appBase}${eventPath}` : null;
 
   const maxLines = 45;
   const lines = newSeatIds.slice(0, maxLines).map(formatNewListingLine);
   if (newCount > maxLines) {
-    lines.push(`…and ${(newCount - maxLines).toLocaleString("en-US")} more`);
+    lines.push(`_…and ${(newCount - maxLines).toLocaleString("en-US")} more_`);
   }
 
   let description = lines.join("\n");
@@ -71,24 +72,24 @@ export function buildDiscordNewListingsPayload(input: {
     description = `${description.slice(0, 3900)}…`;
   }
 
-  const isResale = kind !== "LAST_MINUTE";
-  const listingLabel = `${newCount.toLocaleString("en-US")} new ${isResale ? "resale" : "shop"} listing${newCount === 1 ? "" : "s"}`;
-  const title = `🆕 ${listingLabel}`;
+  const matchLine = `${eventLabel} — ${eventName}`;
+  const title = `🆕 ${newCount.toLocaleString("en-US")} new resale listing${newCount === 1 ? "" : "s"}`;
 
   const embed: Record<string, unknown> = {
+    author: {
+      name: `🔵 ${matchLine}`,
+    },
     title,
     description: description || "—",
+    color: RESALE_NEW_LISTINGS_EMBED_COLOR,
     fields: [
-      { name: "Match", value: `${eventLabel} — ${eventName}`, inline: false },
+      { name: "Match", value: matchLine, inline: false },
       { name: "Event", value: `ID ${eventId} · pref ${prefId}`, inline: true },
-      { name: "Source", value: isResale ? "Resale" : "Last minute", inline: true },
+      { name: "Source", value: "🔵 Resale", inline: true },
     ],
+    footer: { text: "🔵 Resale · new listings" },
     timestamp: new Date().toISOString(),
   };
-
-  if (isResale) {
-    embed.color = RESALE_NEW_LISTINGS_EMBED_COLOR;
-  }
 
   if (eventUrl) {
     embed.url = eventUrl;
@@ -109,6 +110,12 @@ export async function sendDiscordNewListingsMessage(input: {
   newSeatIds: SockAvailableNewListingKey[];
 }): Promise<DiscordNotifyResult> {
   const provider = "discord" as const;
+
+  // Resale-only: LAST_MINUTE / shop inventory uses shop-discord-webhook.ts instead.
+  if (input.kind !== "RESALE") {
+    return { attempted: false, ok: false, provider };
+  }
+
   const webhookUrl = await resolveDiscordNewListingsWebhookUrl();
 
   if (!webhookUrl) {

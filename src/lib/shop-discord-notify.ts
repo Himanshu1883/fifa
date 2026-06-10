@@ -95,12 +95,14 @@ export async function maybeNotifyShopDiscord(input: {
   }
 
   shopLog(`Discord shop delta send (${changed.length} matches with stock)`);
-  const result = await sendShopDeltaToDiscord(changed);
+  const results = await sendShopDeltaToDiscord(changed);
+  const attempted = results.some((r) => r.attempted);
+  const ok = results.length > 0 && results.every((r) => r.ok);
   return finishShopNotify({
-    attempted: result.attempted,
-    ok: result.ok,
+    attempted,
+    ok,
     mode: "delta",
-    results: [result],
+    results,
     changedCount: changed.length,
   });
 }
