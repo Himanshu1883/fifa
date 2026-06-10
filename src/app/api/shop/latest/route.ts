@@ -7,6 +7,7 @@ import {
   shopLog,
 } from "@/lib/shop-service";
 import type { ShopLatestPayload } from "@/lib/shop-marketplace-types";
+import { persistShopDiscordBackgroundError } from "@/lib/shop-discord-log";
 import {
   loadShopEventsFromDatabase,
   loadShopLatestPayloadFromDatabase,
@@ -48,13 +49,16 @@ async function runShopBackgroundWork(payload: ShopLatestPayload): Promise<void> 
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     shopLog(`Discord shop notify/sync error: ${msg}`);
+    await persistShopDiscordBackgroundError(`background_work: ${msg}`);
   }
 }
 
-/** Always defer notify+sync via `after()` — never block the HTTP response (cron await hit 60s timeout). */
+/** Defer notify+sync via `after()` so poll responses stay fast; logs prove this runs on Vercel Hobby. */
 function scheduleShopBackgroundWork(payload: ShopLatestPayload): void {
   after(async () => {
+    shopLog("Background notify+sync started");
     await runShopBackgroundWork(payload);
+    shopLog("Background notify+sync finished");
   });
 }
 

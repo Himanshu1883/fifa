@@ -4,6 +4,21 @@ import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { ShopDiscordNotifySummary } from "@/lib/shop-discord-notify";
 
+export async function persistShopDiscordBackgroundError(message: string): Promise<void> {
+  try {
+    await prisma.shopDiscordNotifyLog.create({
+      data: {
+        mode: "error",
+        attempted: false,
+        ok: false,
+        error: message.slice(0, 2000),
+      },
+    });
+  } catch {
+    /* best-effort */
+  }
+}
+
 export async function persistShopDiscordNotifyLog(summary: ShopDiscordNotifySummary): Promise<void> {
   if (summary.skipReason) {
     try {
