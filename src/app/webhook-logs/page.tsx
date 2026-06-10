@@ -21,9 +21,7 @@ export default function WebhookLogsPage() {
               Webhook logs
             </h1>
             <p className="mt-2 max-w-3xl text-pretty text-sm leading-relaxed text-zinc-500">
-              Two Discord channels — <span className="font-medium text-orange-200">SHOP</span> marketplace (current) and{" "}
-              <span className="font-medium text-sky-200">Resale</span> new-listing alerts (legacy). Configure webhooks and
-              inspect full request/response payloads.
+              SHOP and Resale Discord webhooks, plus full request/response payloads per notify.
             </p>
           </div>
           <Link
