@@ -11,34 +11,62 @@ function parseIntParam(raw: string | null, fallback: number, max: number): numbe
   return Math.max(1, Math.min(max, n));
 }
 
-function parseKind(raw: string | null): "RESALE" | "LAST_MINUTE" | null {
+function parseChannel(raw: string | null): "shop" | "resale" {
   const s = String(raw ?? "").trim().toLowerCase();
-  if (!s) return null;
-  if (s === "resale") return "RESALE";
-  if (s === "last_minute" || s === "last-minute" || s === "lastminute" || s === "lm" || s === "shop") {
-    return "LAST_MINUTE";
-  }
-  return null;
+  if (s === "resale") return "resale";
+  return "shop";
 }
 
 /**
- * Global webhook diff log feed (sock_available ingest + outbound notify metadata).
+ * Webhook log feed.
  *
- * Query: limit (default 50, max 100), offset, eventId?, kind?, notifyOnly=1
+ * Query: channel=shop|resale (default shop), limit, offset, notifyOnly=1
+ * Resale: sock_available RESALE scrape diffs + Discord new-listing notify metadata.
+ * Shop: SHOP marketplace Discord baseline/delta sends.
  */
 export async function GET(req: Request) {
   try {
     const sp = new URL(req.url).searchParams;
     const limit = parseIntParam(sp.get("limit"), 50, 100);
     const offset = Math.max(0, Number.parseInt(sp.get("offset") ?? "0", 10) || 0);
-    const eventIdRaw = sp.get("eventId");
-    const eventId = eventIdRaw ? Number.parseInt(eventIdRaw, 10) : null;
-    const kind = parseKind(sp.get("kind"));
+    const channel = parseChannel(sp.get("channel"));
     const notifyOnly = sp.get("notifyOnly") === "1";
 
+    if (channel === "shop") {
+      const where = notifyOnly ? { attempted: true } : {};
+      const [total, rows] = await Promise.all([
+        prisma.shopDiscordNotifyLog.count({ where }),
+        prisma.shopDiscordNotifyLog.findMany({
+          where,
+          orderBy: { createdAt: "desc" },
+          skip: offset,
+          take: limit,
+        }),
+      ]);
+
+      return NextResponse.json({
+        ok: true,
+        channel: "shop",
+        total,
+        offset,
+        limit,
+        rows: rows.map((r) => ({
+          id: r.id,
+          createdAt: r.createdAt.toISOString(),
+          mode: r.mode,
+          matchCount: r.matchCount,
+          changedCount: r.changedCount,
+          attempted: r.attempted,
+          ok: r.ok,
+          status: r.status,
+          error: r.error,
+          notifyRaw: r.notifyRaw,
+        })),
+      });
+    }
+
     const where = {
-      ...(eventId != null && Number.isFinite(eventId) && eventId > 0 ? { eventId } : {}),
-      ...(kind ? { kind } : {}),
+      kind: "RESALE" as const,
       ...(notifyOnly ? { notifyAttempted: true } : {}),
     };
 
@@ -75,6 +103,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       ok: true,
+      channel: "resale",
       total,
       offset,
       limit,
@@ -101,6 +130,16 @@ export async function GET(req: Request) {
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
+    const missing =
+      message.includes("does not exist") ||
+      message.includes("shop_discord_notify_logs") ||
+      message.includes("P2021");
+    if (missing) {
+      return NextResponse.json({
+        ok: false,
+        error: "Run prisma migrate deploy for shop_discord_notify_logs.",
+      }, { status: 503 });
+    }
     return NextResponse.json({ ok: false, error: message.slice(0, 800) }, { status: 500 });
   }
 }

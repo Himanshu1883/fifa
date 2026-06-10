@@ -22,7 +22,7 @@ export function ShopPageClient() {
   const { events, scannedAt, loading, error, isLive, stats, retry, scrollRootRef } = useShopData();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<ShopCategoryFilter>("all");
-  const [availableOnly, setAvailableOnly] = useState(true);
+  const [availableOnly, setAvailableOnly] = useState(false);
   const [hideFinalFan, setHideFinalFan] = useState(true);
   const [openMatchNums, setOpenMatchNums] = useState<Set<number>>(() => new Set());
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -86,6 +86,7 @@ export function ShopPageClient() {
           isLive={isLive}
           eventCount={stats.eventCount}
           availableListings={stats.availableListings}
+          matchesWithStock={stats.matchesWithStock}
           nowMs={nowMs}
         />
         <ShopSearch value={search} onChange={setSearch} />

@@ -311,11 +311,30 @@ model SbPushRulesSettings {
 
 /// Singleton row `id = 1`: outbound notification webhooks (Discord, etc.).
 model AppWebhookSettings {
-  id                           Int      @id
-  discordNewListingsWebhookUrl String?  @map("discord_new_listings_webhook_url") @db.Text
-  updatedAt                    DateTime @updatedAt @map("updated_at")
+  id                           Int       @id
+  discordNewListingsWebhookUrl String?   @map("discord_new_listings_webhook_url") @db.Text
+  discordShopWebhookUrl        String?   @map("discord_shop_webhook_url") @db.Text
+  shopDiscordBaselineSentAt    DateTime? @map("shop_discord_baseline_sent_at")
+  updatedAt                    DateTime  @updatedAt @map("updated_at")
 
   @@map("app_webhook_settings")
+}
+
+/// Outbound Discord notify history for SHOP marketplace polls.
+model ShopDiscordNotifyLog {
+  id           Int      @id @default(autoincrement())
+  createdAt    DateTime @default(now()) @map("created_at")
+  mode         String   @db.Text
+  matchCount   Int      @default(0) @map("match_count")
+  changedCount Int      @default(0) @map("changed_count")
+  attempted    Boolean  @default(false)
+  ok           Boolean  @default(false)
+  status       Int?
+  error        String?  @db.Text
+  notifyRaw    Json?    @map("notify_raw")
+
+  @@index([createdAt])
+  @@map("shop_discord_notify_logs")
 }
 
 /// Events that have had at least one manual SB push — eligible for auto-push when global toggle is on.

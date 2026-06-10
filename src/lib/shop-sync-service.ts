@@ -2,9 +2,12 @@ import "server-only";
 
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { buildMatchBuyUrl } from "@/lib/shop-buy-urls";
 import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
 import type { ShopEventCatalogueMeta, ShopLatestPayload, ShopMarketEvent } from "@/lib/shop-marketplace-types";
+import { ensureAllShopMatches } from "@/lib/shop-match-grid";
 import { shopLog, type ShopEventMetaLookup } from "@/lib/shop-service";
+import type { ShopMarketListing } from "@/lib/shop-marketplace-types";
 
 export async function loadShopEventMetaLookup(): Promise<ShopEventMetaLookup> {
   const rows = await prisma.event.findMany({
@@ -63,6 +66,67 @@ function eventToDbRow(event: ShopMarketEvent, scannedAt: Date) {
 /**
  * Background upsert — must not block UI; failures are logged only.
  */
+function rowToShopMarketEvent(row: {
+  matchNum: number;
+  externalEventId: string;
+  linkedEventId: number | null;
+  eventName: string;
+  stage: string | null;
+  venue: string | null;
+  country: string | null;
+  eventDate: Date | null;
+  marketData: unknown;
+  lowestPrice: number | null;
+  highestPrice: number | null;
+  averagePrice: number | null;
+  availableCount: number;
+  listingsCount: number;
+  rawPayload: unknown;
+}): ShopMarketEvent {
+  const listings = Array.isArray(row.marketData)
+    ? (row.marketData as ShopMarketListing[])
+    : [];
+  return {
+    matchNum: row.matchNum,
+    externalEventId: row.externalEventId,
+    catalogue: {
+      linkedEventId: row.linkedEventId,
+      eventName: row.eventName,
+      matchLabel: `Match ${row.matchNum}`,
+      stage: row.stage,
+      venue: row.venue,
+      country: row.country,
+      eventDate: row.eventDate ? row.eventDate.toISOString() : null,
+      competition: "FIFA World Cup 2026",
+    },
+    listings,
+    availableCount: row.availableCount,
+    listingsCount: row.listingsCount,
+    lowestPrice: row.lowestPrice,
+    highestPrice: row.highestPrice,
+    averagePrice: row.averagePrice,
+    currency: "EUR",
+    buyUrl: buildMatchBuyUrl(row.matchNum),
+    rawPayload: (row.rawPayload ?? {}) as ShopMarketEvent["rawPayload"],
+  };
+}
+
+export async function loadShopEventsFromDatabase(
+  metaByMatch: ShopEventMetaLookup,
+): Promise<ShopMarketEvent[]> {
+  try {
+    const rows = await prisma.shopMarketplaceEventRecord.findMany({
+      orderBy: { matchNum: "asc" },
+    });
+    const events = rows.map(rowToShopMarketEvent);
+    return ensureAllShopMatches(events, metaByMatch);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    shopLog(`DB load previous events failed: ${msg}`);
+    return ensureAllShopMatches([], metaByMatch);
+  }
+}
+
 export async function syncShopMarketplaceToDatabase(payload: ShopLatestPayload): Promise<void> {
   shopLog("DB sync started");
   const scannedAt = new Date(payload.scannedAt);

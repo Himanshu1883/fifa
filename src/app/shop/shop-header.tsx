@@ -1,12 +1,14 @@
 "use client";
 
 import { formatRelativeSeconds } from "@/app/shop/shop-utils";
+import { SHOP_MATCH_COUNT } from "@/lib/shop-match-grid";
 
 type Props = {
   scannedAt: string | null;
   isLive: boolean;
   eventCount: number;
   availableListings: number;
+  matchesWithStock: number;
   nowMs: number;
 };
 
@@ -17,10 +19,19 @@ function formatSyncClock(iso: string | null): string {
   return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-export function ShopHeader({ scannedAt, isLive, eventCount, availableListings, nowMs }: Props) {
+export function ShopHeader({
+  scannedAt,
+  isLive,
+  eventCount,
+  availableListings,
+  matchesWithStock,
+  nowMs,
+}: Props) {
   return (
-    <header className="flex min-h-[3rem] flex-wrap items-center gap-x-3 gap-y-1 border-b border-white/[0.06] px-2 py-1.5 sm:px-3">
-      <h1 className="text-sm font-bold tracking-tight text-white sm:text-base">SHOP</h1>
+    <header className="flex min-h-[3rem] flex-wrap items-center gap-x-3 gap-y-1 border-b border-white/[0.06] bg-gradient-to-r from-orange-950/40 via-transparent to-violet-950/30 px-2 py-1.5 sm:px-3">
+      <h1 className="bg-gradient-to-r from-orange-300 via-amber-200 to-violet-300 bg-clip-text text-sm font-bold tracking-tight text-transparent sm:text-base">
+        SHOP
+      </h1>
       <span className="hidden text-zinc-600 sm:inline" aria-hidden>
         |
       </span>
@@ -40,8 +51,14 @@ export function ShopHeader({ scannedAt, isLive, eventCount, availableListings, n
         <span className="font-medium text-zinc-300">{formatRelativeSeconds(scannedAt, nowMs)}</span>
       </span>
       <span className="ml-auto flex flex-wrap items-center gap-2 text-[11px] tabular-nums">
+        <span className="rounded-md border border-violet-400/20 bg-violet-500/10 px-2 py-0.5 text-zinc-300">
+          <span className="font-semibold text-violet-200">{SHOP_MATCH_COUNT}</span> Matches
+        </span>
+        <span className="rounded-md border border-emerald-400/20 bg-emerald-500/10 px-2 py-0.5 text-zinc-300">
+          <span className="font-semibold text-emerald-300">{matchesWithStock.toLocaleString("en-US")}</span> In stock
+        </span>
         <span className="rounded-md border border-white/[0.08] bg-black/30 px-2 py-0.5 text-zinc-300">
-          <span className="font-semibold text-white">{eventCount.toLocaleString("en-US")}</span> Events
+          <span className="font-semibold text-white">{eventCount.toLocaleString("en-US")}</span> Listed
         </span>
         <span className="rounded-md border border-[color:color-mix(in_oklab,var(--ticketing-accent)_22%,transparent)] bg-[color:color-mix(in_oklab,var(--ticketing-accent)_10%,transparent)] px-2 py-0.5">
           <span className="font-semibold text-[color:var(--ticketing-accent)]">

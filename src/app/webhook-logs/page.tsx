@@ -21,7 +21,9 @@ export default function WebhookLogsPage() {
               Webhook logs
             </h1>
             <p className="mt-2 max-w-3xl text-pretty text-sm leading-relaxed text-zinc-500">
-              Inbound scrape webhooks, outbound Discord new-listing alerts, and full request/response payloads per diff.
+              Two Discord channels — <span className="font-medium text-orange-200">SHOP</span> marketplace (current) and{" "}
+              <span className="font-medium text-sky-200">Resale</span> new-listing alerts (legacy). Configure webhooks and
+              inspect full request/response payloads.
             </p>
           </div>
           <Link

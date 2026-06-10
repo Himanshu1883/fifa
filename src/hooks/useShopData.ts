@@ -131,9 +131,12 @@ export function useShopData() {
 
   const stats = useMemo(() => {
     const available = state.events.reduce((n, e) => n + e.availableCount, 0);
+    const matchesWithStock = state.events.filter((e) => e.availableCount > 0).length;
+    const listed = state.events.filter((e) => e.listingsCount > 0).length;
     return {
-      eventCount: state.events.length,
+      eventCount: listed,
       availableListings: available,
+      matchesWithStock,
     };
   }, [state.events]);
 

@@ -10,6 +10,10 @@ export type AppWebhookSettingsView = {
   discordNewListingsWebhookUrl: string | null;
   discordNewListingsWebhookUrlMasked: string | null;
   discordNewListingsWebhookSource: WebhookUrlSource;
+  discordShopWebhookUrl: string | null;
+  discordShopWebhookUrlMasked: string | null;
+  discordShopWebhookSource: WebhookUrlSource;
+  shopDiscordBaselineSentAt: string | null;
   updatedAt: string | null;
 };
 
@@ -45,29 +49,34 @@ export function maskWebhookUrl(url: string): string {
   }
 }
 
-export async function getAppWebhookSettings(): Promise<AppWebhookSettingsView> {
-  let dbUrl: string | null = null;
-  let updatedAt: string | null = null;
-
+async function readSettingsRow() {
   try {
-    const row = await prisma.appWebhookSettings.findUnique({ where: { id: SETTINGS_ID } });
-    if (row?.discordNewListingsWebhookUrl?.trim()) {
-      dbUrl = row.discordNewListingsWebhookUrl.trim();
-      updatedAt = row.updatedAt.toISOString();
-    }
+    return await prisma.appWebhookSettings.findUnique({ where: { id: SETTINGS_ID } });
   } catch {
-    /* table may not exist before migrate */
+    return null;
   }
+}
 
-  const envUrl = envTrim("DISCORD_NEW_LISTINGS_WEBHOOK_URL");
-  const resolved = dbUrl || envUrl || null;
-  const source: WebhookUrlSource = dbUrl ? "db" : envUrl ? "env" : null;
+export async function getAppWebhookSettings(): Promise<AppWebhookSettingsView> {
+  const row = await readSettingsRow();
+
+  const dbResale = row?.discordNewListingsWebhookUrl?.trim() || null;
+  const envResale = envTrim("DISCORD_NEW_LISTINGS_WEBHOOK_URL");
+  const resolvedResale = dbResale || envResale || null;
+
+  const dbShop = row?.discordShopWebhookUrl?.trim() || null;
+  const envShop = envTrim("DISCORD_SHOP_WEBHOOK_URL");
+  const resolvedShop = dbShop || envShop || null;
 
   return {
-    discordNewListingsWebhookUrl: resolved,
-    discordNewListingsWebhookUrlMasked: resolved ? maskWebhookUrl(resolved) : null,
-    discordNewListingsWebhookSource: source,
-    updatedAt,
+    discordNewListingsWebhookUrl: resolvedResale,
+    discordNewListingsWebhookUrlMasked: resolvedResale ? maskWebhookUrl(resolvedResale) : null,
+    discordNewListingsWebhookSource: dbResale ? "db" : envResale ? "env" : null,
+    discordShopWebhookUrl: resolvedShop,
+    discordShopWebhookUrlMasked: resolvedShop ? maskWebhookUrl(resolvedShop) : null,
+    discordShopWebhookSource: dbShop ? "db" : envShop ? "env" : null,
+    shopDiscordBaselineSentAt: row?.shopDiscordBaselineSentAt?.toISOString() ?? null,
+    updatedAt: row?.updatedAt?.toISOString() ?? null,
   };
 }
 
@@ -76,19 +85,53 @@ export async function resolveDiscordNewListingsWebhookUrl(): Promise<string | nu
   return settings.discordNewListingsWebhookUrl;
 }
 
+export async function resolveDiscordShopWebhookUrl(): Promise<string | null> {
+  const settings = await getAppWebhookSettings();
+  return settings.discordShopWebhookUrl;
+}
+
 export async function setDiscordNewListingsWebhookUrl(raw: string | null): Promise<AppWebhookSettingsView> {
   const trimmed = raw?.trim() ?? "";
   const next = trimmed.length > 0 ? trimmed : null;
-
   if (next && !isDiscordWebhookUrl(next)) {
     throw new Error("URL must be a Discord webhook (https://discord.com/api/webhooks/…).");
   }
-
   await prisma.appWebhookSettings.upsert({
     where: { id: SETTINGS_ID },
     create: { id: SETTINGS_ID, discordNewListingsWebhookUrl: next },
     update: { discordNewListingsWebhookUrl: next },
   });
-
   return getAppWebhookSettings();
+}
+
+export async function setDiscordShopWebhookUrl(raw: string | null): Promise<AppWebhookSettingsView> {
+  const trimmed = raw?.trim() ?? "";
+  const next = trimmed.length > 0 ? trimmed : null;
+  if (next && !isDiscordWebhookUrl(next)) {
+    throw new Error("URL must be a Discord webhook (https://discord.com/api/webhooks/…).");
+  }
+  const prev = await readSettingsRow();
+  const urlChanged = (prev?.discordShopWebhookUrl?.trim() ?? "") !== (next ?? "");
+  await prisma.appWebhookSettings.upsert({
+    where: { id: SETTINGS_ID },
+    create: { id: SETTINGS_ID, discordShopWebhookUrl: next, shopDiscordBaselineSentAt: null },
+    update: {
+      discordShopWebhookUrl: next,
+      ...(urlChanged ? { shopDiscordBaselineSentAt: null } : {}),
+    },
+  });
+  return getAppWebhookSettings();
+}
+
+export async function markShopDiscordBaselineSent(): Promise<void> {
+  await prisma.appWebhookSettings.upsert({
+    where: { id: SETTINGS_ID },
+    create: { id: SETTINGS_ID, shopDiscordBaselineSentAt: new Date() },
+    update: { shopDiscordBaselineSentAt: new Date() },
+  });
+}
+
+export async function isShopDiscordBaselineSent(): Promise<boolean> {
+  const row = await readSettingsRow();
+  return row?.shopDiscordBaselineSentAt != null;
 }

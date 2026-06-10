@@ -15,9 +15,34 @@ import {
 import type { ShopMarketEvent, ShopMarketListing } from "@/lib/shop-marketplace-types";
 
 const buyBtnClass =
-  "inline-flex h-6 shrink-0 items-center justify-center rounded border border-[color:color-mix(in_oklab,var(--ticketing-accent)_55%,transparent)] bg-[color:var(--ticketing-accent)] px-2 text-[9px] font-bold uppercase tracking-wide text-zinc-950 hover:brightness-110 active:scale-[0.98]";
+  "inline-flex h-6 shrink-0 items-center justify-center rounded border border-orange-400/40 bg-gradient-to-r from-orange-400 to-amber-300 px-2 text-[9px] font-bold uppercase tracking-wide text-zinc-950 shadow-sm shadow-orange-900/30 hover:brightness-110 active:scale-[0.98]";
 
-const priceClass = "font-bold tabular-nums text-[color:var(--ticketing-accent)]";
+const priceClass = "font-bold tabular-nums text-amber-300";
+
+const MATCH_HUES = [
+  "from-rose-500/25 to-orange-500/10",
+  "from-orange-500/25 to-amber-500/10",
+  "from-amber-500/25 to-lime-500/10",
+  "from-lime-500/25 to-emerald-500/10",
+  "from-emerald-500/25 to-teal-500/10",
+  "from-teal-500/25 to-cyan-500/10",
+  "from-cyan-500/25 to-sky-500/10",
+  "from-sky-500/25 to-indigo-500/10",
+  "from-indigo-500/25 to-violet-500/10",
+  "from-violet-500/25 to-fuchsia-500/10",
+] as const;
+
+function matchHueClass(matchNum: number): string {
+  return MATCH_HUES[(matchNum - 1) % MATCH_HUES.length];
+}
+
+function matchBadgeClass(matchNum: number, hasStock: boolean): string {
+  const hue = matchHueClass(matchNum);
+  if (hasStock) {
+    return `bg-gradient-to-br ${hue} border border-white/15 text-white shadow-inner shadow-black/20`;
+  }
+  return "border border-white/[0.06] bg-zinc-900/60 text-zinc-500";
+}
 const thClass = "px-1.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-zinc-500";
 const tdClass = "px-1.5 py-0 align-middle";
 
@@ -268,6 +293,8 @@ function MatchRow({ event, zebra, isOpen, categoryFilter, hideFinalFan, onToggle
   const { catalogue } = event;
   const title = catalogue.eventName || `Match ${event.matchNum}`;
   const venue = catalogue.venue?.trim();
+  const hasStock = event.availableCount > 0;
+  const hasListings = event.listingsCount > 0;
   const highlightCategory: ShopMainCategoryKey | null =
     categoryFilter === "all" ? null : categoryFilter;
 
@@ -292,9 +319,9 @@ function MatchRow({ event, zebra, isOpen, categoryFilter, hideFinalFan, onToggle
   return (
     <>
       <tr
-        className={`h-12 cursor-pointer border-t border-white/[0.05] transition-colors hover:bg-white/[0.03] ${
-          zebra ? "bg-white/[0.02]" : ""
-        }`}
+        className={`h-12 cursor-pointer border-t border-white/[0.05] transition-colors hover:bg-white/[0.04] ${
+          isOpen ? `bg-gradient-to-r ${matchHueClass(event.matchNum)}` : zebra ? "bg-white/[0.02]" : ""
+        } ${hasStock ? "ring-1 ring-inset ring-emerald-500/10" : ""}`}
         onClick={handleToggle}
       >
         <td className={`${tdClass} w-7`}>
@@ -310,12 +337,30 @@ function MatchRow({ event, zebra, isOpen, categoryFilter, hideFinalFan, onToggle
             <Chevron open={isOpen} />
           </button>
         </td>
-        <td className={`${tdClass} w-9 font-mono text-[10px] font-semibold text-zinc-500`}>M{event.matchNum}</td>
+        <td className={`${tdClass} w-12`}>
+          <span
+            className={`inline-flex min-w-[2.25rem] items-center justify-center rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold ${matchBadgeClass(event.matchNum, hasStock)}`}
+          >
+            M{event.matchNum}
+          </span>
+        </td>
         <td className={`${tdClass} min-w-[9rem] max-w-[16rem]`}>
-          <p className="truncate text-xs font-semibold leading-tight text-zinc-100">{title}</p>
-          {venue ? (
-            <p className="truncate text-[10px] leading-tight text-zinc-500">{venue}</p>
-          ) : null}
+          <div className="flex min-w-0 items-start gap-1.5">
+            <span
+              className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
+                hasStock ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]" : hasListings ? "bg-amber-500/50" : "bg-zinc-700"
+              }`}
+              aria-hidden
+            />
+            <div className="min-w-0">
+              <p className="truncate text-xs font-semibold leading-tight text-zinc-100">{title}</p>
+              {venue ? (
+                <p className="truncate text-[10px] leading-tight text-zinc-500">{venue}</p>
+              ) : !hasListings ? (
+                <p className="text-[10px] italic text-zinc-600">No marketplace data</p>
+              ) : null}
+            </div>
+          </div>
         </td>
         {SHOP_TABLE_CATEGORIES.map((cat) => (
           <CategoryCell key={cat} event={event} categoryKey={cat} highlighted={highlightCategory === cat} />
@@ -364,16 +409,16 @@ function ShopMatchesTableInner({
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[44rem] border-collapse text-left">
-        <thead className="sticky top-0 z-[1] border-b border-white/[0.08] bg-[color:var(--ticketing-surface)]">
+        <thead className="sticky top-0 z-[1] border-b border-white/[0.08] bg-gradient-to-r from-orange-950/50 via-[color:var(--ticketing-surface)] to-violet-950/40">
           <tr className="h-8">
             <th className={`${thClass} w-7`} aria-label="Expand" />
-            <th className={`${thClass} w-9`}>M</th>
-            <th className={thClass}>Match</th>
-            <th className={`${thClass} text-right`}>C1</th>
-            <th className={`${thClass} text-right`}>C2</th>
-            <th className={`${thClass} text-right`}>C3</th>
-            <th className={`${thClass} hidden text-right sm:table-cell`}>Best</th>
-            <th className={`${thClass} text-right`}>Shop</th>
+            <th className={`${thClass} w-12 text-violet-300/80`}>Match</th>
+            <th className={`${thClass} text-orange-200/80`}>Fixture</th>
+            <th className={`${thClass} text-right text-rose-300/70`}>C1</th>
+            <th className={`${thClass} text-right text-orange-300/70`}>C2</th>
+            <th className={`${thClass} text-right text-amber-300/70`}>C3</th>
+            <th className={`${thClass} hidden text-right text-emerald-300/70 sm:table-cell`}>Best</th>
+            <th className={`${thClass} text-right text-sky-300/70`}>Buy</th>
           </tr>
         </thead>
         <tbody>
