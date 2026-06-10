@@ -106,7 +106,44 @@ export function resolveShopBuyUrl(event: ShopMarketEvent): string | null {
   return buildMatchBuyUrl(event.matchNum);
 }
 
-function buildShopDeltaEmbed(event: ShopMarketEvent, description: string): Record<string, unknown> {
+function formatChangedListingLines(listings: ShopMarketListing[], currency: string): string {
+  return listings.map((l) => formatAvailableListingLine(l, currency)).join("\n");
+}
+
+/** Categories newly available with a price, or whose price changed vs previous scrape. */
+export function computeChangedListings(
+  prev: ShopMarketEvent | undefined,
+  next: ShopMarketEvent,
+): ShopMarketListing[] {
+  const prevByKey = new Map<string, number>();
+  for (const listing of prev?.listings ?? []) {
+    if (listing.available && listing.price !== null) {
+      prevByKey.set(listing.categoryKey, listing.price);
+    }
+  }
+
+  const changed: ShopMarketListing[] = [];
+  for (const listing of next.listings) {
+    if (!listing.available || listing.price === null) continue;
+    const prevPrice = prevByKey.get(listing.categoryKey);
+    if (prevPrice === undefined || prevPrice !== listing.price) {
+      changed.push(listing);
+    }
+  }
+
+  return changed.sort((a, b) =>
+    a.categoryKey.localeCompare(b.categoryKey, undefined, { numeric: true }),
+  );
+}
+
+function buildShopDeltaEmbed(
+  event: ShopMarketEvent,
+  changedListings: ShopMarketListing[],
+): Record<string, unknown> | null {
+  if (changedListings.length === 0) return null;
+  const description = formatChangedListingLines(changedListings, event.currency).trim();
+  if (!description) return null;
+
   const buyUrl = resolveShopBuyUrl(event);
   const descriptionWithBuyLink = buyUrl
     ? `${description}\n\n[Click here to buy](${buyUrl})`
@@ -125,13 +162,14 @@ function buildShopDeltaEmbed(event: ShopMarketEvent, description: string): Recor
   return embed;
 }
 
-export function buildShopDeltaEmbeds(changed: ShopMarketEvent[]): Array<Record<string, unknown>> {
+export function buildShopDeltaEmbeds(
+  candidates: Array<{ event: ShopMarketEvent; changedListings: ShopMarketListing[] }>,
+): Array<Record<string, unknown>> {
   const embeds: Array<Record<string, unknown>> = [];
-  for (const event of changed) {
-    if (availableListings(event).length === 0) continue;
-    const description = matchSummaryLine(event, false).trim();
-    if (!description) continue;
-    embeds.push(buildShopDeltaEmbed(event, description));
+  for (const { event, changedListings } of candidates) {
+    const embed = buildShopDeltaEmbed(event, changedListings);
+    if (!embed) continue;
+    embeds.push(embed);
     if (embeds.length >= 10) break;
   }
   return embeds;
@@ -218,27 +256,35 @@ export function dedupeShopEventsByMatchNum(events: ShopMarketEvent[]): ShopMarke
   return [...map.values()].sort((a, b) => a.matchNum - b.matchNum);
 }
 
-function deltaEventsForNotify(changed: ShopMarketEvent[]): ShopMarketEvent[] {
-  const out: ShopMarketEvent[] = [];
-  for (const event of dedupeShopEventsByMatchNum(changed)) {
-    if (availableListings(event).length === 0) continue;
-    const description = matchSummaryLine(event, false).trim();
-    if (!description) continue;
-    out.push(event);
+function deltaEventsForNotify(
+  candidates: Array<{ event: ShopMarketEvent; changedListings: ShopMarketListing[] }>,
+): Array<{ event: ShopMarketEvent; changedListings: ShopMarketListing[] }> {
+  const out: Array<{ event: ShopMarketEvent; changedListings: ShopMarketListing[] }> = [];
+  const seen = new Set<number>();
+  for (const candidate of candidates) {
+    const { event, changedListings } = candidate;
+    if (seen.has(event.matchNum)) continue;
+    if (changedListings.length === 0) continue;
+    if (!buildShopDeltaEmbed(event, changedListings)) continue;
+    seen.add(event.matchNum);
+    out.push(candidate);
     if (out.length >= 10) break;
   }
-  return out;
+  return out.sort((a, b) => a.event.matchNum - b.event.matchNum);
 }
 
 export async function sendOneShopDeltaToDiscord(
   event: ShopMarketEvent,
-  options: { batchHeader?: string },
+  options: { batchHeader?: string; changedListings: ShopMarketListing[] },
 ): Promise<ShopDiscordNotifyResult> {
-  const description = matchSummaryLine(event, false).trim();
+  const embed = buildShopDeltaEmbed(event, options.changedListings);
+  if (!embed) {
+    return { attempted: false, ok: true, provider: "discord-shop", mode: "delta", matchCount: 0 };
+  }
   const buyUrl = resolveShopBuyUrl(event);
   return sendShopDiscordPayload({
     content: options.batchHeader ?? "",
-    embeds: [buildShopDeltaEmbed(event, description)],
+    embeds: [embed],
     components: buildShopBuyNowComponents(buyUrl),
     mode: "delta",
     matchCount: 1,
@@ -272,20 +318,23 @@ export async function sendShopBaselineToDiscord(events: ShopMarketEvent[]): Prom
   return results;
 }
 
-export async function sendShopDeltaToDiscord(changed: ShopMarketEvent[]): Promise<ShopDiscordNotifyResult[]> {
-  const notifyEvents = deltaEventsForNotify(changed);
-  if (notifyEvents.length === 0) {
+export async function sendShopDeltaToDiscord(
+  candidates: Array<{ event: ShopMarketEvent; changedListings: ShopMarketListing[] }>,
+): Promise<ShopDiscordNotifyResult[]> {
+  const notifyCandidates = deltaEventsForNotify(candidates);
+  if (notifyCandidates.length === 0) {
     return [{ attempted: false, ok: true, provider: "discord-shop", mode: "delta", matchCount: 0 }];
   }
-  const inStockCount = notifyEvents.length;
+  const inStockCount = notifyCandidates.length;
   const results: ShopDiscordNotifyResult[] = [];
-  for (let i = 0; i < notifyEvents.length; i++) {
-    const event = notifyEvents[i];
+  for (let i = 0; i < notifyCandidates.length; i++) {
+    const { event, changedListings } = notifyCandidates[i];
     const res = await sendOneShopDeltaToDiscord(event, {
       batchHeader:
         i === 0
           ? `**SHOP updates** — ${inStockCount} match${inStockCount === 1 ? "" : "es"} changed`
           : "",
+      changedListings,
     });
     results.push(res);
     if (!res.ok) break;

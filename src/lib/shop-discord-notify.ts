@@ -3,9 +3,11 @@ import "server-only";
 import type {
   ShopLatestPayload,
   ShopMarketEvent,
+  ShopMarketListing,
 } from "@/lib/shop-marketplace-types";
 import { shopDiscordNotifyFingerprint, shopLog } from "@/lib/shop-service";
 import {
+  computeChangedListings,
   dedupeShopEventsByMatchNum,
   sendOneShopDeltaToDiscord,
   sendShopBaselineToDiscord,
@@ -64,13 +66,40 @@ function shouldSendDelta(
   return fingerprint !== (storedFingerprint ?? null);
 }
 
-function diffDeltaEvents(
+export type ShopDeltaCandidate = {
+  event: ShopMarketEvent;
+  changedListings: ShopMarketListing[];
+};
+
+function diffDeltaCandidates(
   next: ShopMarketEvent[],
+  prevByMatch: Map<number, ShopMarketEvent>,
   storedFingerprints: Map<number, string | null>,
-): ShopMarketEvent[] {
-  return dedupeShopEventsByMatchNum(
-    next.filter((e) => shouldSendDelta(e, storedFingerprints.get(e.matchNum))),
-  );
+): ShopDeltaCandidate[] {
+  const out: ShopDeltaCandidate[] = [];
+  for (const event of dedupeShopEventsByMatchNum(next)) {
+    if (!shouldSendDelta(event, storedFingerprints.get(event.matchNum))) continue;
+    const changedListings = computeChangedListings(prevByMatch.get(event.matchNum), event);
+    if (changedListings.length === 0) continue;
+    out.push({ event, changedListings });
+  }
+  return out;
+}
+
+/** Fingerprint changed but no priced listing deltas (e.g. category removed) — persist without Discord send. */
+async function persistRemovalOnlyFingerprints(
+  next: ShopMarketEvent[],
+  prevByMatch: Map<number, ShopMarketEvent>,
+  storedFingerprints: Map<number, string | null>,
+  scannedAt: string,
+): Promise<void> {
+  const scannedAtDate = new Date(scannedAt);
+  const at = Number.isFinite(scannedAtDate.getTime()) ? scannedAtDate : undefined;
+  for (const event of dedupeShopEventsByMatchNum(next)) {
+    if (!shouldSendDelta(event, storedFingerprints.get(event.matchNum))) continue;
+    if (computeChangedListings(prevByMatch.get(event.matchNum), event).length > 0) continue;
+    await persistShopDiscordNotifyFingerprint(event, at);
+  }
 }
 
 async function finishShopNotify(summary: ShopDiscordNotifySummary): Promise<ShopDiscordNotifySummary> {
@@ -83,12 +112,13 @@ async function finishShopNotify(summary: ShopDiscordNotifySummary): Promise<Shop
  * Each matchNum is sent at most once per poll and once per price state globally.
  */
 async function sendHardenedShopDelta(
-  candidates: ShopMarketEvent[],
+  candidates: ShopDeltaCandidate[],
   scannedAt: string,
 ): Promise<{ results: ShopDiscordNotifyResult[]; notifiedEvents: ShopMarketEvent[] }> {
-  const deduped = dedupeShopEventsByMatchNum(candidates);
-  const notifyEvents = deduped.filter((e) => shopDiscordNotifyFingerprint(e));
-  if (notifyEvents.length === 0) {
+  const notifyCandidates = candidates.filter(
+    (c) => c.changedListings.length > 0 && shopDiscordNotifyFingerprint(c.event),
+  );
+  if (notifyCandidates.length === 0) {
     return {
       results: [{ attempted: false, ok: true, provider: "discord-shop", mode: "delta", matchCount: 0 }],
       notifiedEvents: [],
@@ -100,7 +130,7 @@ async function sendHardenedShopDelta(
   const scannedAtDate = new Date(scannedAt);
   let batchHeaderPending = true;
 
-  for (const event of notifyEvents) {
+  for (const { event, changedListings } of notifyCandidates) {
     const outcome = await withMatchNotifyLock(event.matchNum, async () => {
       const fingerprint = shopDiscordNotifyFingerprint(event);
       if (!fingerprint) return { result: null, notified: false };
@@ -111,11 +141,15 @@ async function sendHardenedShopDelta(
         return { result: null, notified: false };
       }
 
+      if (changedListings.length === 0) {
+        return { result: null, notified: false };
+      }
+
       const batchHeader = batchHeaderPending
-        ? `**SHOP updates** — ${notifyEvents.length} match${notifyEvents.length === 1 ? "" : "es"} changed`
+        ? `**SHOP updates** — ${notifyCandidates.length} match${notifyCandidates.length === 1 ? "" : "es"} changed`
         : "";
 
-      const result = await sendOneShopDeltaToDiscord(event, { batchHeader });
+      const result = await sendOneShopDeltaToDiscord(event, { batchHeader, changedListings });
       if (!result.ok) {
         return { result, notified: false };
       }
@@ -192,7 +226,15 @@ export async function maybeNotifyShopDiscord(input: {
 
   await bootstrapShopDiscordNotifyFingerprints(allMatches, previousAll, storedFingerprints);
 
-  const changed = diffDeltaEvents(allMatches, storedFingerprints);
+  const prevByMatch = new Map(previousAll.map((e) => [e.matchNum, e]));
+  await persistRemovalOnlyFingerprints(
+    allMatches,
+    prevByMatch,
+    storedFingerprints,
+    input.payload.scannedAt,
+  );
+
+  const changed = diffDeltaCandidates(allMatches, prevByMatch, storedFingerprints);
   if (changed.length === 0) {
     return {
       attempted: false,
