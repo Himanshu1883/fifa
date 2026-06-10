@@ -337,6 +337,17 @@ model ShopDiscordNotifyLog {
   @@map("shop_discord_notify_logs")
 }
 
+/// Per-match successful Discord delta sends — cooldown dedup by matchNum + fingerprint.
+model ShopDiscordMatchNotifyLog {
+  id          Int      @id @default(autoincrement())
+  matchNum    Int      @map("match_num")
+  fingerprint String   @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([matchNum, fingerprint, createdAt])
+  @@map("shop_discord_match_notify_logs")
+}
+
 /// Events that have had at least one manual SB push — eligible for auto-push when global toggle is on.
 model SbEventAutoPush {
   eventId        Int      @id @map("event_id")

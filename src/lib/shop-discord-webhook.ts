@@ -136,6 +136,37 @@ export function computeChangedListings(
   );
 }
 
+/** Embed diff vs last successfully notified fingerprint (not transient scrape prev). */
+export function computeChangedListingsFromStoredFingerprint(
+  storedFingerprint: string | null | undefined,
+  next: ShopMarketEvent,
+): ShopMarketListing[] {
+  const prevByKey = new Map<string, number>();
+  if (storedFingerprint) {
+    for (const part of storedFingerprint.split(";")) {
+      if (!part) continue;
+      const colon = part.indexOf(":");
+      if (colon <= 0) continue;
+      const key = part.slice(0, colon);
+      const price = Number(part.slice(colon + 1));
+      if (key && Number.isFinite(price)) prevByKey.set(key, price);
+    }
+  }
+
+  const changed: ShopMarketListing[] = [];
+  for (const listing of next.listings) {
+    if (!listing.available || listing.price === null) continue;
+    const prevPrice = prevByKey.get(listing.categoryKey);
+    if (prevPrice === undefined || prevPrice !== listing.price) {
+      changed.push(listing);
+    }
+  }
+
+  return changed.sort((a, b) =>
+    a.categoryKey.localeCompare(b.categoryKey, undefined, { numeric: true }),
+  );
+}
+
 function buildShopDeltaEmbed(
   event: ShopMarketEvent,
   changedListings: ShopMarketListing[],
@@ -275,7 +306,7 @@ function deltaEventsForNotify(
 
 export async function sendOneShopDeltaToDiscord(
   event: ShopMarketEvent,
-  options: { batchHeader?: string; changedListings: ShopMarketListing[] },
+  options: { changedListings: ShopMarketListing[] },
 ): Promise<ShopDiscordNotifyResult> {
   const embed = buildShopDeltaEmbed(event, options.changedListings);
   if (!embed) {
@@ -283,7 +314,7 @@ export async function sendOneShopDeltaToDiscord(
   }
   const buyUrl = resolveShopBuyUrl(event);
   return sendShopDiscordPayload({
-    content: options.batchHeader ?? "",
+    content: "",
     embeds: [embed],
     components: buildShopBuyNowComponents(buyUrl),
     mode: "delta",
@@ -325,15 +356,10 @@ export async function sendShopDeltaToDiscord(
   if (notifyCandidates.length === 0) {
     return [{ attempted: false, ok: true, provider: "discord-shop", mode: "delta", matchCount: 0 }];
   }
-  const inStockCount = notifyCandidates.length;
   const results: ShopDiscordNotifyResult[] = [];
   for (let i = 0; i < notifyCandidates.length; i++) {
     const { event, changedListings } = notifyCandidates[i];
     const res = await sendOneShopDeltaToDiscord(event, {
-      batchHeader:
-        i === 0
-          ? `**SHOP updates** — ${inStockCount} match${inStockCount === 1 ? "" : "es"} changed`
-          : "",
       changedListings,
     });
     results.push(res);

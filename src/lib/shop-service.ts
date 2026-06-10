@@ -198,6 +198,51 @@ export function shopDiscordNotifyFingerprint(event: ShopMarketEvent): string {
   return parts.join(";");
 }
 
+/** Decode `catKey:price;...` notify fingerprints for embed diffs and subset checks. */
+export function parseShopDiscordNotifyFingerprint(
+  fingerprint: string | null | undefined,
+): Map<string, number> {
+  const map = new Map<string, number>();
+  if (!fingerprint) return map;
+  for (const part of fingerprint.split(";")) {
+    if (!part) continue;
+    const colon = part.indexOf(":");
+    if (colon <= 0) continue;
+    const key = part.slice(0, colon);
+    const price = Number(part.slice(colon + 1));
+    if (key && Number.isFinite(price)) map.set(key, price);
+  }
+  return map;
+}
+
+/** True when every priced category in `current` exists in `stored` at the same price. */
+export function shopDiscordFingerprintCoveredByStored(
+  current: string,
+  stored: string | null | undefined,
+): boolean {
+  if (!stored) return false;
+  const storedMap = parseShopDiscordNotifyFingerprint(stored);
+  const currentMap = parseShopDiscordNotifyFingerprint(current);
+  for (const [key, price] of currentMap) {
+    if (storedMap.get(key) !== price) return false;
+  }
+  return true;
+}
+
+/** Gate Discord delta sends on last successfully notified fingerprint only. */
+export function shouldSendShopDiscordDelta(
+  next: ShopMarketEvent,
+  storedFingerprint: string | null | undefined,
+): boolean {
+  const fingerprint = shopDiscordNotifyFingerprint(next);
+  if (!fingerprint) return false;
+  const stored = storedFingerprint ?? null;
+  if (stored === null) return true;
+  if (fingerprint === stored) return false;
+  if (shopDiscordFingerprintCoveredByStored(fingerprint, stored)) return false;
+  return true;
+}
+
 /** Stable fingerprint for smart refresh (per event). */
 export function shopEventFingerprint(event: ShopMarketEvent): string {
   const parts = event.listings.map(

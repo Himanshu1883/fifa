@@ -6,7 +6,12 @@ import { buildMatchBuyUrl } from "@/lib/shop-buy-urls";
 import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
 import type { ShopEventCatalogueMeta, ShopLatestPayload, ShopMarketEvent } from "@/lib/shop-marketplace-types";
 import { ensureAllShopMatches } from "@/lib/shop-match-grid";
-import { shopLog, shopDiscordNotifyFingerprint, type ShopEventMetaLookup } from "@/lib/shop-service";
+import {
+  shopLog,
+  shopDiscordNotifyFingerprint,
+  shouldSendShopDiscordDelta,
+  type ShopEventMetaLookup,
+} from "@/lib/shop-service";
 import type { ShopMarketListing } from "@/lib/shop-marketplace-types";
 
 export async function loadShopEventMetaLookup(): Promise<ShopEventMetaLookup> {
@@ -183,9 +188,11 @@ export async function loadShopDiscordNotifyFingerprintForMatch(
 }
 
 export type ShopDiscordFingerprintClaim =
-  | { action: "skip"; reason: "same_fingerprint" | "no_priced_listings" }
+  | { action: "skip"; reason: "same_fingerprint" | "no_priced_listings" | "cooldown" }
   | { action: "send"; previousFingerprint: string | null; fingerprint: string }
   | { action: "error"; message: string };
+
+const SHOP_DISCORD_NOTIFY_COOLDOWN_MS = 5 * 60 * 1000;
 
 /**
  * Atomically claim a Discord delta send under pg_advisory_xact_lock(matchNum).
@@ -209,9 +216,23 @@ export async function claimShopDiscordNotifyFingerprint(
         select: { lastDiscordNotifyFingerprint: true },
       });
       const stored = existing?.lastDiscordNotifyFingerprint ?? null;
-      if (stored === fp) {
+      if (!shouldSendShopDiscordDelta(event, stored)) {
         shopLog(`Discord shop claim skip M${event.matchNum} (fingerprint match under lock)`);
         return { action: "skip", reason: "same_fingerprint" as const };
+      }
+
+      const cooldownSince = new Date(Date.now() - SHOP_DISCORD_NOTIFY_COOLDOWN_MS);
+      const recent = await tx.shopDiscordMatchNotifyLog.findFirst({
+        where: {
+          matchNum: event.matchNum,
+          fingerprint: fp,
+          createdAt: { gte: cooldownSince },
+        },
+        select: { id: true },
+      });
+      if (recent) {
+        shopLog(`Discord shop claim skip M${event.matchNum} (cooldown ${SHOP_DISCORD_NOTIFY_COOLDOWN_MS / 60_000}m)`);
+        return { action: "skip", reason: "cooldown" as const };
       }
 
       if (existing) {
@@ -234,6 +255,21 @@ export async function claimShopDiscordNotifyFingerprint(
     const msg = e instanceof Error ? e.message : String(e);
     shopLog(`DB claim notify fingerprint M${event.matchNum} failed: ${msg}`);
     return { action: "error", message: msg };
+  }
+}
+
+/** Record a successful per-match Discord delta for cooldown dedup. */
+export async function persistShopDiscordMatchNotifyLog(
+  matchNum: number,
+  fingerprint: string,
+): Promise<void> {
+  try {
+    await prisma.shopDiscordMatchNotifyLog.create({
+      data: { matchNum, fingerprint },
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    shopLog(`DB persist match notify log M${matchNum} failed: ${msg}`);
   }
 }
 
