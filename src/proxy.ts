@@ -117,6 +117,7 @@ export const config = {
     "/sb-listings/:path*",
     "/sb-push-settings/:path*",
     "/listing-changes/:path*",
+    "/webhook-logs/:path*",
     "/undetectable/:path*",
     "/admin/:path*",
     "/pending-approval",

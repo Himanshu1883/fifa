@@ -309,6 +309,15 @@ model SbPushRulesSettings {
   @@map("sb_push_rules_settings")
 }
 
+/// Singleton row `id = 1`: outbound notification webhooks (Discord, etc.).
+model AppWebhookSettings {
+  id                           Int      @id
+  discordNewListingsWebhookUrl String?  @map("discord_new_listings_webhook_url") @db.Text
+  updatedAt                    DateTime @updatedAt @map("updated_at")
+
+  @@map("app_webhook_settings")
+}
+
 /// Events that have had at least one manual SB push — eligible for auto-push when global toggle is on.
 model SbEventAutoPush {
   eventId        Int      @id @map("event_id")

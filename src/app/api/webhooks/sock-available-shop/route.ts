@@ -4,8 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { CataloguePayloadError } from "@/lib/price-range-catalogue";
 import { parseSockAvailableGeojsonBody } from "@/lib/parse-sock-available-geojson-webhook";
 import { computeSockAvailableDiff } from "@/lib/sock-available-diff";
+import { maybeNotifySockAvailableDiff, summarizeNotifyForDiffLog } from "@/lib/notify-sock-available-diff";
 import { syncSockAvailableForEvent } from "@/lib/sync-sock-available";
-import { sendUltraMsgWhatsAppMessage } from "@/lib/whatsapp-ultramsg";
 
 export const runtime = "nodejs";
 
@@ -63,30 +63,6 @@ function classifyWebhookError(code: string | undefined, message: string): Webhoo
   }
 
   return "unknown";
-}
-
-function amountRawToUsdString(raw: number | null): string {
-  if (raw === null) return "—";
-  const usd = raw / 1000;
-  if (!Number.isFinite(usd)) return "—";
-  return `$${usd.toFixed(2)}`;
-}
-
-function buildWhatsAppText(input: {
-  eventLabel: string;
-  eventId: number;
-  prefId: string;
-  diff: { newCount: number; changedCount: number; priceChangedCount: number; sample: Array<{ line: string }> };
-}): string {
-  const { eventLabel, eventId, prefId, diff } = input;
-  const header = `Sock Shop diff: ${eventLabel}\n(eventId ${eventId}, prefId ${prefId})`;
-  const counts = `New ${diff.newCount} · Changed ${diff.changedCount} · Price ${diff.priceChangedCount}`;
-  const lines = diff.sample.map((s) => s.line).filter(Boolean);
-  const body = lines.length ? `\n\nSamples:\n${lines.join("\n")}` : "";
-  const text = `${header}\n${counts}${body}`;
-
-  // Keep messages compact to avoid WhatsApp/UI truncation.
-  return text.length > 1400 ? `${text.slice(0, 1400)}…` : text;
 }
 
 /**
@@ -191,54 +167,33 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const diff = txnResult.diff;
+    const diff = txnResult.diff!;
 
-    const hasDiff =
-      Boolean(diff) && (diff.newCount > 0 || diff.changedCount > 0 || diff.priceChangedCount > 0);
-
-    const notify =
-      hasDiff && diff
-        ? await sendUltraMsgWhatsAppMessage(
-            buildWhatsAppText({
-              eventLabel: txnResult.ev.matchLabel || txnResult.ev.name,
-              eventId: txnResult.ev.id,
-              prefId,
-              diff: {
-                newCount: diff.newCount,
-                changedCount: diff.changedCount,
-                priceChangedCount: diff.priceChangedCount,
-                sample: diff.sample.map((s) => {
-                  if (s.change === "new") {
-                    return {
-                      line: `+ ${s.blockName} Row ${s.row} Seat ${s.seatNumber} Cat ${s.categoryId} ${amountRawToUsdString(s.amountRaw)}`,
-                    };
-                  }
-                  const changed = (s.changedFields ?? []).filter((f) => f !== "amount");
-                  const changeLabel = changed.length ? ` (${changed.join(",")})` : "";
-                  const priceLabel =
-                    s.prev && s.amountRaw !== s.prev.amountRaw
-                      ? ` ${amountRawToUsdString(s.prev.amountRaw)}→${amountRawToUsdString(s.amountRaw)}`
-                      : ` ${amountRawToUsdString(s.amountRaw)}`;
-                  return {
-                    line: `~ ${s.blockName} Row ${s.row} Seat ${s.seatNumber} Cat ${s.categoryId}${changeLabel}${priceLabel}`,
-                  };
-                }),
-              },
-            }),
-          )
-        : { attempted: false, ok: false, provider: "ultramsg" as const };
+    const notify = await maybeNotifySockAvailableDiff({
+      prefId,
+      event: {
+        id: txnResult.ev.id,
+        label: txnResult.ev.matchLabel || txnResult.ev.name,
+        name: txnResult.ev.name,
+        matchLabel: txnResult.ev.matchLabel,
+      },
+      diff: {
+        kind: "LAST_MINUTE",
+        newCount: diff.newCount,
+        changedCount: diff.changedCount,
+        priceChangedCount: diff.priceChangedCount,
+        newSeatIds: diff.newSeatIds,
+        sample: diff.sample,
+      },
+    });
 
     if (txnResult.diffLogId != null) {
       try {
         await prisma.sockAvailableWebhookDiffLog.update({
           where: { id: txnResult.diffLogId },
           data: {
-            notifyAttempted: notify.attempted,
-            notifyOk: notify.ok,
-            notifyProvider: notify.provider,
-            notifyStatus: notify.status != null ? String(notify.status) : null,
-            notifyError: notify.error ?? null,
-            notifyRaw: notify,
+            ...summarizeNotifyForDiffLog(notify),
+            notifyRaw: JSON.parse(JSON.stringify(notify)),
           },
         });
       } catch (err) {

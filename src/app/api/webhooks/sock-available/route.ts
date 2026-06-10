@@ -3,7 +3,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { CataloguePayloadError } from "@/lib/price-range-catalogue";
 import { parseSockAvailableGeojsonBody } from "@/lib/parse-sock-available-geojson-webhook";
-import { computeSockAvailableDiffInTx, maybeNotifySockAvailableDiff } from "@/lib/notify-sock-available-diff";
+import {
+  computeSockAvailableDiffInTx,
+  maybeNotifySockAvailableDiff,
+  summarizeNotifyForDiffLog,
+} from "@/lib/notify-sock-available-diff";
 import { reconcileSbListingsAfterSockSync } from "@/lib/sb-listing-reconcile";
 import { runSbAutoPushForEvent } from "@/lib/seatsbrokers-push-service";
 import { syncSockAvailableForEvent } from "@/lib/sync-sock-available";
@@ -176,12 +180,8 @@ export async function POST(req: NextRequest) {
         await prisma.sockAvailableWebhookDiffLog.update({
           where: { id: txn.diffLogId },
           data: {
-            notifyAttempted: notify.attempted,
-            notifyOk: notify.ok,
-            notifyProvider: notify.provider,
-            notifyStatus: notify.status != null ? String(notify.status) : null,
-            notifyError: notify.error ?? null,
-            notifyRaw: notify,
+            ...summarizeNotifyForDiffLog(notify),
+            notifyRaw: JSON.parse(JSON.stringify(notify)),
           },
         });
       } catch (err) {
