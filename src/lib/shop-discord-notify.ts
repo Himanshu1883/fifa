@@ -22,9 +22,10 @@ import { persistShopDiscordNotifyLog } from "@/lib/shop-discord-log";
 import { ensureAllShopMatches } from "@/lib/shop-match-grid";
 import {
   bootstrapShopDiscordNotifyFingerprints,
+  claimShopDiscordNotifyFingerprint,
   loadShopDiscordNotifyFingerprints,
-  loadShopDiscordNotifyFingerprintForMatch,
   persistShopDiscordNotifyFingerprint,
+  revertShopDiscordNotifyFingerprint,
   updateShopDiscordNotifyFingerprints,
 } from "@/lib/shop-sync-service";
 
@@ -108,8 +109,8 @@ async function finishShopNotify(summary: ShopDiscordNotifySummary): Promise<Shop
 }
 
 /**
- * Per-match send with fresh DB fingerprint check + immediate persist on success.
- * Each matchNum is sent at most once per poll and once per price state globally.
+ * Per-match send with DB claim (advisory lock + fingerprint persist before Discord POST).
+ * If stored fingerprint === current, NEVER call Discord API.
  */
 async function sendHardenedShopDelta(
   candidates: ShopDeltaCandidate[],
@@ -119,6 +120,7 @@ async function sendHardenedShopDelta(
     (c) => c.changedListings.length > 0 && shopDiscordNotifyFingerprint(c.event),
   );
   if (notifyCandidates.length === 0) {
+    shopLog("Discord shop delta skip (no candidates with priced listing changes)");
     return {
       results: [{ attempted: false, ok: true, provider: "discord-shop", mode: "delta", matchCount: 0 }],
       notifiedEvents: [],
@@ -128,20 +130,26 @@ async function sendHardenedShopDelta(
   const results: ShopDiscordNotifyResult[] = [];
   const notifiedEvents: ShopMarketEvent[] = [];
   const scannedAtDate = new Date(scannedAt);
+  const scannedAtOpt = Number.isFinite(scannedAtDate.getTime()) ? scannedAtDate : undefined;
   let batchHeaderPending = true;
 
   for (const { event, changedListings } of notifyCandidates) {
     const outcome = await withMatchNotifyLock(event.matchNum, async () => {
-      const fingerprint = shopDiscordNotifyFingerprint(event);
-      if (!fingerprint) return { result: null, notified: false };
-
-      const stored = await loadShopDiscordNotifyFingerprintForMatch(event.matchNum);
-      if (fingerprint === stored) {
-        shopLog(`Discord shop delta skip M${event.matchNum} (already notified for this price)`);
+      const claim = await claimShopDiscordNotifyFingerprint(event, scannedAtOpt);
+      if (claim.action === "skip") {
+        if (claim.reason === "same_fingerprint") {
+          shopLog(`Discord shop delta skip M${event.matchNum} (already notified for this price)`);
+        }
+        return { result: null, notified: false };
+      }
+      if (claim.action === "error") {
+        shopLog(`Discord shop delta skip M${event.matchNum} (fingerprint claim failed)`);
         return { result: null, notified: false };
       }
 
       if (changedListings.length === 0) {
+        await revertShopDiscordNotifyFingerprint(event.matchNum, claim.previousFingerprint);
+        shopLog(`Discord shop delta skip M${event.matchNum} (no listing deltas after claim)`);
         return { result: null, notified: false };
       }
 
@@ -149,18 +157,16 @@ async function sendHardenedShopDelta(
         ? `**SHOP updates** — ${notifyCandidates.length} match${notifyCandidates.length === 1 ? "" : "es"} changed`
         : "";
 
+      shopLog(
+        `Discord shop delta send M${event.matchNum} (${changedListings.map((l) => l.categoryKey).join(", ")})`,
+      );
       const result = await sendOneShopDeltaToDiscord(event, { batchHeader, changedListings });
       if (!result.ok) {
+        await revertShopDiscordNotifyFingerprint(event.matchNum, claim.previousFingerprint);
+        shopLog(`Discord shop delta M${event.matchNum} send failed — fingerprint reverted`);
         return { result, notified: false };
       }
 
-      const persisted = await persistShopDiscordNotifyFingerprint(
-        event,
-        Number.isFinite(scannedAtDate.getTime()) ? scannedAtDate : undefined,
-      );
-      if (!persisted) {
-        shopLog(`Discord shop delta M${event.matchNum} sent but fingerprint persist failed`);
-      }
       return { result, notified: true };
     });
 
@@ -236,6 +242,7 @@ export async function maybeNotifyShopDiscord(input: {
 
   const changed = diffDeltaCandidates(allMatches, prevByMatch, storedFingerprints);
   if (changed.length === 0) {
+    shopLog("Discord shop delta skip (no matches with fingerprint or listing changes)");
     return {
       attempted: false,
       ok: true,

@@ -67,9 +67,9 @@ function m48Event(price = 1945): ShopMarketEvent {
 
 function m4Event(extra: ShopMarketListing[] = []): ShopMarketEvent {
   const base = [
-    listing("cat1", "Category 1", 2735),
-    listing("fan1", "Fan 1", 2735),
-    listing("fan2", "Fan 2", 1940),
+    listing("1", "Category 1", 2735),
+    listing("f1", "Final / Fan 1", 2735),
+    listing("f2", "Final / Fan 2", 1940),
   ];
   return shopEvent(4, "USA vs Paraguay", [...base, ...extra]);
 }
@@ -122,17 +122,17 @@ console.assert(shouldSendDelta(m48Event(2000), fp), "send when price changes");
 // --- Scenario 4: M4 partial delta — only newly appeared categories ---
 const m4Prev = m4Event();
 const m4Next = m4Event([
-  listing("cat2", "Category 2", 1120),
-  listing("cat3", "Category 3", 1120),
+  listing("2", "Category 2", 1120),
+  listing("3", "Category 3", 1120),
 ]);
 const m4Changed = computeChangedListings(m4Prev, m4Next);
 console.assert(m4Changed.length === 2, `M4 changed count: ${m4Changed.length}`);
 console.assert(
-  m4Changed.every((l) => l.categoryKey === "cat2" || l.categoryKey === "cat3"),
+  m4Changed.every((l) => l.categoryKey === "2" || l.categoryKey === "3"),
   "M4 changed: only cat2 and cat3",
 );
 console.assert(
-  !m4Changed.some((l) => ["cat1", "fan1", "fan2"].includes(l.categoryKey)),
+  !m4Changed.some((l) => ["1", "f1", "f2"].includes(l.categoryKey)),
   "M4 changed: excludes unchanged categories",
 );
 const m4FpPrev = shopDiscordNotifyFingerprint(m4Prev);
@@ -140,6 +140,37 @@ const m4FpNext = shopDiscordNotifyFingerprint(m4Next);
 console.assert(m4FpPrev !== m4FpNext, "M4 fingerprint changes when cat2/cat3 appear");
 console.assert(shouldSendDelta(m4Next, m4FpPrev), "M4 send when fingerprint differs");
 console.assert(!shouldSendDelta(m4Next, m4FpNext), "M4 skip when fingerprint matches stored");
+
+// --- Scenario 5: M4 identical resend (8:16 + 8:18 bug) — claim-before-send ---
+const m4Fp = shopDiscordNotifyFingerprint(m4Event());
+console.assert(m4Fp === "1:2735;f1:2735;f2:1940", `M4 fingerprint: ${m4Fp}`);
+
+async function claimBeforeSend(
+  event: ShopMarketEvent,
+  db: Map<number, string | null>,
+): Promise<"send" | "skip"> {
+  const fp = shopDiscordNotifyFingerprint(event);
+  if (!fp) return "skip";
+  const stored = db.get(event.matchNum) ?? null;
+  if (stored === fp) return "skip";
+  db.set(event.matchNum, fp);
+  return "send";
+}
+
+async function runM4IdenticalResendTest(): Promise<void> {
+  const m4Db = new Map<number, string | null>();
+  let sendCount = 0;
+
+  const first = await claimBeforeSend(m4Event(), m4Db);
+  if (first === "send") sendCount += 1;
+
+  const second = await claimBeforeSend(m4Event(), m4Db);
+  if (second === "send") sendCount += 1;
+
+  console.assert(first === "send", "M4 first poll should send");
+  console.assert(second === "skip", "M4 second identical poll should skip");
+  console.assert(sendCount === 1, `M4 identical resend: expected 1 send, got ${sendCount}`);
+}
 
 // --- Scenario 3: concurrent poll simulation (in-memory store) ---
 const db = new Map<number, string | null>();
@@ -194,6 +225,7 @@ async function runConcurrentTest(): Promise<void> {
 }
 
 runConcurrentTest()
+  .then(() => runM4IdenticalResendTest())
   .then(() => {
     console.log("M48 + M4 shop Discord dedup tests passed");
   })

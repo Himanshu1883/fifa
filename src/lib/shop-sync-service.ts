@@ -63,6 +63,28 @@ function eventToDbRow(event: ShopMarketEvent, scannedAt: Date) {
   };
 }
 
+/** Poll sync fields only — never includes lastDiscordNotifyFingerprint. */
+function shopEventSyncWriteData(event: ShopMarketEvent, scannedAt: Date) {
+  const row = eventToDbRow(event, scannedAt);
+  return {
+    externalEventId: row.externalEventId,
+    linkedEventId: row.linkedEventId,
+    eventName: row.eventName,
+    stage: row.stage,
+    venue: row.venue,
+    country: row.country,
+    eventDate: row.eventDate,
+    marketData: row.marketData,
+    lowestPrice: row.lowestPrice,
+    highestPrice: row.highestPrice,
+    averagePrice: row.averagePrice,
+    availableCount: row.availableCount,
+    listingsCount: row.listingsCount,
+    rawPayload: row.rawPayload,
+    scannedAt: row.scannedAt,
+  };
+}
+
 /**
  * Background upsert — must not block UI; failures are logged only.
  */
@@ -160,7 +182,79 @@ export async function loadShopDiscordNotifyFingerprintForMatch(
   }
 }
 
-/** Persist fingerprint immediately after a successful Discord send (per match). */
+export type ShopDiscordFingerprintClaim =
+  | { action: "skip"; reason: "same_fingerprint" | "no_priced_listings" }
+  | { action: "send"; previousFingerprint: string | null; fingerprint: string }
+  | { action: "error"; message: string };
+
+/**
+ * Atomically claim a Discord delta send under pg_advisory_xact_lock(matchNum).
+ * Persists fingerprint BEFORE Discord API call so concurrent polls never double-send.
+ */
+export async function claimShopDiscordNotifyFingerprint(
+  event: ShopMarketEvent,
+  scannedAt?: Date,
+): Promise<ShopDiscordFingerprintClaim> {
+  const fp = shopDiscordNotifyFingerprint(event);
+  if (!fp) {
+    return { action: "skip", reason: "no_priced_listings" };
+  }
+
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${event.matchNum})`;
+
+      const existing = await tx.shopMarketplaceEventRecord.findUnique({
+        where: { matchNum: event.matchNum },
+        select: { lastDiscordNotifyFingerprint: true },
+      });
+      const stored = existing?.lastDiscordNotifyFingerprint ?? null;
+      if (stored === fp) {
+        shopLog(`Discord shop claim skip M${event.matchNum} (fingerprint match under lock)`);
+        return { action: "skip", reason: "same_fingerprint" as const };
+      }
+
+      if (existing) {
+        await tx.shopMarketplaceEventRecord.update({
+          where: { matchNum: event.matchNum },
+          data: { lastDiscordNotifyFingerprint: fp },
+        });
+      } else {
+        const scanned = scannedAt ?? new Date();
+        const row = eventToDbRow(event, scanned);
+        await tx.shopMarketplaceEventRecord.create({
+          data: { ...row, lastDiscordNotifyFingerprint: fp },
+        });
+      }
+
+      shopLog(`Discord shop claim send M${event.matchNum} (fingerprint reserved)`);
+      return { action: "send", previousFingerprint: stored, fingerprint: fp };
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    shopLog(`DB claim notify fingerprint M${event.matchNum} failed: ${msg}`);
+    return { action: "error", message: msg };
+  }
+}
+
+/** Undo a claim when Discord POST fails after fingerprint was reserved. */
+export async function revertShopDiscordNotifyFingerprint(
+  matchNum: number,
+  previousFingerprint: string | null,
+): Promise<void> {
+  try {
+    await prisma.shopMarketplaceEventRecord.update({
+      where: { matchNum },
+      data: { lastDiscordNotifyFingerprint: previousFingerprint },
+    });
+    shopLog(`Discord shop claim reverted M${matchNum}`);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    shopLog(`DB revert notify fingerprint M${matchNum} failed: ${msg}`);
+  }
+}
+
+/** Persist fingerprint without claiming (bootstrap / removal-only paths). */
 export async function persistShopDiscordNotifyFingerprint(
   event: ShopMarketEvent,
   scannedAt?: Date,
@@ -266,11 +360,11 @@ export async function syncShopMarketplaceToDatabase(payload: ShopLatestPayload):
       });
 
       for (const event of payload.events) {
-        const row = eventToDbRow(event, scannedAt);
+        const syncData = shopEventSyncWriteData(event, scannedAt);
         await tx.shopMarketplaceEventRecord.upsert({
           where: { matchNum: event.matchNum },
-          create: row,
-          update: row,
+          create: { matchNum: event.matchNum, ...syncData },
+          update: syncData,
         });
       }
     });
