@@ -36,6 +36,8 @@ export type ShopDiscordNotifySummary = {
   changedCount: number;
   /** Matches successfully sent — fingerprints persisted immediately per match. */
   notifiedEvents: ShopMarketEvent[];
+  /** Set when mode=skipped so poll logs explain why nothing was sent. */
+  skipReason?: string;
 };
 
 /** Serialize Discord notify work per match to prevent concurrent poll races. */
@@ -181,14 +183,16 @@ export async function maybeNotifyShopDiscord(input: {
 }): Promise<ShopDiscordNotifySummary> {
   const webhook = await resolveDiscordShopWebhookUrl();
   if (!webhook) {
-    return {
+    shopLog("Discord shop skip (DISCORD_SHOP_WEBHOOK_URL not configured)");
+    return finishShopNotify({
       attempted: false,
       ok: false,
       mode: "skipped",
       results: [],
       changedCount: 0,
       notifiedEvents: [],
-    };
+      skipReason: "no_webhook_url",
+    });
   }
 
   const allMatches = ensureAllShopMatches(input.payload.events);
@@ -220,14 +224,15 @@ export async function maybeNotifyShopDiscord(input: {
   const changed = diffDeltaCandidates(allMatches, storedFingerprints);
   if (changed.length === 0) {
     shopLog("Discord shop delta skip (no matches with fingerprint changes vs stored)");
-    return {
+    return finishShopNotify({
       attempted: false,
       ok: true,
       mode: "skipped",
       results: [],
       changedCount: 0,
       notifiedEvents: [],
-    };
+      skipReason: "no_fingerprint_changes",
+    });
   }
 
   shopLog(`Discord shop delta send (${changed.length} matches with price changes)`);
@@ -241,5 +246,7 @@ export async function maybeNotifyShopDiscord(input: {
     results,
     changedCount: notifiedEvents.length,
     notifiedEvents,
+    skipReason:
+      !attempted && notifiedEvents.length === 0 ? "all_delta_claims_skipped" : undefined,
   });
 }

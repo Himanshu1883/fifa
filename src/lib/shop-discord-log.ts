@@ -5,7 +5,25 @@ import { prisma } from "@/lib/prisma";
 import type { ShopDiscordNotifySummary } from "@/lib/shop-discord-notify";
 
 export async function persistShopDiscordNotifyLog(summary: ShopDiscordNotifySummary): Promise<void> {
-  if (summary.mode === "skipped" || !summary.attempted) return;
+  if (summary.skipReason) {
+    try {
+      await prisma.shopDiscordNotifyLog.create({
+        data: {
+          mode: summary.mode,
+          matchCount: summary.changedCount,
+          changedCount: summary.changedCount,
+          attempted: summary.attempted,
+          ok: summary.ok,
+          error: summary.skipReason,
+        },
+      });
+    } catch {
+      /* best-effort */
+    }
+    return;
+  }
+
+  if (!summary.attempted) return;
 
   const primary = summary.results[0];
   const status = primary?.status ?? primary?.response?.status ?? null;

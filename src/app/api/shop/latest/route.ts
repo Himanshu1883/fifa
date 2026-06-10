@@ -37,7 +37,9 @@ async function runShopBackgroundWork(payload: ShopLatestPayload): Promise<void> 
     };
     const previousEvents = await loadShopEventsFromDatabase(metaByMatch);
     const summary = await maybeNotifyShopDiscord({ payload: enriched, previousEvents });
-    if (summary.mode !== "skipped") {
+    if (summary.mode === "skipped" && summary.skipReason) {
+      shopLog(`Discord shop skipped: ${summary.skipReason}`);
+    } else if (summary.mode !== "skipped") {
       shopLog(
         `Discord shop ${summary.mode} ${summary.ok ? "OK" : "failed"} (${summary.changedCount} matches)`,
       );
@@ -49,10 +51,11 @@ async function runShopBackgroundWork(payload: ShopLatestPayload): Promise<void> 
   }
 }
 
-/** Cron awaits notify+sync; UI uses `after()` so Vercel keeps the function alive post-response. */
-function scheduleShopBackgroundWork(payload: ShopLatestPayload, isCron: boolean): void | Promise<void> {
-  if (isCron) return runShopBackgroundWork(payload);
-  after(() => runShopBackgroundWork(payload));
+/** Always defer notify+sync via `after()` — never block the HTTP response (cron await hit 60s timeout). */
+function scheduleShopBackgroundWork(payload: ShopLatestPayload): void {
+  after(async () => {
+    await runShopBackgroundWork(payload);
+  });
 }
 
 export async function GET(request: Request) {
@@ -70,7 +73,7 @@ export async function GET(request: Request) {
     };
 
     shopLog("UI updated (API response ready)");
-    await scheduleShopBackgroundWork(payload, isCron);
+    scheduleShopBackgroundWork(payload);
     return jsonPayload(payload);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
@@ -80,7 +83,7 @@ export async function GET(request: Request) {
     const cached = await loadShopLatestPayloadFromDatabase(metaByMatch);
     if (cached) {
       shopLog("Serving cached DB payload (Viva API unavailable)");
-      await scheduleShopBackgroundWork(cached, isCron);
+      scheduleShopBackgroundWork(cached);
       return jsonPayload(cached, { "X-Shop-Data-Source": "cache" });
     }
 
