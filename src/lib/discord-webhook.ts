@@ -2,6 +2,9 @@ import type { SockAvailableKind } from "@/generated/prisma/enums";
 import type { SockAvailableNewListingKey } from "@/lib/sock-available-diff";
 import { maskWebhookUrl, resolveDiscordNewListingsWebhookUrl } from "@/lib/webhook-settings";
 
+/** Left accent bar on resale new-listing embeds (Tailwind green-500). */
+const RESALE_NEW_LISTINGS_EMBED_COLOR = 0x22c55e;
+
 export type DiscordNotifyResult = {
   attempted: boolean;
   ok: boolean;
@@ -51,7 +54,7 @@ export function buildDiscordNewListingsPayload(input: {
   kind: SockAvailableKind;
   newCount: number;
   newSeatIds: SockAvailableNewListingKey[];
-}): { content: string; embeds: Array<Record<string, unknown>> } {
+}): { embeds: Array<Record<string, unknown>> } {
   const { eventLabel, eventName, eventId, prefId, kind, newCount, newSeatIds } = input;
   const appBase = envTrim("APP_BASE_URL").replace(/\/+$/, "");
   const eventPath = `/events/${eventId}?kind=${kind === "LAST_MINUTE" ? "LAST_MINUTE" : "RESALE"}&panel=sock`;
@@ -68,25 +71,30 @@ export function buildDiscordNewListingsPayload(input: {
     description = `${description.slice(0, 3900)}…`;
   }
 
-  const title = `🆕 ${newCount.toLocaleString("en-US")} new ${kind === "LAST_MINUTE" ? "shop" : "resale"} listing${newCount === 1 ? "" : "s"}`;
+  const isResale = kind !== "LAST_MINUTE";
+  const listingLabel = `${newCount.toLocaleString("en-US")} new ${isResale ? "resale" : "shop"} listing${newCount === 1 ? "" : "s"}`;
+  const title = `🆕 ${listingLabel}`;
+
   const embed: Record<string, unknown> = {
     title,
     description: description || "—",
-    color: 0x22c55e,
     fields: [
       { name: "Match", value: `${eventLabel} — ${eventName}`, inline: false },
       { name: "Event", value: `ID ${eventId} · pref ${prefId}`, inline: true },
-      { name: "Source", value: kind === "LAST_MINUTE" ? "Last minute" : "Resale", inline: true },
+      { name: "Source", value: isResale ? "Resale" : "Last minute", inline: true },
     ],
     timestamp: new Date().toISOString(),
   };
+
+  if (isResale) {
+    embed.color = RESALE_NEW_LISTINGS_EMBED_COLOR;
+  }
 
   if (eventUrl) {
     embed.url = eventUrl;
   }
 
   return {
-    content: `New inventory for **${eventName}** (${eventLabel})`,
     embeds: [embed],
   };
 }

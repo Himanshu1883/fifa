@@ -1,7 +1,11 @@
 import "server-only";
 
-import type { ShopLatestPayload, ShopMarketEvent } from "@/lib/shop-marketplace-types";
-import { shopEventFingerprint, shopLog } from "@/lib/shop-service";
+import type {
+  ShopLatestPayload,
+  ShopMarketEvent,
+  ShopMarketListing,
+} from "@/lib/shop-marketplace-types";
+import { shopLog } from "@/lib/shop-service";
 import {
   sendShopBaselineToDiscord,
   sendShopDeltaToDiscord,
@@ -23,9 +27,33 @@ export type ShopDiscordNotifySummary = {
   changedCount: number;
 };
 
+function listingByCategory(listings: ShopMarketListing[]): Map<string, ShopMarketListing> {
+  return new Map(listings.map((l) => [l.categoryKey, l]));
+}
+
+/**
+ * True when `next` has in-stock listings worth reporting: at least one available
+ * category AND (newly available OR any price change on a still-available category).
+ * Ignores stock-outs and all-dash matches; no minimum price delta.
+ */
+function isMatchNotifyWorthy(prev: ShopMarketEvent | undefined, next: ShopMarketEvent): boolean {
+  const nextAvailable = next.listings.filter((l) => l.available);
+  if (nextAvailable.length === 0) return false;
+
+  const prevByCategory = listingByCategory(prev?.listings ?? []);
+
+  for (const nextListing of nextAvailable) {
+    const prevListing = prevByCategory.get(nextListing.categoryKey);
+    if (!prevListing?.available) return true;
+    if (prevListing.price !== nextListing.price) return true;
+  }
+
+  return false;
+}
+
 function diffChangedEvents(prev: ShopMarketEvent[], next: ShopMarketEvent[]): ShopMarketEvent[] {
-  const prevMap = new Map(prev.map((e) => [e.matchNum, shopEventFingerprint(e)]));
-  return next.filter((e) => prevMap.get(e.matchNum) !== shopEventFingerprint(e));
+  const prevMap = new Map(prev.map((e) => [e.matchNum, e]));
+  return next.filter((e) => isMatchNotifyWorthy(prevMap.get(e.matchNum), e));
 }
 
 async function finishShopNotify(summary: ShopDiscordNotifySummary): Promise<ShopDiscordNotifySummary> {
@@ -61,9 +89,7 @@ export async function maybeNotifyShopDiscord(input: {
     });
   }
 
-  const changed = diffChangedEvents(previousAll, allMatches).filter((e) =>
-    e.listings.some((l) => l.available),
-  );
+  const changed = diffChangedEvents(previousAll, allMatches);
   if (changed.length === 0) {
     return { attempted: false, ok: true, mode: "skipped", results: [], changedCount: 0 };
   }

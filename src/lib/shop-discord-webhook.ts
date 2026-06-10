@@ -26,6 +26,11 @@ function availableListings(event: ShopMarketEvent): ShopMarketListing[] {
   return event.listings.filter((l) => l.available);
 }
 
+/** In-stock listings that have a price — omit unavailable (—) rows from embeds. */
+function availablePricedListings(event: ShopMarketEvent): ShopMarketListing[] {
+  return availableListings(event).filter((l) => l.price !== null);
+}
+
 function formatAvailableListingLine(listing: ShopMarketListing, currency: string): string {
   if (listing.price !== null) {
     return `${listing.categoryLabel}: **${formatShopPrice(listing.price, currency)}**`;
@@ -37,18 +42,20 @@ function matchSummaryLine(event: ShopMarketEvent, compact: boolean): string {
   const title = event.catalogue.matchLabel ?? `Match ${event.matchNum}`;
   const name = event.catalogue.eventName;
   const avail = availableListings(event);
+  const priced = availablePricedListings(event);
 
   if (compact) {
     if (avail.length === 0) return `**M${event.matchNum}** ${title} — _no stock_`;
-    const prices = avail
-      .filter((l) => l.price !== null)
+    const prices = priced
       .map((l) => `${l.categoryKey} ${formatShopPrice(l.price, event.currency)}`)
       .join(" · ");
     return `**M${event.matchNum}** ${name} — ${prices || `${avail.length} avail`}`;
   }
 
-  const lines = avail.map((l) => formatAvailableListingLine(l, event.currency));
-  return lines.join("\n");
+  const lines = priced.map((l) => formatAvailableListingLine(l, event.currency));
+  if (lines.length > 0) return lines.join("\n");
+  if (avail.length > 0) return avail.map((l) => formatAvailableListingLine(l, event.currency)).join("\n");
+  return "_no stock_";
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -74,18 +81,20 @@ function deltaEmbedTitle(event: ShopMarketEvent): string {
 }
 
 export function buildShopDeltaEmbeds(changed: ShopMarketEvent[]): Array<Record<string, unknown>> {
-  return changed
-    .filter((event) => availableListings(event).length > 0)
-    .slice(0, 10)
-    .map((event) => {
-      const inStock = availableListings(event).length > 0;
-      return {
-        title: deltaEmbedTitle(event),
-        description: matchSummaryLine(event, false).slice(0, 3900),
-        color: inStock ? SHOP_EMBED_COLOR_IN_STOCK : SHOP_EMBED_COLOR_NO_STOCK,
-        timestamp: new Date().toISOString(),
-      };
+  const embeds: Array<Record<string, unknown>> = [];
+  for (const event of changed) {
+    if (availableListings(event).length === 0) continue;
+    const description = matchSummaryLine(event, false).trim();
+    if (!description) continue;
+    embeds.push({
+      title: deltaEmbedTitle(event),
+      description: description.slice(0, 3900),
+      color: SHOP_EMBED_COLOR_IN_STOCK,
+      timestamp: new Date().toISOString(),
     });
+    if (embeds.length >= 10) break;
+  }
+  return embeds;
 }
 
 export async function sendShopDiscordPayload(input: {
