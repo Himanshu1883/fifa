@@ -66,38 +66,52 @@ export async function proxy(request: NextRequest) {
       return redirectToLogin(request, "signin_required");
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, username: true, isApproved: true, isAdmin: true },
-    });
-    if (!user) {
-      return redirectToLogin(request, "signin_required");
-    }
-
-    const isApproved = user.isApproved === true;
-    const isAdmin = user.isAdmin === true;
-
-    if (!isApproved && path !== "/pending-approval") {
-      const url = request.nextUrl.clone();
-      url.pathname = "/pending-approval";
-      return NextResponse.redirect(url);
-    }
-
-    if (adminOnly && !isAdmin) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/";
-      return NextResponse.redirect(url);
-    }
-
-    // Refresh claims if they differ from the cookie.
-    if (session.approved !== isApproved || session.admin !== isAdmin || session.name !== user.username) {
-      const refreshed = await signSessionToken(user.id, user.username, {
-        approved: isApproved,
-        admin: isAdmin,
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, username: true, isApproved: true, isAdmin: true },
       });
-      const res = NextResponse.next();
-      res.cookies.set(SESSION_COOKIE, refreshed, sessionCookieOptions());
-      return res;
+      if (!user) {
+        return redirectToLogin(request, "signin_required");
+      }
+
+      const isApproved = user.isApproved === true;
+      const isAdmin = user.isAdmin === true;
+
+      if (!isApproved && path !== "/pending-approval") {
+        const url = request.nextUrl.clone();
+        url.pathname = "/pending-approval";
+        return NextResponse.redirect(url);
+      }
+
+      if (adminOnly && !isAdmin) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/";
+        return NextResponse.redirect(url);
+      }
+
+      // Refresh claims if they differ from the cookie.
+      if (session.approved !== isApproved || session.admin !== isAdmin || session.name !== user.username) {
+        const refreshed = await signSessionToken(user.id, user.username, {
+          approved: isApproved,
+          admin: isAdmin,
+        });
+        const res = NextResponse.next();
+        res.cookies.set(SESSION_COOKIE, refreshed, sessionCookieOptions());
+        return res;
+      }
+    } catch {
+      // Postgres unreachable — trust existing session claims so the UI can still render.
+      if (!session.approved && path !== "/pending-approval") {
+        const url = request.nextUrl.clone();
+        url.pathname = "/pending-approval";
+        return NextResponse.redirect(url);
+      }
+      if (adminOnly && !session.admin) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/";
+        return NextResponse.redirect(url);
+      }
     }
   }
 

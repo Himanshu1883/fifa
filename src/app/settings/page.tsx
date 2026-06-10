@@ -423,13 +423,16 @@ export default async function SettingsPage() {
       ],
     },
     {
-      title: "DB connectivity (dev only)",
+      title: "DB connectivity",
       path: "/api/health-db",
       methods: ["GET"],
       queryParams: [],
       notes:
-        "Development helper to confirm DATABASE_URL + Postgres auth. Returns 404 in production.",
-      sampleCurl: [`curl -sS "${baseUrl}/api/health-db"`],
+        "Confirms DATABASE_URL + Postgres auth. In production requires Authorization: Bearer CRON_SECRET (or HEALTH_DB_SECRET).",
+      sampleCurl: [
+        `curl -sS "${baseUrl}/api/health-db"`,
+        `curl -sS -H "Authorization: Bearer $CRON_SECRET" "${baseUrl}/api/health-db"`,
+      ],
     },
     {
       title: "Log out (session cookie)",

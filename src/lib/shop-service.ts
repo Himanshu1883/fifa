@@ -10,6 +10,9 @@ import type {
 
 export const SHOP_API_URL = "https://vivalafifa.realb.it/api/latest";
 
+/** Upper bound for upstream marketplace fetch (Vercel + slow upstream). */
+export const SHOP_VIVA_FETCH_TIMEOUT_MS = 25_000;
+
 const MARKET_KEY_RE = /^(\d+)-(.+)$/;
 
 export const SHOP_CATEGORY_LABELS: Record<string, string> = {
@@ -164,13 +167,18 @@ export function normalizeVivaLatest(
 
 export async function fetchVivaLatestMarketplace(signal?: AbortSignal): Promise<VivaLatestApiResponse> {
   shopLog("Fetch started");
+  const timeoutSignal = AbortSignal.timeout(SHOP_VIVA_FETCH_TIMEOUT_MS);
+  const combined =
+    signal && typeof AbortSignal.any === "function"
+      ? AbortSignal.any([signal, timeoutSignal])
+      : timeoutSignal;
   let res: Response;
   try {
     res = await fetch(SHOP_API_URL, {
       method: "GET",
       headers: { Accept: "application/json" },
       cache: "no-store",
-      signal,
+      signal: combined,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

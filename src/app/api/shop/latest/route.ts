@@ -6,48 +6,79 @@ import {
   normalizeVivaLatest,
   shopLog,
 } from "@/lib/shop-service";
+import type { ShopLatestPayload } from "@/lib/shop-marketplace-types";
 import {
-  loadShopEventMetaLookup,
   loadShopEventsFromDatabase,
+  loadShopLatestPayloadFromDatabase,
+  safeLoadShopEventMetaLookup,
   syncShopMarketplaceToDatabase,
 } from "@/lib/shop-sync-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+/** Discord notify + DB sync can run longer than the default 10s on Hobby. */
+export const maxDuration = 60;
 
-export async function GET() {
+function jsonPayload(payload: ShopLatestPayload, extraHeaders?: Record<string, string>) {
+  return NextResponse.json(payload, {
+    headers: {
+      "Cache-Control": "no-store",
+      ...extraHeaders,
+    },
+  });
+}
+
+function scheduleShopBackgroundWork(payload: ShopLatestPayload): void {
+  void (async () => {
+    try {
+      const metaByMatch = await safeLoadShopEventMetaLookup();
+      const enriched: ShopLatestPayload = {
+        ...payload,
+        events: ensureAllShopMatches(payload.events, metaByMatch),
+      };
+      const previousEvents = await loadShopEventsFromDatabase(metaByMatch);
+      const summary = await maybeNotifyShopDiscord({ payload: enriched, previousEvents });
+      if (summary.mode !== "skipped") {
+        shopLog(
+          `Discord shop ${summary.mode} ${summary.ok ? "OK" : "failed"} (${summary.changedCount} matches)`,
+        );
+      }
+      await syncShopMarketplaceToDatabase(enriched);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      shopLog(`Discord shop notify/sync error: ${msg}`);
+    }
+  })();
+}
+
+export async function GET(request: Request) {
+  if (request.headers.get("x-vercel-cron") === "1") {
+    shopLog("Cron poll started");
+  }
+
   try {
     const api = await fetchVivaLatestMarketplace();
-    const metaByMatch = await loadShopEventMetaLookup();
-    const previousEvents = await loadShopEventsFromDatabase(metaByMatch);
-    const normalized = normalizeVivaLatest(api, metaByMatch);
-    const payload = {
+    const normalized = normalizeVivaLatest(api, new Map());
+    const payload: ShopLatestPayload = {
       ...normalized,
-      events: ensureAllShopMatches(normalized.events, metaByMatch),
+      events: ensureAllShopMatches(normalized.events, new Map()),
     };
 
     shopLog("UI updated (API response ready)");
-
-    void (async () => {
-      try {
-        const summary = await maybeNotifyShopDiscord({ payload, previousEvents });
-        if (summary.mode !== "skipped") {
-          shopLog(
-            `Discord shop ${summary.mode} ${summary.ok ? "OK" : "failed"} (${summary.changedCount} matches)`,
-          );
-        }
-        await syncShopMarketplaceToDatabase(payload);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        shopLog(`Discord shop notify/sync error: ${msg}`);
-      }
-    })();
-
-    return NextResponse.json(payload, {
-      headers: { "Cache-Control": "no-store" },
-    });
+    scheduleShopBackgroundWork(payload);
+    return jsonPayload(payload);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
+    shopLog(`Viva fetch failed: ${message}`);
+
+    const metaByMatch = await safeLoadShopEventMetaLookup(8_000);
+    const cached = await loadShopLatestPayloadFromDatabase(metaByMatch);
+    if (cached) {
+      shopLog("Serving cached DB payload (Viva API unavailable)");
+      scheduleShopBackgroundWork(cached);
+      return jsonPayload(cached, { "X-Shop-Data-Source": "cache" });
+    }
+
     shopLog(`API route error: ${message}`);
     return NextResponse.json({ error: message }, { status: 502 });
   }

@@ -14,6 +14,9 @@ import {
 } from "@/lib/shop-service";
 import type { ShopMarketListing } from "@/lib/shop-marketplace-types";
 
+const SHOP_DB_META_LOOKUP_TIMEOUT_MS = 5_000;
+
+/** Event catalogue enrichment — must not block shop UI when Postgres is slow. */
 export async function loadShopEventMetaLookup(): Promise<ShopEventMetaLookup> {
   const rows = await prisma.event.findMany({
     select: {
@@ -45,6 +48,63 @@ export async function loadShopEventMetaLookup(): Promise<ShopEventMetaLookup> {
     map.set(matchNum, meta);
   }
   return map;
+}
+
+export async function safeLoadShopEventMetaLookup(
+  timeoutMs = SHOP_DB_META_LOOKUP_TIMEOUT_MS,
+): Promise<ShopEventMetaLookup> {
+  try {
+    return await Promise.race([
+      loadShopEventMetaLookup(),
+      new Promise<never>((_, reject) => {
+        setTimeout(
+          () => reject(new Error(`DB meta lookup timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    shopLog(`DB meta lookup failed: ${msg}`);
+    return new Map();
+  }
+}
+
+/** Last synced marketplace snapshot from Postgres (fallback when Viva API is down). */
+export async function loadShopLatestPayloadFromDatabase(
+  metaByMatch: ShopEventMetaLookup,
+): Promise<ShopLatestPayload | null> {
+  try {
+    const meta = await prisma.shopMarketplaceSyncMeta.findUnique({ where: { id: 1 } });
+    if (!meta) {
+      shopLog("DB cached payload unavailable (no sync meta row)");
+      return null;
+    }
+
+    const events = await loadShopEventsFromDatabase(metaByMatch);
+    const hasData = events.some((e) => e.listingsCount > 0);
+    if (!hasData) {
+      shopLog("DB cached payload unavailable (no event rows)");
+      return null;
+    }
+
+    const raw = meta.rawPayload as { fetchedAt?: string } | null;
+    const fetchedAt =
+      typeof raw?.fetchedAt === "string" && raw.fetchedAt.trim()
+        ? raw.fetchedAt
+        : meta.scannedAt.toISOString();
+
+    shopLog(`DB cached payload loaded (${events.length} matches, scanned ${meta.scannedAt.toISOString()})`);
+    return {
+      scannedAt: meta.scannedAt.toISOString(),
+      fetchedAt,
+      events,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    shopLog(`DB load cached payload failed: ${msg}`);
+    return null;
+  }
 }
 
 function eventToDbRow(event: ShopMarketEvent, scannedAt: Date) {
@@ -188,15 +248,14 @@ export async function loadShopDiscordNotifyFingerprintForMatch(
 }
 
 export type ShopDiscordFingerprintClaim =
-  | { action: "skip"; reason: "same_fingerprint" | "no_priced_listings" | "cooldown" }
-  | { action: "send"; previousFingerprint: string | null; fingerprint: string }
+  | { action: "skip"; reason: "same_fingerprint" | "no_priced_listings" }
+  | { action: "send"; previousFingerprint: string | null; fingerprint: string; notifyLogId: number }
   | { action: "error"; message: string };
-
-const SHOP_DISCORD_NOTIFY_COOLDOWN_MS = 5 * 60 * 1000;
 
 /**
  * Atomically claim a Discord delta send under pg_advisory_xact_lock(matchNum).
- * Persists fingerprint BEFORE Discord API call so concurrent polls never double-send.
+ * Persists fingerprint + notify log BEFORE Discord API call so concurrent polls never double-send.
+ * Primary gate: stored fingerprint; backup: any prior notify log row for same matchNum+fingerprint.
  */
 export async function claimShopDiscordNotifyFingerprint(
   event: ShopMarketEvent,
@@ -217,23 +276,30 @@ export async function claimShopDiscordNotifyFingerprint(
       });
       const stored = existing?.lastDiscordNotifyFingerprint ?? null;
       if (!shouldSendShopDiscordDelta(event, stored)) {
-        shopLog(`Discord shop claim skip M${event.matchNum} (fingerprint match under lock)`);
+        shopLog(`Discord shop claim skip M${event.matchNum} (stored fingerprint match)`);
         return { action: "skip", reason: "same_fingerprint" as const };
       }
 
-      const cooldownSince = new Date(Date.now() - SHOP_DISCORD_NOTIFY_COOLDOWN_MS);
-      const recent = await tx.shopDiscordMatchNotifyLog.findFirst({
-        where: {
-          matchNum: event.matchNum,
-          fingerprint: fp,
-          createdAt: { gte: cooldownSince },
-        },
+      const priorNotify = await tx.shopDiscordMatchNotifyLog.findFirst({
+        where: { matchNum: event.matchNum, fingerprint: fp },
         select: { id: true },
       });
-      if (recent) {
-        shopLog(`Discord shop claim skip M${event.matchNum} (cooldown ${SHOP_DISCORD_NOTIFY_COOLDOWN_MS / 60_000}m)`);
-        return { action: "skip", reason: "cooldown" as const };
+      if (priorNotify) {
+        if (stored !== fp && existing) {
+          await tx.shopMarketplaceEventRecord.update({
+            where: { matchNum: event.matchNum },
+            data: { lastDiscordNotifyFingerprint: fp },
+          });
+          shopLog(`Discord shop claim skip M${event.matchNum} (notify log match — stored synced)`);
+        } else {
+          shopLog(`Discord shop claim skip M${event.matchNum} (notify log fingerprint match)`);
+        }
+        return { action: "skip", reason: "same_fingerprint" as const };
       }
+
+      const notifyLog = await tx.shopDiscordMatchNotifyLog.create({
+        data: { matchNum: event.matchNum, fingerprint: fp },
+      });
 
       if (existing) {
         await tx.shopMarketplaceEventRecord.update({
@@ -248,8 +314,13 @@ export async function claimShopDiscordNotifyFingerprint(
         });
       }
 
-      shopLog(`Discord shop claim send M${event.matchNum} (fingerprint reserved)`);
-      return { action: "send", previousFingerprint: stored, fingerprint: fp };
+      shopLog(`Discord shop claim send M${event.matchNum} (fingerprint + notify log reserved)`);
+      return {
+        action: "send",
+        previousFingerprint: stored,
+        fingerprint: fp,
+        notifyLogId: notifyLog.id,
+      };
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -258,30 +329,21 @@ export async function claimShopDiscordNotifyFingerprint(
   }
 }
 
-/** Record a successful per-match Discord delta for cooldown dedup. */
-export async function persistShopDiscordMatchNotifyLog(
-  matchNum: number,
-  fingerprint: string,
-): Promise<void> {
-  try {
-    await prisma.shopDiscordMatchNotifyLog.create({
-      data: { matchNum, fingerprint },
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    shopLog(`DB persist match notify log M${matchNum} failed: ${msg}`);
-  }
-}
-
-/** Undo a claim when Discord POST fails after fingerprint was reserved. */
+/** Undo a claim when Discord POST fails after fingerprint + notify log were reserved. */
 export async function revertShopDiscordNotifyFingerprint(
   matchNum: number,
   previousFingerprint: string | null,
+  notifyLogId?: number,
 ): Promise<void> {
   try {
-    await prisma.shopMarketplaceEventRecord.update({
-      where: { matchNum },
-      data: { lastDiscordNotifyFingerprint: previousFingerprint },
+    await prisma.$transaction(async (tx) => {
+      await tx.shopMarketplaceEventRecord.update({
+        where: { matchNum },
+        data: { lastDiscordNotifyFingerprint: previousFingerprint },
+      });
+      if (notifyLogId != null) {
+        await tx.shopDiscordMatchNotifyLog.deleteMany({ where: { id: notifyLogId } });
+      }
     });
     shopLog(`Discord shop claim reverted M${matchNum}`);
   } catch (e) {

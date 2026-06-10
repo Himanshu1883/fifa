@@ -349,6 +349,7 @@ export async function sendShopBaselineToDiscord(events: ShopMarketEvent[]): Prom
   return results;
 }
 
+/** Legacy batch path — prefer sendHardenedShopDelta. Never adds a summary content header. */
 export async function sendShopDeltaToDiscord(
   candidates: Array<{ event: ShopMarketEvent; changedListings: ShopMarketListing[] }>,
 ): Promise<ShopDiscordNotifyResult[]> {
@@ -359,9 +360,7 @@ export async function sendShopDeltaToDiscord(
   const results: ShopDiscordNotifyResult[] = [];
   for (let i = 0; i < notifyCandidates.length; i++) {
     const { event, changedListings } = notifyCandidates[i];
-    const res = await sendOneShopDeltaToDiscord(event, {
-      changedListings,
-    });
+    const res = await sendOneShopDeltaToDiscord(event, { changedListings });
     results.push(res);
     if (!res.ok) break;
   }

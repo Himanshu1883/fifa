@@ -175,31 +175,42 @@ console.assert(!shouldSendShopDiscordDelta(m4Next, m4FpNext), "M4 skip when fing
 const m4Fp = shopDiscordNotifyFingerprint(m4Event());
 console.assert(m4Fp === "1:2735;f1:2735;f2:1940", `M4 fingerprint: ${m4Fp}`);
 
+function m101Event(): ShopMarketEvent {
+  return shopEvent(101, "Match 101", [
+    listing("1", "Category 1", 3710),
+    listing("f1", "Final / Fan 1", 11130),
+    listing("f2", "Final / Fan 2", 4330),
+  ]);
+}
+
 async function claimBeforeSend(
   event: ShopMarketEvent,
   db: Map<number, string | null>,
-  cooldown: Map<string, number> = new Map(),
+  notifyLog: Set<string>,
 ): Promise<"send" | "skip"> {
   const fp = shopDiscordNotifyFingerprint(event);
   if (!fp) return "skip";
   const stored = db.get(event.matchNum) ?? null;
   if (!shouldSendShopDiscordDelta(event, stored)) return "skip";
-  const cooldownKey = `${event.matchNum}:${fp}`;
-  const lastSent = cooldown.get(cooldownKey);
-  if (lastSent && Date.now() - lastSent < 5 * 60 * 1000) return "skip";
+  const logKey = `${event.matchNum}:${fp}`;
+  if (notifyLog.has(logKey)) {
+    if (stored !== fp) db.set(event.matchNum, fp);
+    return "skip";
+  }
   db.set(event.matchNum, fp);
-  cooldown.set(cooldownKey, Date.now());
+  notifyLog.add(logKey);
   return "send";
 }
 
 async function runM4IdenticalResendTest(): Promise<void> {
   const m4Db = new Map<number, string | null>();
+  const notifyLog = new Set<string>();
   let sendCount = 0;
 
-  const first = await claimBeforeSend(m4Event(), m4Db);
+  const first = await claimBeforeSend(m4Event(), m4Db, notifyLog);
   if (first === "send") sendCount += 1;
 
-  const second = await claimBeforeSend(m4Event(), m4Db);
+  const second = await claimBeforeSend(m4Event(), m4Db, notifyLog);
   if (second === "send") sendCount += 1;
 
   console.assert(first === "send", "M4 first poll should send");
@@ -210,7 +221,7 @@ async function runM4IdenticalResendTest(): Promise<void> {
 // --- Scenario 6: M4 API flicker — f1+f2 → f1 only → f1+f2 same prices ---
 async function runM4FlickerTest(): Promise<void> {
   const m4Db = new Map<number, string | null>();
-  const cooldown = new Map<string, number>();
+  const notifyLog = new Set<string>();
   let sendCount = 0;
 
   const fullFp = shopDiscordNotifyFingerprint(m4Event());
@@ -230,13 +241,13 @@ async function runM4FlickerTest(): Promise<void> {
     "skip when returning to same stored fingerprint",
   );
 
-  const poll1 = await claimBeforeSend(m4Event(), m4Db, cooldown);
+  const poll1 = await claimBeforeSend(m4Event(), m4Db, notifyLog);
   if (poll1 === "send") sendCount += 1;
 
-  const poll2 = await claimBeforeSend(m4EventFan1Only(), m4Db, cooldown);
+  const poll2 = await claimBeforeSend(m4EventFan1Only(), m4Db, notifyLog);
   if (poll2 === "send") sendCount += 1;
 
-  const poll3 = await claimBeforeSend(m4Event(), m4Db, cooldown);
+  const poll3 = await claimBeforeSend(m4Event(), m4Db, notifyLog);
   if (poll3 === "send") sendCount += 1;
 
   console.assert(poll1 === "send", "M4 flicker poll1 should send");
@@ -305,11 +316,35 @@ async function runConcurrentTest(): Promise<void> {
   console.assert(sendCount === 1, `price update: expected 1 send, got ${sendCount}`);
 }
 
+async function runM101IdenticalResendTest(): Promise<void> {
+  const m101Db = new Map<number, string | null>();
+  const notifyLog = new Set<string>();
+  let sendCount = 0;
+
+  const fp = shopDiscordNotifyFingerprint(m101Event());
+  console.assert(fp === "1:3710;f1:11130;f2:4330", `M101 fingerprint: ${fp}`);
+
+  const first = await claimBeforeSend(m101Event(), m101Db, notifyLog);
+  if (first === "send") sendCount += 1;
+
+  // Simulate 5+ minutes later — stored cleared (old deploy) but notify log retained
+  m101Db.set(101, null);
+
+  const second = await claimBeforeSend(m101Event(), m101Db, notifyLog);
+  if (second === "send") sendCount += 1;
+
+  console.assert(first === "send", "M101 first poll should send");
+  console.assert(second === "skip", "M101 second identical poll should skip via notify log");
+  console.assert(sendCount === 1, `M101 identical resend: expected 1 send, got ${sendCount}`);
+  console.assert(m101Db.get(101) === fp, "M101 notify log self-heals stored fingerprint");
+}
+
 runConcurrentTest()
   .then(() => runM4IdenticalResendTest())
   .then(() => runM4FlickerTest())
+  .then(() => runM101IdenticalResendTest())
   .then(() => {
-    console.log("M48 + M4 shop Discord dedup tests passed");
+    console.log("M48 + M4 + M101 shop Discord dedup tests passed");
   })
   .catch((e) => {
     console.error(e);

@@ -200,6 +200,25 @@ Vercel functions are short-lived; avoid opening unbounded connections. If Railwa
 
 The stock repo uses one variable for both CLI and runtime; simplest path is **one Railway URL that works from Vercel** (often already pooled or Railway’s public URL).
 
+**Recommended `DATABASE_URL` shape for this project** (copy from Railway → Postgres → **Connect** → **Public network** / TCP proxy — **not** `*.railway.internal`):
+
+```text
+postgresql://postgres:YOUR_PASSWORD@turntable.proxy.rlwy.net:41527/railway?sslmode=require
+```
+
+Replace host, port, password, and database name with your Railway values. The host should end in **`.proxy.rlwy.net`** (or another Railway **public** hostname). The path **`/railway`** is the database name on Railway’s default Postgres plugin.
+
+**If the home page shows “timeout exceeded when trying to connect”:**
+
+1. Confirm Vercel **`DATABASE_URL`** matches the **public** proxy URL above (not `*.railway.internal`).
+2. Set **`PG_CONNECTION_TIMEOUT_MS=30000`** (or `45000`) on Vercel — Railway’s public proxy can take **15–20+ seconds** on cold starts; the app default is now 30s.
+3. Prefer Railway’s **pooled** connection string for Vercel if available; keep **`PG_POOL_MAX=2`** (default on Vercel).
+4. After changing env vars, **redeploy** Production (and Preview if used).
+5. Verify from your machine: `psql "$DATABASE_URL" -c "SELECT 1"`. Then in production (with `CRON_SECRET` or `HEALTH_DB_SECRET` set):  
+   `curl -sS -H "Authorization: Bearer $CRON_SECRET" https://eventdetail.vercel.app/api/health-db`
+
+Optional tuning env vars (see [`.env.example`](./.env.example)): **`PG_CONNECTION_TIMEOUT_MS`**, **`PG_POOL_MAX`**, **`HEALTH_DB_SECRET`**.
+
 ## AUTH_SECRET — session signing
 
 Session cookies are signed with **HS256** (`jose`). Set **`AUTH_SECRET`** in every environment to a random string of **at least 32 characters**.

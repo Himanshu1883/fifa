@@ -24,7 +24,6 @@ import {
   bootstrapShopDiscordNotifyFingerprints,
   claimShopDiscordNotifyFingerprint,
   loadShopDiscordNotifyFingerprints,
-  persistShopDiscordMatchNotifyLog,
   revertShopDiscordNotifyFingerprint,
   updateShopDiscordNotifyFingerprints,
 } from "@/lib/shop-sync-service";
@@ -105,8 +104,6 @@ async function sendHardenedShopDelta(
       if (claim.action === "skip") {
         if (claim.reason === "same_fingerprint") {
           shopLog(`Discord shop delta skip M${event.matchNum} (already notified for this price)`);
-        } else if (claim.reason === "cooldown") {
-          shopLog(`Discord shop delta skip M${event.matchNum} (recent send cooldown)`);
         }
         return { result: null, notified: false };
       }
@@ -117,7 +114,11 @@ async function sendHardenedShopDelta(
 
       const sentFingerprint = shopDiscordNotifyFingerprint(event);
       if (sentFingerprint !== claim.fingerprint) {
-        await revertShopDiscordNotifyFingerprint(event.matchNum, claim.previousFingerprint);
+        await revertShopDiscordNotifyFingerprint(
+          event.matchNum,
+          claim.previousFingerprint,
+          claim.notifyLogId,
+        );
         shopLog(
           `Discord shop delta skip M${event.matchNum} (fingerprint drift after claim: ${claim.fingerprint} vs ${sentFingerprint})`,
         );
@@ -129,7 +130,11 @@ async function sendHardenedShopDelta(
         event,
       );
       if (changedListings.length === 0) {
-        await revertShopDiscordNotifyFingerprint(event.matchNum, claim.previousFingerprint);
+        await revertShopDiscordNotifyFingerprint(
+          event.matchNum,
+          claim.previousFingerprint,
+          claim.notifyLogId,
+        );
         shopLog(`Discord shop delta skip M${event.matchNum} (no listing deltas vs stored fingerprint)`);
         return { result: null, notified: false };
       }
@@ -139,12 +144,15 @@ async function sendHardenedShopDelta(
       );
       const result = await sendOneShopDeltaToDiscord(event, { changedListings });
       if (!result.ok) {
-        await revertShopDiscordNotifyFingerprint(event.matchNum, claim.previousFingerprint);
+        await revertShopDiscordNotifyFingerprint(
+          event.matchNum,
+          claim.previousFingerprint,
+          claim.notifyLogId,
+        );
         shopLog(`Discord shop delta M${event.matchNum} send failed — fingerprint reverted`);
         return { result, notified: false };
       }
 
-      await persistShopDiscordMatchNotifyLog(event.matchNum, claim.fingerprint);
       return { result, notified: true };
     });
 

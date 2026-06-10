@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { unstable_cache } from "next/cache";
 import { Prisma } from "@/generated/prisma/client";
+import { formatDbConnectionError, withDbRetry } from "@/lib/db-query";
 import { prisma } from "@/lib/prisma";
 import { formatUsd, priceToNumber } from "@/lib/format-usd";
 import { categoryNumFromCategoryName as catNumberFromSockCategoryName } from "@/lib/sb-category";
@@ -470,7 +471,8 @@ export async function HomePage({
   let buyingCriteriaFilteredOutAll = false;
   let missingPriceFilteredOutAll = false;
   try {
-    const rows = await prisma.event.findMany({
+    const rows = await withDbRetry(() =>
+      prisma.event.findMany({
       orderBy: { sortOrder: "asc" },
       select: {
         id: true,
@@ -486,7 +488,8 @@ export async function HomePage({
         sbEventId: true,
         eventDate: true,
       },
-    });
+    }),
+    );
 
     const eventIds = rows.map((r) => r.id);
     const sbIds = [
@@ -637,7 +640,7 @@ export async function HomePage({
     events = [];
     buyingCriteriaFilteredOutAll = false;
     missingPriceFilteredOutAll = false;
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = formatDbConnectionError(err);
     dbErr =
       "Could not load events from the database. Check DATABASE_URL, that Postgres is running, and run migrations if needed. " +
       `(${msg})`;

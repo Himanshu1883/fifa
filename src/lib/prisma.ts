@@ -159,8 +159,24 @@ function requireDatabaseUrl(): string {
   return url;
 }
 
+function parsePositiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
 /** Fail fast when Postgres is unreachable (default pg timeout is indefinite). */
-const PG_CONNECTION_TIMEOUT_MS = 15_000;
+function pgConnectionTimeoutMs(): number {
+  return parsePositiveIntEnv("PG_CONNECTION_TIMEOUT_MS", 30_000);
+}
+
+/** Serverless: keep pool small so Railway connection limits are not exhausted. */
+function pgPoolMax(): number {
+  const configured = parsePositiveIntEnv("PG_POOL_MAX", 0);
+  if (configured > 0) return configured;
+  return process.env.VERCEL === "1" ? 2 : 10;
+}
 
 function effectivePgSslRejectUnauthorized(connectionString: string): boolean | undefined {
   const override = process.env.DATABASE_PG_SSL_REJECT_UNAUTHORIZED?.trim().toLowerCase();
@@ -208,11 +224,13 @@ export function createPrismaClient(): PrismaClient {
     rejectUnauthorized === false
       ? connectionStringWithoutPgSslQueryParams(connectionString)
       : connectionString;
+  const connectionTimeoutMillis = pgConnectionTimeoutMs();
   const poolConfig: PoolConfig = {
     connectionString: poolConnectionString,
-    connectionTimeoutMillis: PG_CONNECTION_TIMEOUT_MS,
-    idleTimeoutMillis: 60_000,
-    max: 10,
+    connectionTimeoutMillis,
+    idleTimeoutMillis: process.env.VERCEL === "1" ? 10_000 : 60_000,
+    max: pgPoolMax(),
+    allowExitOnIdle: process.env.VERCEL === "1",
   };
   if (rejectUnauthorized === false) {
     poolConfig.ssl = { rejectUnauthorized: false };
