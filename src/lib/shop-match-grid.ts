@@ -19,7 +19,7 @@ export function emptyShopMarketEvent(
     lowestPrice: null,
     highestPrice: null,
     averagePrice: null,
-    currency: "EUR",
+    currency: "USD",
     buyUrl: buildMatchBuyUrl(matchNum),
     rawPayload: {},
   };

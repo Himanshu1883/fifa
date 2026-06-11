@@ -150,7 +150,7 @@ export function normalizeVivaLatest(
       lowestPrice: stats.lowest,
       highestPrice: stats.highest,
       averagePrice: stats.average,
-      currency: "EUR",
+      currency: "USD",
       buyUrl: buildMatchBuyUrl(matchNum),
       rawPayload: bucket.raw,
     });

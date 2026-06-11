@@ -17,7 +17,7 @@ export function formatShopPrice(amount: number | null, currency: string): string
   if (amount === null) return "—";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: currency.length === 3 ? currency : "EUR",
+    currency: currency.length === 3 ? currency : "USD",
     maximumFractionDigits: 0,
   }).format(amount);
 }

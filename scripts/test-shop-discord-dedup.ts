@@ -59,7 +59,7 @@ function shopEvent(
     lowestPrice: prices.length ? Math.min(...prices) : null,
     highestPrice: prices.length ? Math.max(...prices) : null,
     averagePrice: prices.length ? prices.reduce((a, b) => a + b, 0) / prices.length : null,
-    currency: "EUR",
+    currency: "USD",
     buyUrl: null,
     rawPayload: {},
   };

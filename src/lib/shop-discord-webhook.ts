@@ -28,6 +28,8 @@ export type ShopDiscordNotifyResult = {
 
 const SHOP_EMBED_COLOR_IN_STOCK = 0x3b82f6;
 const SHOP_EMBED_COLOR_NO_STOCK = 0xef4444;
+/** FIFA Last Minute shop prices from vivalafifa are USD (fwc26-shop-usd). */
+const SHOP_DISCORD_CURRENCY = "USD";
 
 function availableListings(event: ShopMarketEvent): ShopMarketListing[] {
   return event.listings.filter((l) => l.available);
@@ -54,14 +56,14 @@ function matchSummaryLine(event: ShopMarketEvent, compact: boolean): string {
   if (compact) {
     if (avail.length === 0) return `**M${event.matchNum}** ${title} — _no stock_`;
     const prices = priced
-      .map((l) => `${l.categoryKey} ${formatShopPrice(l.price, event.currency)}`)
+      .map((l) => `${l.categoryKey} ${formatShopPrice(l.price, SHOP_DISCORD_CURRENCY)}`)
       .join(" · ");
     return `**M${event.matchNum}** ${name} — ${prices || `${avail.length} avail`}`;
   }
 
-  const lines = priced.map((l) => formatAvailableListingLine(l, event.currency));
+  const lines = priced.map((l) => formatAvailableListingLine(l, SHOP_DISCORD_CURRENCY));
   if (lines.length > 0) return lines.join("\n");
-  if (avail.length > 0) return avail.map((l) => formatAvailableListingLine(l, event.currency)).join("\n");
+  if (avail.length > 0) return avail.map((l) => formatAvailableListingLine(l, SHOP_DISCORD_CURRENCY)).join("\n");
   return "_no stock_";
 }
 
@@ -178,7 +180,7 @@ function buildShopDeltaEmbed(
   changedListings: ShopMarketListing[],
 ): Record<string, unknown> | null {
   if (changedListings.length === 0) return null;
-  const description = formatChangedListingLines(changedListings, event.currency).trim();
+  const description = formatChangedListingLines(changedListings, SHOP_DISCORD_CURRENCY).trim();
   if (!description) return null;
 
   const buyUrl = resolveShopBuyUrl(event);

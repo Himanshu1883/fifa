@@ -192,7 +192,7 @@ function rowToShopMarketEvent(row: {
     lowestPrice: row.lowestPrice,
     highestPrice: row.highestPrice,
     averagePrice: row.averagePrice,
-    currency: "EUR",
+    currency: "USD",
     buyUrl: buildMatchBuyUrl(row.matchNum),
     rawPayload: (row.rawPayload ?? {}) as ShopMarketEvent["rawPayload"],
   };
