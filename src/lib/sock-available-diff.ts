@@ -234,8 +234,20 @@ export function computeSockAvailableDiff(params: {
     newCount,
     changedCount,
     priceChangedCount,
-    newSeatIds,
+    newSeatIds: sortNewListingsByPriceAsc(newSeatIds),
     sample,
   };
+}
+
+/** Cheapest first; null prices last. */
+export function sortNewListingsByPriceAsc(listings: SockAvailableNewListingKey[]): SockAvailableNewListingKey[] {
+  return [...listings].sort((a, b) => {
+    const pa = a.amountRaw;
+    const pb = b.amountRaw;
+    if (pa == null && pb == null) return 0;
+    if (pa == null) return 1;
+    if (pb == null) return -1;
+    return pa - pb;
+  });
 }
 

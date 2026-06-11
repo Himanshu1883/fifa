@@ -1,5 +1,6 @@
 import type { SockAvailableKind } from "@/generated/prisma/enums";
 import type { SockAvailableNewListingKey } from "@/lib/sock-available-diff";
+import { sortNewListingsByPriceAsc } from "@/lib/sock-available-diff";
 import { resolveDedicatedMatchWebhookUrl, maskWebhookUrl, resolveDiscordNewListingsWebhookUrl } from "@/lib/webhook-settings";
 import type { DedicatedMatchWebhookNumber } from "@/lib/dedicated-match-webhooks";
 import { parseDedicatedMatchNumber } from "@/lib/dedicated-match-webhooks";
@@ -57,14 +58,17 @@ export function buildDiscordNewListingsPayload(input: {
   kind: SockAvailableKind;
   newCount: number;
   newSeatIds: SockAvailableNewListingKey[];
+  /** When false, title omits "new" (inventory/price refresh). Default true. */
+  isNewListings?: boolean;
 }): { embeds: Array<Record<string, unknown>> } {
-  const { eventLabel, eventName, eventId, prefId, newCount, newSeatIds } = input;
+  const { eventLabel, eventName, eventId, prefId, newCount, newSeatIds, isNewListings = true } = input;
   const appBase = envTrim("APP_BASE_URL").replace(/\/+$/, "");
   const eventPath = `/events/${eventId}?kind=RESALE&panel=sock`;
   const eventUrl = appBase ? `${appBase}${eventPath}` : null;
 
   const maxLines = 45;
-  const lines = newSeatIds.slice(0, maxLines).map(formatNewListingLine);
+  const sorted = sortNewListingsByPriceAsc(newSeatIds);
+  const lines = sorted.slice(0, maxLines).map(formatNewListingLine);
   if (newCount > maxLines) {
     lines.push(`_…and ${(newCount - maxLines).toLocaleString("en-US")} more_`);
   }
@@ -75,7 +79,9 @@ export function buildDiscordNewListingsPayload(input: {
   }
 
   const matchLine = `${eventLabel} — ${eventName}`;
-  const title = `🆕 ${newCount.toLocaleString("en-US")} new resale listing${newCount === 1 ? "" : "s"}`;
+  const title = isNewListings
+    ? `🆕 ${newCount.toLocaleString("en-US")} new resale listing${newCount === 1 ? "" : "s"}`
+    : `🆕 ${newCount.toLocaleString("en-US")} resale listing${newCount === 1 ? "" : "s"}`;
 
   const embed: Record<string, unknown> = {
     author: {
@@ -219,6 +225,7 @@ export async function sendDiscordNewListingsMessage(input: {
   newSeatIds: SockAvailableNewListingKey[];
   /** When set, posts to this match's dedicated webhook (never the general resale webhook). */
   dedicatedMatchNum?: DedicatedMatchWebhookNumber;
+  isNewListings?: boolean;
 }): Promise<DiscordNotifyResult> {
   const provider = "discord" as const;
 

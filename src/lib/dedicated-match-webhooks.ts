@@ -37,6 +37,21 @@ export function isDedicatedMatchShopWebhook(
   return (DEDICATED_SHOP_ROUTING_MATCHES as readonly number[]).includes(matchNum);
 }
 
+export function isDedicatedResaleMatch(
+  matchNum: number | null | undefined,
+): matchNum is DedicatedResaleMatchNumber {
+  if (matchNum == null) return false;
+  return (DEDICATED_RESALE_MATCHES as readonly number[]).includes(matchNum);
+}
+
+export function parseDedicatedResaleMatchNumber(
+  matchLabel: string,
+  name: string,
+): DedicatedResaleMatchNumber | null {
+  const n = parseEventMatchNumber(matchLabel, name);
+  return isDedicatedResaleMatch(n) ? n : null;
+}
+
 export function parseDedicatedMatchNumber(matchLabel: string, name: string): DedicatedMatchWebhookNumber | null {
   const n = parseEventMatchNumber(matchLabel, name);
   return isDedicatedMatchWebhook(n) ? n : null;

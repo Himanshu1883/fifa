@@ -1,16 +1,16 @@
 import "server-only";
 
 import {
-  amountRawToUsdString,
-  sendDiscordResaleDedicatedMessage,
+  sendDiscordNewListingsMessage,
   type DiscordNotifyResult,
 } from "@/lib/discord-webhook";
 import { resolveDedicatedMatchWebhookUrl } from "@/lib/webhook-settings";
 import {
-  isDedicatedMatchWebhook,
-  parseDedicatedMatchNumber,
-  type DedicatedMatchWebhookNumber,
+  isDedicatedResaleMatch,
+  parseDedicatedResaleMatchNumber,
+  type DedicatedResaleMatchNumber,
 } from "@/lib/dedicated-match-webhooks";
+import { sortNewListingsByPriceAsc, type SockAvailableNewListingKey } from "@/lib/sock-available-diff";
 import { prisma } from "@/lib/prisma";
 
 type ResaleInventoryRow = {
@@ -18,6 +18,32 @@ type ResaleInventoryRow = {
   categoryName: string;
   amount: unknown;
 };
+
+type ResaleSeatRow = {
+  seatId: string;
+  resaleMovementId: string | null;
+  categoryId: string;
+  categoryName: string;
+  blockName: string;
+  row: string;
+  seatNumber: string;
+  amount: unknown;
+};
+
+function resaleSeatRowToListingKey(row: ResaleSeatRow): SockAvailableNewListingKey {
+  const key = row.resaleMovementId ? `m:${row.resaleMovementId}` : `s:${row.seatId}`;
+  return {
+    key,
+    seatId: row.seatId,
+    resaleMovementId: row.resaleMovementId,
+    categoryId: row.categoryId,
+    categoryName: row.categoryName,
+    blockName: row.blockName,
+    row: row.row,
+    seatNumber: row.seatNumber,
+    amountRaw: amountToRaw(row.amount),
+  };
+}
 
 export type ResaleCategoryPriceState = {
   categoryId: string;
@@ -148,7 +174,7 @@ export async function claimResaleDiscordNotifyFingerprint(
     return { action: "skip", reason: "no_inventory" };
   }
 
-  const webhookUrl = isDedicatedMatchWebhook(matchNum)
+  const webhookUrl = isDedicatedResaleMatch(matchNum)
     ? await resolveDedicatedMatchWebhookUrl(matchNum)
     : null;
   if (!webhookUrl) {
@@ -240,14 +266,20 @@ export async function revertResaleDiscordNotifyFingerprint(
   }
 }
 
-function formatResaleCategoryLines(states: ResaleCategoryPriceState[]): string {
-  return states
-    .map((s) => {
-      const price = amountRawToUsdString(s.minAmountRaw);
-      const label = s.categoryName || s.categoryId;
-      return `• **${label}** · min **${price}** · ${s.count.toLocaleString("en-US")} listing${s.count === 1 ? "" : "s"}`;
-    })
-    .join("\n");
+async function loadResaleSeatRows(eventId: number): Promise<ResaleSeatRow[]> {
+  return prisma.sockAvailable.findMany({
+    where: { eventId, kind: "RESALE" },
+    select: {
+      seatId: true,
+      resaleMovementId: true,
+      categoryId: true,
+      categoryName: true,
+      blockName: true,
+      row: true,
+      seatNumber: true,
+      amount: true,
+    },
+  });
 }
 
 export async function maybeNotifyDedicatedResaleDiscord(input: {
@@ -257,22 +289,25 @@ export async function maybeNotifyDedicatedResaleDiscord(input: {
   prefId: string;
 }): Promise<DiscordNotifyResult & { mode?: "baseline" | "delta" | "skipped" }> {
   const provider = "discord" as const;
-  const matchNum = parseDedicatedMatchNumber(input.eventLabel, input.eventName);
+  const matchNum = parseDedicatedResaleMatchNumber(input.eventLabel, input.eventName);
   if (!matchNum) {
     return { attempted: false, ok: false, provider, mode: "skipped" };
   }
 
-  let rows: ResaleInventoryRow[];
+  let seatRows: ResaleSeatRow[];
   try {
-    rows = await prisma.sockAvailable.findMany({
-      where: { eventId: input.eventId, kind: "RESALE" },
-      select: { categoryId: true, categoryName: true, amount: true },
-    });
+    seatRows = await loadResaleSeatRows(input.eventId);
   } catch {
     return { attempted: false, ok: false, provider, mode: "skipped" };
   }
 
-  const claim = await claimResaleDiscordNotifyFingerprint(matchNum, rows);
+  const fingerprintRows: ResaleInventoryRow[] = seatRows.map((r) => ({
+    categoryId: r.categoryId,
+    categoryName: r.categoryName,
+    amount: r.amount,
+  }));
+
+  const claim = await claimResaleDiscordNotifyFingerprint(matchNum, fingerprintRows);
   if (claim.action === "skip") {
     return { attempted: false, ok: true, provider, mode: "skipped" };
   }
@@ -280,26 +315,22 @@ export async function maybeNotifyDedicatedResaleDiscord(input: {
     return { attempted: false, ok: false, provider, error: claim.message, mode: "skipped" };
   }
 
-  const currentStates = buildResaleCategoryPriceState(rows);
-  const changedStates =
-    claim.mode === "baseline"
-      ? currentStates
-      : computeChangedResaleCategoryStates(claim.previousFingerprint, rows);
-
-  if (changedStates.length === 0) {
+  const listings = sortNewListingsByPriceAsc(seatRows.map(resaleSeatRowToListingKey));
+  if (listings.length === 0) {
     await revertResaleDiscordNotifyFingerprint(matchNum, claim.previousFingerprint, claim.notifyLogId);
     return { attempted: false, ok: true, provider, mode: "skipped" };
   }
 
-  const result = await sendDiscordResaleDedicatedMessage({
+  const result = await sendDiscordNewListingsMessage({
     eventLabel: input.eventLabel,
     eventName: input.eventName,
     eventId: input.eventId,
     prefId: input.prefId,
-    matchNum,
-    mode: claim.mode,
-    categoryLines: formatResaleCategoryLines(changedStates),
-    totalListings: rows.length,
+    kind: "RESALE",
+    newCount: listings.length,
+    newSeatIds: listings,
+    dedicatedMatchNum: matchNum,
+    isNewListings: false,
   });
 
   if (!result.ok) {
@@ -331,10 +362,10 @@ export function resolveDedicatedResaleMatchNum(
   matchLabel: string | null | undefined,
   label: string,
   name: string,
-): DedicatedMatchWebhookNumber | null {
+): DedicatedResaleMatchNumber | null {
   return (
-    parseDedicatedMatchNumber(matchLabel?.trim() || label.trim(), name) ??
-    parseDedicatedMatchNumber(label.trim(), name)
+    parseDedicatedResaleMatchNumber(matchLabel?.trim() || label.trim(), name) ??
+    parseDedicatedResaleMatchNumber(label.trim(), name)
   );
 }
 
