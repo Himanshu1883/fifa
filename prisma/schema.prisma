@@ -313,21 +313,50 @@ model SbPushRulesSettings {
 model AppWebhookSettings {
   id                           Int       @id
   discordNewListingsWebhookUrl String?   @map("discord_new_listings_webhook_url") @db.Text
+  discordMatch1WebhookUrl       String?  @map("discord_match1_webhook_url") @db.Text
   discordMatch3ResaleWebhookUrl String?  @map("discord_match3_resale_webhook_url") @db.Text
   discordMatch4ResaleWebhookUrl String?  @map("discord_match4_resale_webhook_url") @db.Text
   discordMatch5WebhookUrl       String?  @map("discord_match5_webhook_url") @db.Text
   discordMatch7WebhookUrl       String?  @map("discord_match7_webhook_url") @db.Text
   discordShopWebhookUrl        String?   @map("discord_shop_webhook_url") @db.Text
+  discordPriceListWebhookUrl   String?   @map("discord_price_list_webhook_url") @db.Text
   shopDiscordBaselineSentAt    DateTime? @map("shop_discord_baseline_sent_at")
-  /// Per dedicated match (3/4/5/7): ISO timestamp when that match's shop baseline was sent to its webhook.
+  /// Per dedicated match (1/3/4/5/7): ISO timestamp when that match's shop baseline was sent to its webhook.
   dedicatedShopDiscordBaselinesSent Json @default("{}") @map("dedicated_shop_discord_baselines_sent")
   /// General shop webhook: last successful notify (baseline, delta, or heartbeat).
   shopDiscordLastHeartbeatAt   DateTime? @map("shop_discord_last_heartbeat_at")
-  /// Per dedicated match (3/4/5/7): ISO timestamp of last successful shop notify to that webhook.
+  /// Per dedicated match (1/3/4/5/7): ISO timestamp of last successful shop notify to that webhook.
   dedicatedShopDiscordLastHeartbeatAt Json @default("{}") @map("dedicated_shop_discord_last_heartbeat_at")
   updatedAt                    DateTime  @updatedAt @map("updated_at")
 
   @@map("app_webhook_settings")
+}
+
+/// Singleton row `id = 1`: last notified combined resale+shop price list fingerprint.
+model PriceListDiscordNotifyState {
+  id                           Int       @id @default(1)
+  lastDiscordNotifyFingerprint String?   @map("last_discord_notify_fingerprint") @db.Text
+  lastHeartbeatAt              DateTime? @map("last_heartbeat_at")
+  updatedAt                    DateTime  @updatedAt @map("updated_at")
+
+  @@map("price_list_discord_notify_state")
+}
+
+/// Outbound Discord notify history for combined resale+shop price list webhook.
+model PriceListDiscordNotifyLog {
+  id           Int      @id @default(autoincrement())
+  createdAt    DateTime @default(now()) @map("created_at")
+  mode         String   @db.Text
+  resaleCount  Int      @default(0) @map("resale_count")
+  shopCount    Int      @default(0) @map("shop_count")
+  attempted    Boolean  @default(false)
+  ok           Boolean  @default(false)
+  status       Int?
+  error        String?  @db.Text
+  notifyRaw    Json?    @map("notify_raw")
+
+  @@index([createdAt])
+  @@map("price_list_discord_notify_logs")
 }
 
 /// Outbound Discord notify history for SHOP marketplace polls.
@@ -369,7 +398,7 @@ model ResaleDiscordMatchNotifyLog {
   @@map("resale_discord_match_notify_logs")
 }
 
-/// Last successfully notified resale price state for dedicated match webhooks (3, 4, 5, 7).
+/// Last successfully notified resale price state for dedicated match webhooks (1, 3, 4, 5, 7).
 model ResaleDiscordMatchNotifyState {
   matchNum                     Int      @id @map("match_num")
   lastDiscordNotifyFingerprint String?  @map("last_discord_notify_fingerprint") @db.Text

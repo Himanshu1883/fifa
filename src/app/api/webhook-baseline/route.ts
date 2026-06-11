@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { sendPriceListBaselineNow } from "@/lib/price-list-discord-notify";
 import {
   parseBaselineMatchNum,
   sendDedicatedMatchBaselineNow,
@@ -19,11 +20,26 @@ export async function POST(req: Request) {
       return NextResponse.json(result);
     }
 
+    if (target === "price-list") {
+      const summary = await sendPriceListBaselineNow();
+      return NextResponse.json({
+        ok: summary.ok,
+        priceList: {
+          attempted: summary.attempted,
+          ok: summary.ok,
+          mode: summary.mode,
+          resaleCount: summary.resaleCount,
+          shopCount: summary.shopCount,
+          error: summary.results.find((r) => r.error)?.error,
+        },
+      });
+    }
+
     if (target === "dedicated") {
       const matchNum = parseBaselineMatchNum(body.matchNum);
       if (!matchNum) {
         return NextResponse.json(
-          { ok: false, error: "matchNum must be 3, 4, 5, or 7 for dedicated baselines." },
+          { ok: false, error: "matchNum must be 1, 3, 4, 5, or 7 for dedicated baselines." },
           { status: 400 },
         );
       }
@@ -32,7 +48,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json(
-      { ok: false, error: 'target must be "shop" or "dedicated".' },
+      { ok: false, error: 'target must be "shop", "price-list", or "dedicated".' },
       { status: 400 },
     );
   } catch (e) {

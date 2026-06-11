@@ -10,6 +10,7 @@ import {
 } from "@/lib/notify-sock-available-diff";
 import { reconcileSbListingsAfterSockSync } from "@/lib/sb-listing-reconcile";
 import { runSbAutoPushForEvent } from "@/lib/seatsbrokers-push-service";
+import { maybeNotifyPriceListDiscord } from "@/lib/price-list-discord-notify";
 import { syncSockAvailableForEvent } from "@/lib/sync-sock-available";
 
 export const runtime = "nodejs";
@@ -189,6 +190,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    let priceListNotify:
+      | Awaited<ReturnType<typeof maybeNotifyPriceListDiscord>>
+      | undefined;
+    if (kind === "RESALE") {
+      try {
+        priceListNotify = await maybeNotifyPriceListDiscord();
+      } catch (priceListErr) {
+        console.warn("[sock-available webhook] price list Discord notify failed", priceListErr);
+      }
+    }
+
     let sbAutoPush: Awaited<ReturnType<typeof runSbAutoPushForEvent>> | undefined;
     let sbReconcile: Awaited<ReturnType<typeof reconcileSbListingsAfterSockSync>> | undefined;
     if (kind === "RESALE") {
@@ -237,6 +249,7 @@ export async function POST(req: NextRequest) {
         sample: txn.diff.sample,
       },
       notify,
+      priceListNotify,
     });
   } catch (err) {
     if (err instanceof CataloguePayloadError) {

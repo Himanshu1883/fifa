@@ -1,7 +1,7 @@
 import type { ShopMarketEvent, ShopMarketListing } from "@/lib/shop-marketplace-types";
 import { formatShopPrice } from "@/app/shop/shop-utils";
 import { buildMatchBuyUrl } from "@/lib/shop-buy-urls";
-import { DEDICATED_MATCH_WEBHOOK_NUMBERS, isDedicatedMatchWebhook } from "@/lib/dedicated-match-webhooks";
+import { DEDICATED_SHOP_ROUTING_MATCHES, isDedicatedMatchShopWebhook } from "@/lib/dedicated-match-webhooks";
 import {
   maskWebhookUrl,
   resolveDedicatedMatchWebhookUrl,
@@ -388,7 +388,7 @@ async function sendShopBaselineBatchToWebhook(
 /** Baseline may require multiple Discord messages (embed limit). Dedicated matches route to their webhooks. */
 export async function sendShopBaselineToDiscord(events: ShopMarketEvent[]): Promise<ShopDiscordNotifyResult[]> {
   const sorted = dedupeShopEventsByMatchNum(events);
-  const generalEvents = sorted.filter((e) => !isDedicatedMatchWebhook(e.matchNum));
+  const generalEvents = sorted.filter((e) => !isDedicatedMatchShopWebhook(e.matchNum));
   const generalWebhook = await resolveDiscordShopWebhookUrl();
   const results: ShopDiscordNotifyResult[] = [];
 
@@ -397,7 +397,7 @@ export async function sendShopBaselineToDiscord(events: ShopMarketEvent[]): Prom
     if (results.some((r) => r.attempted && !r.ok)) return results;
   }
 
-  for (const matchNum of DEDICATED_MATCH_WEBHOOK_NUMBERS) {
+  for (const matchNum of DEDICATED_SHOP_ROUTING_MATCHES) {
     const dedicatedEvents = sorted.filter((e) => e.matchNum === matchNum);
     if (dedicatedEvents.length === 0) continue;
     const webhook = await resolveDedicatedMatchWebhookUrl(matchNum);

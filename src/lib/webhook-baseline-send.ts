@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { DedicatedMatchWebhookNumber } from "@/lib/dedicated-match-webhooks";
-import { DEDICATED_MATCH_WEBHOOK_NUMBERS, isDedicatedMatchWebhook } from "@/lib/dedicated-match-webhooks";
+import { DEDICATED_SHOP_ROUTING_MATCHES, isDedicatedMatchShopWebhook, isDedicatedMatchWebhook } from "@/lib/dedicated-match-webhooks";
 import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
 import { prisma } from "@/lib/prisma";
 import {
@@ -118,7 +118,7 @@ export async function sendGeneralShopBaselineNow(): Promise<WebhookBaselineSendR
   if (shop.attempted && shop.ok) {
     await markShopDiscordBaselineSent();
     await updateShopDiscordNotifyFingerprints(allMatches);
-    for (const matchNum of DEDICATED_MATCH_WEBHOOK_NUMBERS) {
+    for (const matchNum of DEDICATED_SHOP_ROUTING_MATCHES) {
       const dedicatedWebhook = await resolveDedicatedMatchWebhookUrl(matchNum);
       if (dedicatedWebhook) {
         await markDedicatedMatchShopDiscordBaselineSent(matchNum);
@@ -160,8 +160,10 @@ export async function sendDedicatedMatchBaselineNow(
   shopLog(`Manual dedicated baseline send M${matchNum} started`);
   const shopResults = await sendShopBaselineToDiscord([event]);
   const shop = shopChannelFromResults(shopResults);
-  if (shop.attempted && shop.ok) {
+  if (shop.attempted && shop.ok && isDedicatedMatchShopWebhook(matchNum)) {
     await markDedicatedMatchShopDiscordBaselineSent(matchNum);
+    await persistShopDiscordNotifyFingerprint(event);
+  } else if (shop.attempted && shop.ok) {
     await persistShopDiscordNotifyFingerprint(event);
   }
   await persistManualShopBaselineLog({

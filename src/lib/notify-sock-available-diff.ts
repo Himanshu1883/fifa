@@ -5,8 +5,13 @@ import {
   sendDiscordNewListingsMessage,
   type DiscordNotifyResult,
 } from "@/lib/discord-webhook";
-import { isDedicatedResaleEvent, maybeNotifyDedicatedResaleDiscord } from "@/lib/resale-discord-notify";
+import {
+  maybeNotifyDedicatedResaleDiscord,
+  persistResaleDiscordNotifyFingerprintState,
+  resolveDedicatedResaleMatchNum,
+} from "@/lib/resale-discord-notify";
 import type { SockAvailableRowInput } from "@/lib/parse-sock-available-geojson-webhook";
+import { prisma } from "@/lib/prisma";
 import { computeSockAvailableDiff } from "@/lib/sock-available-diff";
 import { sendUltraMsgWhatsAppMessage, type WhatsAppNotifyResult } from "@/lib/whatsapp-ultramsg";
 
@@ -25,7 +30,7 @@ export type SockAvailableNotifyEvent = {
   id: number;
   label: string;
   name: string;
-  matchLabel: string;
+  matchLabel: string | null;
 };
 
 export type SockAvailableNotifyResponse = {
@@ -131,16 +136,43 @@ export async function maybeNotifySockAvailableDiff(input: {
 
   let discord: DiscordNotifyResult = emptyDiscord;
   if (diff.kind === "RESALE") {
-    if (isDedicatedResaleEvent(event.matchLabel || event.label, event.name)) {
-      discord = await maybeNotifyDedicatedResaleDiscord({
-        eventId: event.id,
-        eventLabel: event.matchLabel || event.label,
-        eventName: event.name,
-        prefId,
-      });
+    const eventLabel = event.matchLabel?.trim() || event.label.trim();
+    const dedicatedMatchNum = resolveDedicatedResaleMatchNum(
+      event.matchLabel,
+      event.label,
+      event.name,
+    );
+
+    if (dedicatedMatchNum) {
+      if (diff.newCount > 0) {
+        discord = await sendDiscordNewListingsMessage({
+          eventLabel,
+          eventName: event.name,
+          eventId: event.id,
+          prefId,
+          kind: diff.kind,
+          newCount: diff.newCount,
+          newSeatIds: diff.newSeatIds,
+          dedicatedMatchNum,
+        });
+        if (discord.ok) {
+          const rows = await prisma.sockAvailable.findMany({
+            where: { eventId: event.id, kind: "RESALE" },
+            select: { categoryId: true, categoryName: true, amount: true },
+          });
+          await persistResaleDiscordNotifyFingerprintState(dedicatedMatchNum, rows);
+        }
+      } else if (diff.priceChangedCount > 0 || diff.changedCount > 0) {
+        discord = await maybeNotifyDedicatedResaleDiscord({
+          eventId: event.id,
+          eventLabel,
+          eventName: event.name,
+          prefId,
+        });
+      }
     } else if (diff.newCount > 0) {
       discord = await sendDiscordNewListingsMessage({
-        eventLabel: event.matchLabel || event.label,
+        eventLabel,
         eventName: event.name,
         eventId: event.id,
         prefId,

@@ -2,9 +2,12 @@ import "server-only";
 
 import {
   DEDICATED_MATCH_WEBHOOK_NUMBERS,
+  DEDICATED_SHOP_ROUTING_MATCHES,
+  isDedicatedMatchShopWebhook,
   isDedicatedMatchWebhook,
   parseDedicatedMatchNumber,
   type DedicatedMatchWebhookNumber,
+  type DedicatedShopMatchNumber,
 } from "@/lib/dedicated-match-webhooks";
 import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
 import { prisma } from "@/lib/prisma";
@@ -18,6 +21,9 @@ export type AppWebhookSettingsView = {
   discordNewListingsWebhookUrl: string | null;
   discordNewListingsWebhookUrlMasked: string | null;
   discordNewListingsWebhookSource: WebhookUrlSource;
+  discordMatch1WebhookUrl: string | null;
+  discordMatch1WebhookUrlMasked: string | null;
+  discordMatch1WebhookSource: WebhookUrlSource;
   discordMatch3ResaleWebhookUrl: string | null;
   discordMatch3ResaleWebhookUrlMasked: string | null;
   discordMatch3ResaleWebhookSource: WebhookUrlSource;
@@ -33,6 +39,9 @@ export type AppWebhookSettingsView = {
   discordShopWebhookUrl: string | null;
   discordShopWebhookUrlMasked: string | null;
   discordShopWebhookSource: WebhookUrlSource;
+  discordPriceListWebhookUrl: string | null;
+  discordPriceListWebhookUrlMasked: string | null;
+  discordPriceListWebhookSource: WebhookUrlSource;
   shopDiscordBaselineSentAt: string | null;
   updatedAt: string | null;
 };
@@ -106,7 +115,10 @@ function dedicatedLastHeartbeatJson(map: DedicatedShopLastHeartbeatAt): Prisma.I
 /** Minimum quiet period before a shop Discord heartbeat (baseline/delta/heartbeat all reset the timer). */
 export const SHOP_DISCORD_HEARTBEAT_INTERVAL_MS = 30 * 60 * 1000;
 
-export type ShopDiscordWebhookHeartbeatTarget = "general" | DedicatedMatchWebhookNumber;
+/** Combined resale+shop price list webhook heartbeat when fingerprint is unchanged. */
+export const PRICE_LIST_DISCORD_HEARTBEAT_INTERVAL_MS = 30 * 60 * 1000;
+
+export type ShopDiscordWebhookHeartbeatTarget = "general" | DedicatedShopMatchNumber;
 
 export async function getShopDiscordLastHeartbeatAt(
   target: ShopDiscordWebhookHeartbeatTarget,
@@ -157,7 +169,7 @@ export async function markShopDiscordLastHeartbeatAt(
 }
 
 async function clearDedicatedShopDiscordLastHeartbeatAt(
-  matchNum: DedicatedMatchWebhookNumber,
+  matchNum: DedicatedShopMatchNumber,
 ): Promise<void> {
   const row = await readSettingsRow();
   const map = parseDedicatedShopLastHeartbeatAt(row?.dedicatedShopDiscordLastHeartbeatAt);
@@ -188,7 +200,7 @@ export async function isDedicatedMatchShopDiscordBaselineSent(
 }
 
 export async function markDedicatedMatchShopDiscordBaselineSent(
-  matchNum: DedicatedMatchWebhookNumber,
+  matchNum: DedicatedShopMatchNumber,
 ): Promise<void> {
   const row = await readSettingsRow();
   const sent = parseDedicatedShopBaselinesSent(row?.dedicatedShopDiscordBaselinesSent);
@@ -204,7 +216,7 @@ export async function markDedicatedMatchShopDiscordBaselineSent(
 }
 
 export async function clearDedicatedMatchShopDiscordBaselineSent(
-  matchNum: DedicatedMatchWebhookNumber,
+  matchNum: DedicatedShopMatchNumber,
 ): Promise<void> {
   const row = await readSettingsRow();
   const sent = parseDedicatedShopBaselinesSent(row?.dedicatedShopDiscordBaselinesSent);
@@ -238,8 +250,10 @@ async function onDedicatedMatchWebhookUrlChanged(
 ): Promise<void> {
   const urlChanged = (previousUrl ?? "") !== (nextUrl ?? "");
   if (!urlChanged) return;
-  await clearDedicatedMatchShopDiscordBaselineSent(matchNum);
-  await clearDedicatedShopDiscordLastHeartbeatAt(matchNum);
+  if (isDedicatedMatchShopWebhook(matchNum)) {
+    await clearDedicatedMatchShopDiscordBaselineSent(matchNum);
+    await clearDedicatedShopDiscordLastHeartbeatAt(matchNum);
+  }
   if (nextUrl) {
     await resetDedicatedMatchNotifyStateOnWebhookChange(matchNum);
   }
@@ -251,6 +265,10 @@ export async function getAppWebhookSettings(): Promise<AppWebhookSettingsView> {
   const dbResale = row?.discordNewListingsWebhookUrl?.trim() || null;
   const envResale = envTrim("DISCORD_NEW_LISTINGS_WEBHOOK_URL");
   const resolvedResale = dbResale || envResale || null;
+
+  const dbMatch1 = row?.discordMatch1WebhookUrl?.trim() || null;
+  const envMatch1 = envTrim("DISCORD_MATCH1_WEBHOOK_URL");
+  const resolvedMatch1 = dbMatch1 || envMatch1 || null;
 
   const dbMatch3 = row?.discordMatch3ResaleWebhookUrl?.trim() || null;
   const envMatch3 = envTrim("DISCORD_MATCH3_RESALE_WEBHOOK_URL");
@@ -272,6 +290,10 @@ export async function getAppWebhookSettings(): Promise<AppWebhookSettingsView> {
   const envShop = envTrim("DISCORD_SHOP_WEBHOOK_URL");
   const resolvedShop = dbShop || envShop || null;
 
+  const dbPriceList = row?.discordPriceListWebhookUrl?.trim() || null;
+  const envPriceList = envTrim("DISCORD_PRICE_LIST_WEBHOOK_URL");
+  const resolvedPriceList = dbPriceList || envPriceList || null;
+
   if (dbResale && dbShop && dbResale === dbShop) {
     console.warn(
       "[webhook-settings] app_webhook_settings has the same URL for resale and shop webhooks; update via Webhook logs tab.",
@@ -282,6 +304,9 @@ export async function getAppWebhookSettings(): Promise<AppWebhookSettingsView> {
     discordNewListingsWebhookUrl: resolvedResale,
     discordNewListingsWebhookUrlMasked: resolvedResale ? maskWebhookUrl(resolvedResale) : null,
     discordNewListingsWebhookSource: dbResale ? "db" : envResale ? "env" : null,
+    discordMatch1WebhookUrl: resolvedMatch1,
+    discordMatch1WebhookUrlMasked: resolvedMatch1 ? maskWebhookUrl(resolvedMatch1) : null,
+    discordMatch1WebhookSource: dbMatch1 ? "db" : envMatch1 ? "env" : null,
     discordMatch3ResaleWebhookUrl: resolvedMatch3,
     discordMatch3ResaleWebhookUrlMasked: resolvedMatch3 ? maskWebhookUrl(resolvedMatch3) : null,
     discordMatch3ResaleWebhookSource: dbMatch3 ? "db" : envMatch3 ? "env" : null,
@@ -297,6 +322,9 @@ export async function getAppWebhookSettings(): Promise<AppWebhookSettingsView> {
     discordShopWebhookUrl: resolvedShop,
     discordShopWebhookUrlMasked: resolvedShop ? maskWebhookUrl(resolvedShop) : null,
     discordShopWebhookSource: dbShop ? "db" : envShop ? "env" : null,
+    discordPriceListWebhookUrl: resolvedPriceList,
+    discordPriceListWebhookUrlMasked: resolvedPriceList ? maskWebhookUrl(resolvedPriceList) : null,
+    discordPriceListWebhookSource: dbPriceList ? "db" : envPriceList ? "env" : null,
     shopDiscordBaselineSentAt: row?.shopDiscordBaselineSentAt?.toISOString() ?? null,
     updatedAt: row?.updatedAt?.toISOString() ?? null,
   };
@@ -305,6 +333,11 @@ export async function getAppWebhookSettings(): Promise<AppWebhookSettingsView> {
 export async function resolveDiscordNewListingsWebhookUrl(): Promise<string | null> {
   const settings = await getAppWebhookSettings();
   return settings.discordNewListingsWebhookUrl;
+}
+
+export async function resolveDiscordMatch1WebhookUrl(): Promise<string | null> {
+  const settings = await getAppWebhookSettings();
+  return settings.discordMatch1WebhookUrl;
 }
 
 export async function resolveDiscordMatch3ResaleWebhookUrl(): Promise<string | null> {
@@ -327,7 +360,7 @@ export async function resolveDiscordMatch7WebhookUrl(): Promise<string | null> {
   return settings.discordMatch7WebhookUrl;
 }
 
-/** Match 3/4/5/7 resale → dedicated webhooks; all other matches → general resale webhook. */
+/** Match 1/3/4/5/7 resale → dedicated webhooks; all other matches → general resale webhook. */
 export async function resolveDiscordResaleWebhookUrlForEvent(
   matchLabel: string,
   name: string,
@@ -355,21 +388,26 @@ export async function resolveDiscordShopWebhookUrl(): Promise<string | null> {
   return settings.discordShopWebhookUrl;
 }
 
-/** Match 3/4/5/7 shop → dedicated webhook; all other matches → general shop webhook. */
+export async function resolveDiscordPriceListWebhookUrl(): Promise<string | null> {
+  const settings = await getAppWebhookSettings();
+  return settings.discordPriceListWebhookUrl;
+}
+
+/** Match 1/5/7 shop → dedicated webhook; M3/M4 and all others → general shop webhook. */
 export async function resolveDiscordShopWebhookUrlForMatch(matchNum: number): Promise<string | null> {
-  if (isDedicatedMatchWebhook(matchNum)) {
+  if (isDedicatedMatchShopWebhook(matchNum)) {
     return resolveDedicatedMatchWebhookUrl(matchNum);
   }
   return resolveDiscordShopWebhookUrl();
 }
 
-/** Match 3/4/5/7 shop → dedicated webhook; all other matches → general shop webhook. */
+/** Match 1/5/7 shop → dedicated webhook; M3/M4 and all others → general shop webhook. */
 export async function resolveDiscordShopWebhookUrlForEvent(
   matchLabel: string,
   name: string,
 ): Promise<string | null> {
   const matchNum = parseEventMatchNumber(matchLabel, name);
-  if (isDedicatedMatchWebhook(matchNum)) {
+  if (isDedicatedMatchShopWebhook(matchNum)) {
     return resolveDedicatedMatchWebhookUrl(matchNum);
   }
   return resolveDiscordShopWebhookUrl();
@@ -379,6 +417,8 @@ export async function resolveDedicatedMatchWebhookUrl(
   matchNum: DedicatedMatchWebhookNumber,
 ): Promise<string | null> {
   switch (matchNum) {
+    case 1:
+      return resolveDiscordMatch1WebhookUrl();
     case 3:
       return resolveDiscordMatch3ResaleWebhookUrl();
     case 4:
@@ -399,12 +439,38 @@ export async function resolveDedicatedMatchWebhookUrlForEvent(
   return resolveDedicatedMatchWebhookUrl(matchNum);
 }
 
+export async function hasAnyDedicatedShopWebhookConfigured(): Promise<boolean> {
+  for (const matchNum of DEDICATED_SHOP_ROUTING_MATCHES) {
+    const url = await resolveDedicatedMatchWebhookUrl(matchNum);
+    if (url) return true;
+  }
+  return false;
+}
+
 export async function hasAnyDedicatedMatchWebhookConfigured(): Promise<boolean> {
   for (const matchNum of DEDICATED_MATCH_WEBHOOK_NUMBERS) {
     const url = await resolveDedicatedMatchWebhookUrl(matchNum);
     if (url) return true;
   }
   return false;
+}
+
+function dedicatedMatchWebhookUrlFromRow(
+  matchNum: DedicatedMatchWebhookNumber,
+  row: Awaited<ReturnType<typeof readSettingsRow>>,
+): string | null {
+  switch (matchNum) {
+    case 1:
+      return row?.discordMatch1WebhookUrl?.trim() || envTrim("DISCORD_MATCH1_WEBHOOK_URL") || null;
+    case 3:
+      return row?.discordMatch3ResaleWebhookUrl?.trim() || envTrim("DISCORD_MATCH3_RESALE_WEBHOOK_URL") || null;
+    case 4:
+      return row?.discordMatch4ResaleWebhookUrl?.trim() || envTrim("DISCORD_MATCH4_RESALE_WEBHOOK_URL") || null;
+    case 5:
+      return row?.discordMatch5WebhookUrl?.trim() || envTrim("DISCORD_MATCH5_WEBHOOK_URL") || null;
+    case 7:
+      return row?.discordMatch7WebhookUrl?.trim() || envTrim("DISCORD_MATCH7_WEBHOOK_URL") || null;
+  }
 }
 
 function dedicatedWebhookDistinctChecks(
@@ -419,12 +485,7 @@ function dedicatedWebhookDistinctChecks(
   ];
   for (const n of DEDICATED_MATCH_WEBHOOK_NUMBERS) {
     if (n === matchNum) continue;
-    let url: string | null = null;
-    if (n === 3) url = row?.discordMatch3ResaleWebhookUrl?.trim() || envTrim("DISCORD_MATCH3_RESALE_WEBHOOK_URL") || null;
-    if (n === 4) url = row?.discordMatch4ResaleWebhookUrl?.trim() || envTrim("DISCORD_MATCH4_RESALE_WEBHOOK_URL") || null;
-    if (n === 5) url = row?.discordMatch5WebhookUrl?.trim() || envTrim("DISCORD_MATCH5_WEBHOOK_URL") || null;
-    if (n === 7) url = row?.discordMatch7WebhookUrl?.trim() || envTrim("DISCORD_MATCH7_WEBHOOK_URL") || null;
-    others.push({ label: `Match ${n}`, url });
+    others.push({ label: `Match ${n}`, url: dedicatedMatchWebhookUrlFromRow(n, row) });
   }
   return others;
 }
@@ -437,6 +498,7 @@ export async function setDiscordNewListingsWebhookUrl(raw: string | null): Promi
   }
   const row = await readSettingsRow();
   const shopUrl = row?.discordShopWebhookUrl?.trim() || envTrim("DISCORD_SHOP_WEBHOOK_URL");
+  const match1Url = row?.discordMatch1WebhookUrl?.trim() || envTrim("DISCORD_MATCH1_WEBHOOK_URL");
   const match3Url = row?.discordMatch3ResaleWebhookUrl?.trim() || envTrim("DISCORD_MATCH3_RESALE_WEBHOOK_URL");
   const match4Url = row?.discordMatch4ResaleWebhookUrl?.trim() || envTrim("DISCORD_MATCH4_RESALE_WEBHOOK_URL");
   const match5Url = row?.discordMatch5WebhookUrl?.trim() || envTrim("DISCORD_MATCH5_WEBHOOK_URL");
@@ -444,6 +506,7 @@ export async function setDiscordNewListingsWebhookUrl(raw: string | null): Promi
   if (next) {
     assertDistinctWebhookUrls(next, [
       { label: "Shop", url: shopUrl || null },
+      { label: "Match 1", url: match1Url || null },
       { label: "Match 3", url: match3Url || null },
       { label: "Match 4", url: match4Url || null },
       { label: "Match 5", url: match5Url || null },
@@ -455,6 +518,26 @@ export async function setDiscordNewListingsWebhookUrl(raw: string | null): Promi
     create: { id: SETTINGS_ID, discordNewListingsWebhookUrl: next },
     update: { discordNewListingsWebhookUrl: next },
   });
+  return getAppWebhookSettings();
+}
+
+export async function setDiscordMatch1WebhookUrl(raw: string | null): Promise<AppWebhookSettingsView> {
+  const trimmed = raw?.trim() ?? "";
+  const next = trimmed.length > 0 ? trimmed : null;
+  if (next && !isDiscordWebhookUrl(next)) {
+    throw new Error("URL must be a Discord webhook (https://discord.com/api/webhooks/…).");
+  }
+  const row = await readSettingsRow();
+  if (next) {
+    assertDistinctWebhookUrls(next, dedicatedWebhookDistinctChecks(1, row));
+  }
+  const prevUrl = row?.discordMatch1WebhookUrl?.trim() || envTrim("DISCORD_MATCH1_WEBHOOK_URL") || null;
+  await prisma.appWebhookSettings.upsert({
+    where: { id: SETTINGS_ID },
+    create: { id: SETTINGS_ID, discordMatch1WebhookUrl: next },
+    update: { discordMatch1WebhookUrl: next },
+  });
+  await onDedicatedMatchWebhookUrlChanged(1, prevUrl, next);
   return getAppWebhookSettings();
 }
 
@@ -554,6 +637,50 @@ export async function setDiscordMatch7WebhookUrl(raw: string | null): Promise<Ap
   return getAppWebhookSettings();
 }
 
+function allConfiguredWebhookUrls(
+  row: Awaited<ReturnType<typeof readSettingsRow>>,
+): Array<{ label: string; url: string | null }> {
+  return [
+    { label: "General resale", url: row?.discordNewListingsWebhookUrl?.trim() || envTrim("DISCORD_NEW_LISTINGS_WEBHOOK_URL") || null },
+    { label: "Match 1", url: row?.discordMatch1WebhookUrl?.trim() || envTrim("DISCORD_MATCH1_WEBHOOK_URL") || null },
+    { label: "Match 3", url: row?.discordMatch3ResaleWebhookUrl?.trim() || envTrim("DISCORD_MATCH3_RESALE_WEBHOOK_URL") || null },
+    { label: "Match 4", url: row?.discordMatch4ResaleWebhookUrl?.trim() || envTrim("DISCORD_MATCH4_RESALE_WEBHOOK_URL") || null },
+    { label: "Match 5", url: row?.discordMatch5WebhookUrl?.trim() || envTrim("DISCORD_MATCH5_WEBHOOK_URL") || null },
+    { label: "Match 7", url: row?.discordMatch7WebhookUrl?.trim() || envTrim("DISCORD_MATCH7_WEBHOOK_URL") || null },
+    { label: "Shop", url: row?.discordShopWebhookUrl?.trim() || envTrim("DISCORD_SHOP_WEBHOOK_URL") || null },
+    { label: "Price list", url: row?.discordPriceListWebhookUrl?.trim() || envTrim("DISCORD_PRICE_LIST_WEBHOOK_URL") || null },
+  ];
+}
+
+export async function setDiscordPriceListWebhookUrl(raw: string | null): Promise<AppWebhookSettingsView> {
+  const trimmed = raw?.trim() ?? "";
+  const next = trimmed.length > 0 ? trimmed : null;
+  if (next && !isDiscordWebhookUrl(next)) {
+    throw new Error("URL must be a Discord webhook (https://discord.com/api/webhooks/…).");
+  }
+  const row = await readSettingsRow();
+  if (next) {
+    assertDistinctWebhookUrls(
+      next,
+      allConfiguredWebhookUrls(row).filter((entry) => entry.label !== "Price list"),
+    );
+  }
+  const urlChanged = (row?.discordPriceListWebhookUrl?.trim() ?? "") !== (next ?? "");
+  await prisma.appWebhookSettings.upsert({
+    where: { id: SETTINGS_ID },
+    create: { id: SETTINGS_ID, discordPriceListWebhookUrl: next },
+    update: { discordPriceListWebhookUrl: next },
+  });
+  if (urlChanged) {
+    try {
+      await prisma.priceListDiscordNotifyState.deleteMany({ where: { id: 1 } });
+    } catch {
+      /* best-effort reset so baseline fires after webhook configure */
+    }
+  }
+  return getAppWebhookSettings();
+}
+
 export async function setDiscordShopWebhookUrl(raw: string | null): Promise<AppWebhookSettingsView> {
   const trimmed = raw?.trim() ?? "";
   const next = trimmed.length > 0 ? trimmed : null;
@@ -561,18 +688,22 @@ export async function setDiscordShopWebhookUrl(raw: string | null): Promise<AppW
     throw new Error("URL must be a Discord webhook (https://discord.com/api/webhooks/…).");
   }
   const prev = await readSettingsRow();
+  const match1Url = prev?.discordMatch1WebhookUrl?.trim() || envTrim("DISCORD_MATCH1_WEBHOOK_URL");
   const match3Url = prev?.discordMatch3ResaleWebhookUrl?.trim() || envTrim("DISCORD_MATCH3_RESALE_WEBHOOK_URL");
   const match4Url = prev?.discordMatch4ResaleWebhookUrl?.trim() || envTrim("DISCORD_MATCH4_RESALE_WEBHOOK_URL");
   const match5Url = prev?.discordMatch5WebhookUrl?.trim() || envTrim("DISCORD_MATCH5_WEBHOOK_URL");
   const match7Url = prev?.discordMatch7WebhookUrl?.trim() || envTrim("DISCORD_MATCH7_WEBHOOK_URL");
   const resaleUrl = prev?.discordNewListingsWebhookUrl?.trim() || envTrim("DISCORD_NEW_LISTINGS_WEBHOOK_URL");
+  const priceListUrl = prev?.discordPriceListWebhookUrl?.trim() || envTrim("DISCORD_PRICE_LIST_WEBHOOK_URL");
   if (next) {
     assertDistinctWebhookUrls(next, [
       { label: "General resale", url: resaleUrl || null },
+      { label: "Match 1", url: match1Url || null },
       { label: "Match 3", url: match3Url || null },
       { label: "Match 4", url: match4Url || null },
       { label: "Match 5", url: match5Url || null },
       { label: "Match 7", url: match7Url || null },
+      { label: "Price list", url: priceListUrl || null },
     ]);
   }
   const urlChanged = (prev?.discordShopWebhookUrl?.trim() ?? "") !== (next ?? "");

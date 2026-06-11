@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import {
   getAppWebhookSettings,
+  setDiscordMatch1WebhookUrl,
   setDiscordMatch3ResaleWebhookUrl,
   setDiscordMatch4ResaleWebhookUrl,
   setDiscordMatch5WebhookUrl,
   setDiscordMatch7WebhookUrl,
   setDiscordNewListingsWebhookUrl,
+  setDiscordPriceListWebhookUrl,
   setDiscordShopWebhookUrl,
 } from "@/lib/webhook-settings";
 
@@ -17,6 +19,9 @@ function settingsJson(settings: Awaited<ReturnType<typeof getAppWebhookSettings>
     discordNewListingsWebhookUrlMasked: settings.discordNewListingsWebhookUrlMasked,
     discordNewListingsWebhookSource: settings.discordNewListingsWebhookSource,
     discordNewListingsWebhookConfigured: Boolean(settings.discordNewListingsWebhookUrl),
+    discordMatch1WebhookUrlMasked: settings.discordMatch1WebhookUrlMasked,
+    discordMatch1WebhookSource: settings.discordMatch1WebhookSource,
+    discordMatch1WebhookConfigured: Boolean(settings.discordMatch1WebhookUrl),
     discordMatch3ResaleWebhookUrlMasked: settings.discordMatch3ResaleWebhookUrlMasked,
     discordMatch3ResaleWebhookSource: settings.discordMatch3ResaleWebhookSource,
     discordMatch3ResaleWebhookConfigured: Boolean(settings.discordMatch3ResaleWebhookUrl),
@@ -32,6 +37,9 @@ function settingsJson(settings: Awaited<ReturnType<typeof getAppWebhookSettings>
     discordShopWebhookUrlMasked: settings.discordShopWebhookUrlMasked,
     discordShopWebhookSource: settings.discordShopWebhookSource,
     discordShopWebhookConfigured: Boolean(settings.discordShopWebhookUrl),
+    discordPriceListWebhookUrlMasked: settings.discordPriceListWebhookUrlMasked,
+    discordPriceListWebhookSource: settings.discordPriceListWebhookSource,
+    discordPriceListWebhookConfigured: Boolean(settings.discordPriceListWebhookUrl),
     shopDiscordBaselineSentAt: settings.shopDiscordBaselineSentAt,
     updatedAt: settings.updatedAt,
   };
@@ -68,8 +76,15 @@ export async function GET() {
           id: "discord-new-listings",
           label: "Discord — new resale listings",
           description:
-            "Posts completely new listings from each scrape diff (all matches except Match 3, 4, 5, and 7)",
+            "Posts completely new listings from each scrape diff (all matches except Match 1, 3, 4, 5, and 7)",
           envFallback: "DISCORD_NEW_LISTINGS_WEBHOOK_URL",
+        },
+        {
+          id: "discord-match1",
+          label: "Discord — Match 1 (shop + resale)",
+          description:
+            "Exclusive webhook for Match 1 shop baseline/deltas and resale price updates (target-price dedup)",
+          envFallback: "DISCORD_MATCH1_WEBHOOK_URL",
         },
         {
           id: "discord-match3-resale",
@@ -103,8 +118,15 @@ export async function GET() {
           id: "discord-shop",
           label: "Discord — SHOP marketplace",
           description:
-            "Full snapshot on first poll, then match-level price/availability changes (all matches except 3, 4, 5, 7)",
+            "Full snapshot on first poll, then match-level price/availability changes (all matches except 1, 3, 4, 5, 7)",
           envFallback: "DISCORD_SHOP_WEBHOOK_URL",
+        },
+        {
+          id: "discord-price-list",
+          label: "Discord — combined price list",
+          description:
+            "Sorted resale then shop price list when any combined price changes; 30 min heartbeat if unchanged",
+          envFallback: "DISCORD_PRICE_LIST_WEBHOOK_URL",
         },
       ],
     });
@@ -121,6 +143,9 @@ export async function GET() {
           discordNewListingsWebhookUrlMasked: null,
           discordNewListingsWebhookSource: null,
           discordNewListingsWebhookConfigured: false,
+          discordMatch1WebhookUrlMasked: null,
+          discordMatch1WebhookSource: null,
+          discordMatch1WebhookConfigured: false,
           discordMatch3ResaleWebhookUrlMasked: null,
           discordMatch3ResaleWebhookSource: null,
           discordMatch3ResaleWebhookConfigured: false,
@@ -136,6 +161,9 @@ export async function GET() {
           discordShopWebhookUrlMasked: null,
           discordShopWebhookSource: null,
           discordShopWebhookConfigured: false,
+          discordPriceListWebhookUrlMasked: null,
+          discordPriceListWebhookSource: null,
+          discordPriceListWebhookConfigured: false,
           shopDiscordBaselineSentAt: null,
           updatedAt: null,
         },
@@ -152,11 +180,13 @@ export async function PATCH(req: Request) {
   try {
     const body = (await req.json()) as {
       discordNewListingsWebhookUrl?: unknown;
+      discordMatch1WebhookUrl?: unknown;
       discordMatch3ResaleWebhookUrl?: unknown;
       discordMatch4ResaleWebhookUrl?: unknown;
       discordMatch5WebhookUrl?: unknown;
       discordMatch7WebhookUrl?: unknown;
       discordShopWebhookUrl?: unknown;
+      discordPriceListWebhookUrl?: unknown;
     };
 
     let settings: Awaited<ReturnType<typeof getAppWebhookSettings>> | null = null;
@@ -169,6 +199,16 @@ export async function PATCH(req: Request) {
         url = trimmed.length > 0 ? trimmed : null;
       }
       settings = await setDiscordNewListingsWebhookUrl(url);
+    }
+
+    if ("discordMatch1WebhookUrl" in body) {
+      const raw = body.discordMatch1WebhookUrl;
+      let url: string | null = null;
+      if (raw !== null && raw !== undefined) {
+        const trimmed = String(raw).trim();
+        url = trimmed.length > 0 ? trimmed : null;
+      }
+      settings = await setDiscordMatch1WebhookUrl(url);
     }
 
     if ("discordMatch3ResaleWebhookUrl" in body) {
@@ -219,6 +259,16 @@ export async function PATCH(req: Request) {
         url = trimmed.length > 0 ? trimmed : null;
       }
       settings = await setDiscordShopWebhookUrl(url);
+    }
+
+    if ("discordPriceListWebhookUrl" in body) {
+      const raw = body.discordPriceListWebhookUrl;
+      let url: string | null = null;
+      if (raw !== null && raw !== undefined) {
+        const trimmed = String(raw).trim();
+        url = trimmed.length > 0 ? trimmed : null;
+      }
+      settings = await setDiscordPriceListWebhookUrl(url);
     }
 
     if (!settings) {

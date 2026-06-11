@@ -7,6 +7,8 @@ import {
   shopLog,
 } from "@/lib/shop-service";
 import type { ShopLatestPayload } from "@/lib/shop-marketplace-types";
+import { maybeNotifyPriceListDiscord } from "@/lib/price-list-discord-notify";
+import { persistPriceListDiscordBackgroundError } from "@/lib/price-list-discord-log";
 import { persistShopDiscordBackgroundError } from "@/lib/shop-discord-log";
 import {
   loadShopEventsFromDatabase,
@@ -46,10 +48,20 @@ async function runShopBackgroundWork(payload: ShopLatestPayload): Promise<void> 
       );
     }
     await syncShopMarketplaceToDatabase(enriched);
+
+    const priceListSummary = await maybeNotifyPriceListDiscord({ shopEvents: enriched.events });
+    if (priceListSummary.mode === "skipped" && priceListSummary.skipReason) {
+      shopLog(`Discord price list skipped: ${priceListSummary.skipReason}`);
+    } else if (priceListSummary.mode !== "skipped") {
+      shopLog(
+        `Discord price list ${priceListSummary.mode} ${priceListSummary.ok ? "OK" : "failed"} (resale ${priceListSummary.resaleCount}, shop ${priceListSummary.shopCount})`,
+      );
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     shopLog(`Discord shop notify/sync error: ${msg}`);
     await persistShopDiscordBackgroundError(`background_work: ${msg}`);
+    await persistPriceListDiscordBackgroundError(`background_work: ${msg}`);
   }
 }
 

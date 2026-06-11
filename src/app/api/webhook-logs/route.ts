@@ -11,18 +11,20 @@ function parseIntParam(raw: string | null, fallback: number, max: number): numbe
   return Math.max(1, Math.min(max, n));
 }
 
-function parseChannel(raw: string | null): "shop" | "resale" {
+function parseChannel(raw: string | null): "shop" | "resale" | "price-list" {
   const s = String(raw ?? "").trim().toLowerCase();
   if (s === "resale") return "resale";
+  if (s === "price-list" || s === "pricelist" || s === "price_list") return "price-list";
   return "shop";
 }
 
 /**
  * Webhook log feed.
  *
- * Query: channel=shop|resale (default shop), limit, offset, notifyOnly=1
+ * Query: channel=shop|resale|price-list (default shop), limit, offset, notifyOnly=1
  * Resale: sock_available RESALE scrape diffs + Discord new-listing notify metadata.
  * Shop: SHOP marketplace Discord baseline/delta sends.
+ * Price list: combined resale+shop sorted price list Discord sends.
  */
 export async function GET(req: Request) {
   try {
@@ -31,6 +33,39 @@ export async function GET(req: Request) {
     const offset = Math.max(0, Number.parseInt(sp.get("offset") ?? "0", 10) || 0);
     const channel = parseChannel(sp.get("channel"));
     const notifyOnly = sp.get("notifyOnly") === "1";
+
+    if (channel === "price-list") {
+      const where = notifyOnly ? { attempted: true } : {};
+      const [total, rows] = await Promise.all([
+        prisma.priceListDiscordNotifyLog.count({ where }),
+        prisma.priceListDiscordNotifyLog.findMany({
+          where,
+          orderBy: { createdAt: "desc" },
+          skip: offset,
+          take: limit,
+        }),
+      ]);
+
+      return NextResponse.json({
+        ok: true,
+        channel: "price-list",
+        total,
+        offset,
+        limit,
+        rows: rows.map((r) => ({
+          id: r.id,
+          createdAt: r.createdAt.toISOString(),
+          mode: r.mode,
+          resaleCount: r.resaleCount,
+          shopCount: r.shopCount,
+          attempted: r.attempted,
+          ok: r.ok,
+          status: r.status,
+          error: r.error,
+          notifyRaw: r.notifyRaw,
+        })),
+      });
+    }
 
     if (channel === "shop") {
       const where = notifyOnly ? { attempted: true } : {};
@@ -133,11 +168,12 @@ export async function GET(req: Request) {
     const missing =
       message.includes("does not exist") ||
       message.includes("shop_discord_notify_logs") ||
+      message.includes("price_list_discord_notify_logs") ||
       message.includes("P2021");
     if (missing) {
       return NextResponse.json({
         ok: false,
-        error: "Run prisma migrate deploy for shop_discord_notify_logs.",
+        error: "Run prisma migrate deploy for webhook notify log tables.",
       }, { status: 503 });
     }
     return NextResponse.json({ ok: false, error: message.slice(0, 800) }, { status: 500 });

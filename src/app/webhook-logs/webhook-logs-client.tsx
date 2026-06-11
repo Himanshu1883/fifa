@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
-type WebhookChannel = "shop" | "resale";
+type WebhookChannel = "shop" | "resale" | "price-list";
 
 type ResaleLogRow = {
   id: number;
@@ -39,10 +39,26 @@ type ShopLogRow = {
   notifyRaw: unknown;
 };
 
+type PriceListLogRow = {
+  id: number;
+  createdAt: string;
+  mode: string;
+  resaleCount: number;
+  shopCount: number;
+  attempted: boolean;
+  ok: boolean;
+  status: number | null;
+  error: string | null;
+  notifyRaw: unknown;
+};
+
 type WebhookSettings = {
   discordNewListingsWebhookUrlMasked: string | null;
   discordNewListingsWebhookSource: "db" | "env" | null;
   discordNewListingsWebhookConfigured: boolean;
+  discordMatch1WebhookUrlMasked: string | null;
+  discordMatch1WebhookSource: "db" | "env" | null;
+  discordMatch1WebhookConfigured: boolean;
   discordMatch3ResaleWebhookUrlMasked: string | null;
   discordMatch3ResaleWebhookSource: "db" | "env" | null;
   discordMatch3ResaleWebhookConfigured: boolean;
@@ -58,6 +74,9 @@ type WebhookSettings = {
   discordShopWebhookUrlMasked: string | null;
   discordShopWebhookSource: "db" | "env" | null;
   discordShopWebhookConfigured: boolean;
+  discordPriceListWebhookUrlMasked: string | null;
+  discordPriceListWebhookSource: "db" | "env" | null;
+  discordPriceListWebhookConfigured: boolean;
   shopDiscordBaselineSentAt: string | null;
   updatedAt: string | null;
 };
@@ -167,6 +186,17 @@ function ChannelTabs({
       >
         Resale
       </button>
+      <button
+        type="button"
+        onClick={() => onChange("price-list")}
+        className={`rounded-md px-4 py-1.5 text-xs font-semibold transition-colors ${
+          active === "price-list"
+            ? "bg-white/[0.08] text-zinc-100 ring-1 ring-white/[0.08]"
+            : "text-zinc-500 hover:text-zinc-300"
+        }`}
+      >
+        Price list
+      </button>
     </div>
   );
 }
@@ -188,6 +218,17 @@ function SendBaselineButton({
 }
 
 function ShopLogDetail({ row }: { row: ShopLogRow }) {
+  return (
+    <div className="grid gap-4">
+      <JsonBlock label="Discord request / response" value={row.notifyRaw} />
+      {row.error ? (
+        <p className="rounded-lg border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{row.error}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function PriceListLogDetail({ row }: { row: PriceListLogRow }) {
   return (
     <div className="grid gap-4">
       <JsonBlock label="Discord request / response" value={row.notifyRaw} />
@@ -242,20 +283,23 @@ export function WebhookLogsClient() {
   const [channel, setChannel] = useState<WebhookChannel>("shop");
   const [settings, setSettings] = useState<WebhookSettings | null>(null);
   const [resaleDraft, setResaleDraft] = useState("");
+  const [match1Draft, setMatch1Draft] = useState("");
   const [match3ResaleDraft, setMatch3ResaleDraft] = useState("");
   const [match4ResaleDraft, setMatch4ResaleDraft] = useState("");
   const [match5Draft, setMatch5Draft] = useState("");
   const [match7Draft, setMatch7Draft] = useState("");
   const [shopDraft, setShopDraft] = useState("");
+  const [priceListDraft, setPriceListDraft] = useState("");
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsSavedAt, setSettingsSavedAt] = useState<string | null>(null);
-  const [baselineSending, setBaselineSending] = useState<"shop" | number | null>(null);
+  const [baselineSending, setBaselineSending] = useState<"shop" | "price-list" | number | null>(null);
   const [baselineMessage, setBaselineMessage] = useState<string | null>(null);
 
   const [shopRows, setShopRows] = useState<ShopLogRow[]>([]);
   const [resaleRows, setResaleRows] = useState<ResaleLogRow[]>([]);
+  const [priceListRows, setPriceListRows] = useState<PriceListLogRow[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [logsLoading, setLogsLoading] = useState(true);
@@ -315,9 +359,15 @@ export function WebhookLogsClient() {
       if (json.channel === "shop") {
         setShopRows((json.rows ?? []) as ShopLogRow[]);
         setResaleRows([]);
+        setPriceListRows([]);
+      } else if (json.channel === "price-list") {
+        setPriceListRows((json.rows ?? []) as unknown as PriceListLogRow[]);
+        setShopRows([]);
+        setResaleRows([]);
       } else {
         setResaleRows((json.rows ?? []) as ResaleLogRow[]);
         setShopRows([]);
+        setPriceListRows([]);
       }
       setTotal(json.total ?? 0);
     } catch (e) {
@@ -361,9 +411,9 @@ export function WebhookLogsClient() {
   };
 
   const sendBaselineNow = async (
-    input: { target: "shop" } | { target: "dedicated"; matchNum: number },
+    input: { target: "shop" } | { target: "price-list" } | { target: "dedicated"; matchNum: number },
   ) => {
-    const key = input.target === "shop" ? "shop" : input.matchNum;
+    const key = input.target === "shop" || input.target === "price-list" ? input.target : input.matchNum;
     setBaselineSending(key);
     setBaselineMessage(null);
     setSettingsError(null);
@@ -385,7 +435,14 @@ export function WebhookLogsClient() {
       }
 
       const parts: string[] = [];
-      if (input.target === "shop") {
+      if (input.target === "price-list") {
+        const pl = json as { priceList?: { ok?: boolean; error?: string; resaleCount?: number; shopCount?: number } };
+        parts.push(
+          pl.priceList?.ok
+            ? `Price list baseline sent (resale ${pl.priceList.resaleCount ?? 0}, shop ${pl.priceList.shopCount ?? 0})`
+            : pl.priceList?.error ?? "Price list baseline failed",
+        );
+      } else if (input.target === "shop") {
         parts.push(json.shop?.ok ? "General shop baseline sent to Discord" : json.shop?.error ?? "Shop baseline failed");
       } else {
         if (json.shop?.attempted) {
@@ -403,7 +460,7 @@ export function WebhookLogsClient() {
       }
       setBaselineMessage(parts.join(" · "));
       await loadSettings();
-      if (channel === "shop") await loadLogs();
+      if (channel === "shop" || channel === "price-list") await loadLogs();
     } catch (e) {
       setSettingsError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -419,10 +476,15 @@ export function WebhookLogsClient() {
   };
 
   const pageStart = total === 0 ? 0 : offset + 1;
-  const pageEnd = Math.min(offset + (channel === "shop" ? shopRows.length : resaleRows.length), total);
+  const pageEnd = Math.min(
+    offset +
+      (channel === "shop" ? shopRows.length : channel === "price-list" ? priceListRows.length : resaleRows.length),
+    total,
+  );
   const canPrev = offset > 0;
   const canNext = offset + limit < total;
-  const activeRows = channel === "shop" ? shopRows.length : resaleRows.length;
+  const activeRows =
+    channel === "shop" ? shopRows.length : channel === "price-list" ? priceListRows.length : resaleRows.length;
 
   return (
     <div className="flex flex-col gap-5">
@@ -433,7 +495,9 @@ export function WebhookLogsClient() {
             <p className="mt-1 text-xs leading-relaxed text-zinc-500">
               {channel === "shop"
                 ? "SHOP marketplace Discord — full snapshot once, then match-level changes on each poll."
-                : "Resale Discord — new listings for general matches; target-price updates for Match 3, 4, 5, and 7."}
+                : channel === "price-list"
+                  ? "Combined price list — sorted resale then shop prices; sends on any combined price change or 30 min heartbeat."
+                  : "Resale Discord — new listings for general matches; target-price updates for Match 1, 3, 4, 5, and 7."}
             </p>
           </div>
           <ChannelTabs active={channel} onChange={switchChannel} />
@@ -441,6 +505,75 @@ export function WebhookLogsClient() {
 
         {settingsLoading ? (
           <p className="mt-4 text-sm text-zinc-500">Loading settings…</p>
+        ) : channel === "price-list" ? (
+          <div className="mt-4 rounded-xl border border-white/[0.06] bg-black/20 p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+              Outbound · Combined price list Discord
+            </p>
+            <p className="mt-2 text-sm text-zinc-300">
+              {settings?.discordPriceListWebhookConfigured ? (
+                <>
+                  <span className="font-mono text-xs text-zinc-200">{settings.discordPriceListWebhookUrlMasked}</span>
+                  <span className="ml-2 text-[11px] text-zinc-500">
+                    ({settings.discordPriceListWebhookSource === "env" ? "from env" : "saved in DB"})
+                  </span>
+                </>
+              ) : (
+                <span className="text-zinc-500">Not configured</span>
+              )}
+            </p>
+            <p className="mt-1 text-[11px] text-zinc-600">
+              Resale from <span className="font-mono text-zinc-500">sock_available</span> + shop from{" "}
+              <span className="font-mono text-zinc-500">/api/shop/latest</span>
+            </p>
+
+            <label className="mt-3 block">
+              <span className="text-[11px] font-medium text-zinc-400">Change price list webhook URL</span>
+              <input
+                type="url"
+                value={priceListDraft}
+                onChange={(e) => setPriceListDraft(e.target.value)}
+                placeholder="https://discord.com/api/webhooks/…"
+                className={`${inputClass} mt-1.5`}
+                autoComplete="off"
+              />
+            </label>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={settingsSaving}
+                onClick={() => {
+                  void patchSettings({ discordPriceListWebhookUrl: priceListDraft.trim() || null }).then((ok) => {
+                    if (ok) setPriceListDraft("");
+                  });
+                }}
+                className={btnPrimaryClass}
+              >
+                {settingsSaving ? "Saving…" : "Save webhook"}
+              </button>
+              <button
+                type="button"
+                disabled={settingsSaving}
+                onClick={() => {
+                  setPriceListDraft("");
+                  void patchSettings({ discordPriceListWebhookUrl: null });
+                }}
+                className={btnSecondaryClass}
+              >
+                Clear saved URL
+              </button>
+              <SendBaselineButton
+                disabled={!settings?.discordPriceListWebhookConfigured || settingsSaving}
+                loading={baselineSending === "price-list"}
+                onClick={() => {
+                  void sendBaselineNow({ target: "price-list" });
+                }}
+              />
+              {settingsSavedAt ? (
+                <span className="self-center text-[11px] text-zinc-500">Saved {settingsSavedAt}</span>
+              ) : null}
+            </div>
+          </div>
         ) : channel === "shop" ? (
           <div className="mt-4 rounded-xl border border-white/[0.06] bg-black/20 p-4">
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">Outbound · SHOP Discord</p>
@@ -464,7 +597,7 @@ export function WebhookLogsClient() {
               <p className="mt-1 text-[11px] text-zinc-600">Baseline not sent yet</p>
             )}
             <p className="mt-1 text-[11px] text-zinc-600">
-              All shop matches except Match 3, 4, 5, and 7 (see dedicated webhooks below) · source{" "}
+              All shop matches except Match 1, 5, and 7 (see dedicated webhooks below) · source{" "}
               <span className="font-mono text-zinc-500">/api/shop/latest</span>
               {" · "}
               <Link href="/shop" className="text-[color:color-mix(in_oklab,var(--ticketing-accent)_85%,white_10%)] hover:underline">
@@ -538,7 +671,7 @@ export function WebhookLogsClient() {
               )}
             </p>
             <p className="mt-1 text-[11px] text-zinc-600">
-              All resale matches except Match 3, 4, 5, and 7 · source{" "}
+              All resale matches except Match 1, 3, 4, 5, and 7 · source{" "}
               <span className="font-mono text-zinc-500">/api/webhooks/sock-available</span>
             </p>
 
@@ -585,7 +718,72 @@ export function WebhookLogsClient() {
 
           <div className="mt-4 rounded-xl border border-white/[0.06] bg-black/20 p-4">
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-              Outbound · Match 3 Discord (shop + resale)
+              Outbound · Match 1 Discord (shop + resale)
+            </p>
+            <p className="mt-2 text-sm text-zinc-300">
+              {settings?.discordMatch1WebhookConfigured ? (
+                <>
+                  <span className="font-mono text-xs text-zinc-200">{settings.discordMatch1WebhookUrlMasked}</span>
+                  <span className="ml-2 text-[11px] text-zinc-500">
+                    ({settings.discordMatch1WebhookSource === "env" ? "from env" : "saved in DB"})
+                  </span>
+                </>
+              ) : (
+                <span className="text-zinc-500">Not configured</span>
+              )}
+            </p>
+            <p className="mt-1 text-[11px] text-zinc-600">
+              Exclusive for Match 1 shop baseline/deltas and resale target-price updates
+            </p>
+
+            <label className="mt-3 block">
+              <span className="text-[11px] font-medium text-zinc-400">Change Match 1 webhook URL</span>
+              <input
+                type="url"
+                value={match1Draft}
+                onChange={(e) => setMatch1Draft(e.target.value)}
+                placeholder="https://discord.com/api/webhooks/…"
+                className={`${inputClass} mt-1.5`}
+                autoComplete="off"
+              />
+            </label>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={settingsSaving}
+                onClick={() => {
+                  void patchSettings({ discordMatch1WebhookUrl: match1Draft.trim() || null }).then((ok) => {
+                    if (ok) setMatch1Draft("");
+                  });
+                }}
+                className={btnPrimaryClass}
+              >
+                {settingsSaving ? "Saving…" : "Save webhook"}
+              </button>
+              <button
+                type="button"
+                disabled={settingsSaving}
+                onClick={() => {
+                  setMatch1Draft("");
+                  void patchSettings({ discordMatch1WebhookUrl: null });
+                }}
+                className={btnSecondaryClass}
+              >
+                Clear saved URL
+              </button>
+              <SendBaselineButton
+                disabled={!settings?.discordMatch1WebhookConfigured || settingsSaving}
+                loading={baselineSending === 1}
+                onClick={() => {
+                  void sendBaselineNow({ target: "dedicated", matchNum: 1 });
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-white/[0.06] bg-black/20 p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+              Outbound · Match 3 Discord (resale only)
             </p>
             <p className="mt-2 text-sm text-zinc-300">
               {settings?.discordMatch3ResaleWebhookConfigured ? (
@@ -602,7 +800,7 @@ export function WebhookLogsClient() {
               )}
             </p>
             <p className="mt-1 text-[11px] text-zinc-600">
-              Exclusive for Match 3 shop baseline/deltas and resale target-price updates
+              Exclusive for Match 3 resale target-price updates (shop listings use general SHOP webhook)
             </p>
 
             <label className="mt-3 block">
@@ -654,7 +852,7 @@ export function WebhookLogsClient() {
 
           <div className="mt-4 rounded-xl border border-white/[0.06] bg-black/20 p-4">
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-              Outbound · Match 4 Discord (shop + resale)
+              Outbound · Match 4 Discord (resale only)
             </p>
             <p className="mt-2 text-sm text-zinc-300">
               {settings?.discordMatch4ResaleWebhookConfigured ? (
@@ -671,7 +869,7 @@ export function WebhookLogsClient() {
               )}
             </p>
             <p className="mt-1 text-[11px] text-zinc-600">
-              Exclusive for Match 4 shop baseline/deltas and resale target-price updates
+              Exclusive for Match 4 resale target-price updates (shop listings use general SHOP webhook)
             </p>
 
             <label className="mt-3 block">
@@ -874,7 +1072,11 @@ export function WebhookLogsClient() {
         <div className="flex flex-col gap-3 border-b border-white/[0.06] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div>
             <h2 className="text-sm font-semibold text-zinc-100">
-              {channel === "shop" ? "SHOP notify logs" : "Resale webhook diff logs"}
+              {channel === "shop"
+                ? "SHOP notify logs"
+                : channel === "price-list"
+                  ? "Price list notify logs"
+                  : "Resale webhook diff logs"}
             </h2>
             <p className="mt-0.5 text-[11px] text-zinc-500">
               {total.toLocaleString("en-US")} total · showing {pageStart}–{pageEnd}
@@ -917,8 +1119,80 @@ export function WebhookLogsClient() {
           <p className="px-6 py-8 text-sm text-zinc-500">Loading logs…</p>
         ) : activeRows === 0 ? (
           <p className="px-6 py-8 text-sm text-zinc-500">
-            {channel === "shop" ? "No SHOP Discord logs yet." : "No resale webhook logs yet."}
+            {channel === "shop"
+              ? "No SHOP Discord logs yet."
+              : channel === "price-list"
+                ? "No price list Discord logs yet."
+                : "No resale webhook logs yet."}
           </p>
+        ) : channel === "price-list" ? (
+          <div className="max-h-[min(70vh,52rem)] overflow-auto">
+            <table className="w-full border-collapse text-left text-sm">
+              <thead className="sticky top-0 z-10 border-b border-white/[0.08] bg-[color:color-mix(in_oklab,var(--ticketing-surface)_92%,transparent)] text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 backdrop-blur-md">
+                <tr>
+                  <th className="px-4 py-3">When</th>
+                  <th className="px-4 py-3">Type</th>
+                  <th className="px-4 py-3">Resale</th>
+                  <th className="px-4 py-3">Shop</th>
+                  <th className="px-4 py-3">Notify</th>
+                  <th className="px-4 py-3">HTTP</th>
+                  <th className="px-4 py-3 pr-6 text-right">Details</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.05] text-zinc-200">
+                {priceListRows.map((row) => {
+                  const expanded = expandAll || expandedId === row.id;
+                  return (
+                    <Fragment key={row.id}>
+                      <tr className="hover:bg-white/[0.03]">
+                        <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-400">
+                          {formatWhen(row.createdAt)}
+                        </td>
+                        <td className="px-4 py-3 text-xs capitalize text-zinc-300">{row.mode}</td>
+                        <td className="px-4 py-3 font-mono text-xs tabular-nums text-[color:var(--ticketing-accent)]">
+                          {row.resaleCount}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs tabular-nums text-[color:var(--ticketing-accent)]">
+                          {row.shopCount}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={notifyPill(row.ok, row.attempted)}>
+                            {row.attempted ? (row.ok ? "OK" : "Fail") : "—"}
+                          </span>
+                          {row.error ? (
+                            <p className="mt-1 max-w-[14rem] truncate text-[10px] text-rose-300" title={row.error}>
+                              {row.error}
+                            </p>
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs tabular-nums">
+                          <span className={httpStatusClass(row.status, row.ok)}>
+                            {httpStatusLabel(row.status)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 pr-6 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedId(expanded ? null : row.id)}
+                            className={btnSecondaryClass}
+                          >
+                            {expanded ? "Hide" : "View"}
+                          </button>
+                        </td>
+                      </tr>
+                      {expanded ? (
+                        <tr className="bg-black/25">
+                          <td colSpan={7} className="px-4 py-4 pr-6">
+                            <PriceListLogDetail row={row} />
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         ) : channel === "shop" ? (
           <div className="max-h-[min(70vh,52rem)] overflow-auto">
             <table className="w-full border-collapse text-left text-sm">

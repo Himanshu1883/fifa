@@ -2,20 +2,39 @@ import "server-only";
 
 import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
 import {
+  resolveDiscordMatch1WebhookUrl,
   resolveDiscordMatch3ResaleWebhookUrl,
   resolveDiscordMatch4ResaleWebhookUrl,
   resolveDiscordMatch5WebhookUrl,
   resolveDiscordMatch7WebhookUrl,
 } from "@/lib/webhook-settings";
 
-/** Matches with dedicated shop + resale Discord webhooks (exclusive routing). */
-export const DEDICATED_MATCH_WEBHOOK_NUMBERS = [3, 4, 5, 7] as const;
+/** All matches with dedicated Discord webhooks for resale routing. */
+export const DEDICATED_MATCH_WEBHOOK_NUMBERS = [1, 3, 4, 5, 7] as const;
+
+/** Dedicated resale webhooks — M3/M4 are resale-only; M5/M7 also receive shop. */
+export const DEDICATED_RESALE_MATCHES = [3, 4, 5, 7] as const;
+
+/** Dedicated shop webhooks (M5/M7) — M3/M4 shop uses general DISCORD_SHOP_WEBHOOK_URL. */
+export const DEDICATED_SHOP_MATCHES = [5, 7] as const;
+
+/** All matches whose shop traffic uses a dedicated webhook (M1 + DEDICATED_SHOP_MATCHES). */
+export const DEDICATED_SHOP_ROUTING_MATCHES = [1, 5, 7] as const;
 
 export type DedicatedMatchWebhookNumber = (typeof DEDICATED_MATCH_WEBHOOK_NUMBERS)[number];
+export type DedicatedShopMatchNumber = (typeof DEDICATED_SHOP_ROUTING_MATCHES)[number];
+export type DedicatedResaleMatchNumber = (typeof DEDICATED_RESALE_MATCHES)[number];
 
 export function isDedicatedMatchWebhook(matchNum: number | null | undefined): matchNum is DedicatedMatchWebhookNumber {
   if (matchNum == null) return false;
   return (DEDICATED_MATCH_WEBHOOK_NUMBERS as readonly number[]).includes(matchNum);
+}
+
+export function isDedicatedMatchShopWebhook(
+  matchNum: number | null | undefined,
+): matchNum is DedicatedShopMatchNumber {
+  if (matchNum == null) return false;
+  return (DEDICATED_SHOP_ROUTING_MATCHES as readonly number[]).includes(matchNum);
 }
 
 export function parseDedicatedMatchNumber(matchLabel: string, name: string): DedicatedMatchWebhookNumber | null {
@@ -27,6 +46,8 @@ export async function resolveDedicatedMatchWebhookUrl(
   matchNum: DedicatedMatchWebhookNumber,
 ): Promise<string | null> {
   switch (matchNum) {
+    case 1:
+      return resolveDiscordMatch1WebhookUrl();
     case 3:
       return resolveDiscordMatch3ResaleWebhookUrl();
     case 4:

@@ -1,7 +1,8 @@
 import type { SockAvailableKind } from "@/generated/prisma/enums";
 import type { SockAvailableNewListingKey } from "@/lib/sock-available-diff";
-import { resolveDedicatedMatchWebhookUrl } from "@/lib/webhook-settings";
-import { maskWebhookUrl, resolveDiscordResaleWebhookUrlForEvent } from "@/lib/webhook-settings";
+import { resolveDedicatedMatchWebhookUrl, maskWebhookUrl, resolveDiscordNewListingsWebhookUrl } from "@/lib/webhook-settings";
+import type { DedicatedMatchWebhookNumber } from "@/lib/dedicated-match-webhooks";
+import { parseDedicatedMatchNumber } from "@/lib/dedicated-match-webhooks";
 
 /** Left accent bar on resale new-listing embeds (Tailwind blue-500). */
 const RESALE_NEW_LISTINGS_EMBED_COLOR = 0x3b82f6;
@@ -106,15 +107,13 @@ export async function sendDiscordResaleDedicatedMessage(input: {
   eventName: string;
   eventId: number;
   prefId: string;
-  matchNum: number;
+  matchNum: DedicatedMatchWebhookNumber;
   mode: "baseline" | "delta";
   categoryLines: string;
   totalListings: number;
 }): Promise<DiscordNotifyResult> {
   const provider = "discord" as const;
-  const webhookUrl = await resolveDedicatedMatchWebhookUrl(
-    input.matchNum as 3 | 4 | 5 | 7,
-  );
+  const webhookUrl = await resolveDedicatedMatchWebhookUrl(input.matchNum);
 
   if (!webhookUrl) {
     return { attempted: false, ok: false, provider };
@@ -218,6 +217,8 @@ export async function sendDiscordNewListingsMessage(input: {
   kind: SockAvailableKind;
   newCount: number;
   newSeatIds: SockAvailableNewListingKey[];
+  /** When set, posts to this match's dedicated webhook (never the general resale webhook). */
+  dedicatedMatchNum?: DedicatedMatchWebhookNumber;
 }): Promise<DiscordNotifyResult> {
   const provider = "discord" as const;
 
@@ -226,7 +227,12 @@ export async function sendDiscordNewListingsMessage(input: {
     return { attempted: false, ok: false, provider };
   }
 
-  const webhookUrl = await resolveDiscordResaleWebhookUrlForEvent(input.eventLabel, input.eventName);
+  const dedicatedMatchNum =
+    input.dedicatedMatchNum ?? parseDedicatedMatchNumber(input.eventLabel, input.eventName) ?? null;
+
+  const webhookUrl = dedicatedMatchNum
+    ? await resolveDedicatedMatchWebhookUrl(dedicatedMatchNum)
+    : await resolveDiscordNewListingsWebhookUrl();
 
   if (!webhookUrl) {
     return { attempted: false, ok: false, provider };

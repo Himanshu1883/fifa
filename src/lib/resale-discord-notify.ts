@@ -6,8 +6,11 @@ import {
   type DiscordNotifyResult,
 } from "@/lib/discord-webhook";
 import { resolveDedicatedMatchWebhookUrl } from "@/lib/webhook-settings";
-import { isDedicatedMatchWebhook, parseDedicatedMatchNumber } from "@/lib/dedicated-match-webhooks";
-import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
+import {
+  isDedicatedMatchWebhook,
+  parseDedicatedMatchNumber,
+  type DedicatedMatchWebhookNumber,
+} from "@/lib/dedicated-match-webhooks";
 import { prisma } from "@/lib/prisma";
 
 type ResaleInventoryRow = {
@@ -306,8 +309,36 @@ export async function maybeNotifyDedicatedResaleDiscord(input: {
   return { ...result, mode: claim.mode };
 }
 
+/** Sync dedup state after a dedicated new-listings send (no Discord POST). */
+export async function persistResaleDiscordNotifyFingerprintState(
+  matchNum: number,
+  rows: ResaleInventoryRow[],
+): Promise<void> {
+  const fp = resaleDiscordNotifyFingerprint(rows);
+  if (!fp) return;
+  try {
+    await prisma.resaleDiscordMatchNotifyState.upsert({
+      where: { matchNum },
+      create: { matchNum, lastDiscordNotifyFingerprint: fp },
+      update: { lastDiscordNotifyFingerprint: fp },
+    });
+  } catch {
+    // best-effort
+  }
+}
+
+export function resolveDedicatedResaleMatchNum(
+  matchLabel: string | null | undefined,
+  label: string,
+  name: string,
+): DedicatedMatchWebhookNumber | null {
+  return (
+    parseDedicatedMatchNumber(matchLabel?.trim() || label.trim(), name) ??
+    parseDedicatedMatchNumber(label.trim(), name)
+  );
+}
+
 /** @internal exported for tests */
 export function isDedicatedResaleEvent(matchLabel: string, name: string): boolean {
-  const matchNum = parseEventMatchNumber(matchLabel, name);
-  return isDedicatedMatchWebhook(matchNum);
+  return resolveDedicatedResaleMatchNum(matchLabel, matchLabel, name) != null;
 }

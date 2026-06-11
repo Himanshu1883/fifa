@@ -1,0 +1,65 @@
+import "server-only";
+
+import { Prisma } from "@/generated/prisma/client";
+import { prisma } from "@/lib/prisma";
+import type { PriceListDiscordNotifySummary } from "@/lib/price-list-discord-notify";
+
+export async function persistPriceListDiscordBackgroundError(message: string): Promise<void> {
+  try {
+    await prisma.priceListDiscordNotifyLog.create({
+      data: {
+        mode: "error",
+        attempted: false,
+        ok: false,
+        error: message.slice(0, 2000),
+      },
+    });
+  } catch {
+    /* best-effort */
+  }
+}
+
+export async function persistPriceListDiscordNotifyLog(summary: PriceListDiscordNotifySummary): Promise<void> {
+  if (summary.skipReason) {
+    try {
+      await prisma.priceListDiscordNotifyLog.create({
+        data: {
+          mode: summary.mode,
+          resaleCount: summary.resaleCount,
+          shopCount: summary.shopCount,
+          attempted: summary.attempted,
+          ok: summary.ok,
+          error: summary.skipReason,
+        },
+      });
+    } catch {
+      /* best-effort */
+    }
+    return;
+  }
+
+  if (!summary.attempted) return;
+
+  const primary = summary.results[0];
+  const status = primary?.status ?? primary?.response?.status ?? null;
+  const error =
+    summary.results.find((r) => r.error)?.error?.slice(0, 2000) ??
+    (summary.ok ? null : "One or more Discord requests failed");
+
+  try {
+    await prisma.priceListDiscordNotifyLog.create({
+      data: {
+        mode: summary.mode,
+        resaleCount: summary.resaleCount,
+        shopCount: summary.shopCount,
+        attempted: summary.attempted,
+        ok: summary.ok,
+        status: status ?? undefined,
+        error,
+        notifyRaw: summary.results as unknown as Prisma.InputJsonValue,
+      },
+    });
+  } catch {
+    /* best-effort */
+  }
+}
