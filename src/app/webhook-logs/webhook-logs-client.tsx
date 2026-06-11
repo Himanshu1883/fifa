@@ -494,7 +494,7 @@ export function WebhookLogsClient() {
             <h2 className="text-sm font-semibold text-zinc-100">Webhook configuration</h2>
             <p className="mt-1 text-xs leading-relaxed text-zinc-500">
               {channel === "shop"
-                ? "SHOP marketplace Discord — full snapshot once, then match-level changes on each poll."
+                ? "SHOP marketplace Discord — full snapshot once, then per-match updates on price changes; re-posts current listings every ~12 min when quiet."
                 : channel === "price-list"
                   ? "Combined price list — sorted resale then shop prices; sends on any combined price change or 30 min heartbeat."
                   : "Resale Discord — new listings for general matches; target-price updates for Match 1, 3, 4, 5, and 7."}

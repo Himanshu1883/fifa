@@ -11,7 +11,7 @@ import {
   dedupeShopEventsByMatchNum,
   sendOneShopDeltaToDiscord,
   sendShopBaselineToDiscord,
-  sendShopHeartbeatToDiscord,
+  sendShopListingRefreshToDiscord,
   type ShopDiscordNotifyResult,
 } from "@/lib/shop-discord-webhook";
 import {
@@ -111,13 +111,13 @@ async function maybeSendShopDiscordHeartbeats(
     generalEvents.length > 0 &&
     (await shouldSendShopDiscordHeartbeat("general"))
   ) {
-    shopLog("Discord shop heartbeat send (general)");
-    const result = await sendShopHeartbeatToDiscord({
+    shopLog("Discord shop listing refresh send (general)");
+    const refreshResults = await sendShopListingRefreshToDiscord({
       events: generalEvents,
       webhookUrl: generalWebhook,
     });
-    results.push(result);
-    if (result.ok && result.attempted) {
+    results.push(...refreshResults);
+    if (refreshResults.some((r) => r.ok && r.attempted)) {
       await markShopDiscordLastHeartbeatAt("general");
     }
   }
@@ -129,14 +129,14 @@ async function maybeSendShopDiscordHeartbeats(
     if (!event) continue;
     if (!(await shouldSendShopDiscordHeartbeat(matchNum))) continue;
 
-    shopLog(`Discord shop heartbeat send M${matchNum}`);
-    const result = await sendShopHeartbeatToDiscord({
+    shopLog(`Discord shop listing refresh send M${matchNum}`);
+    const refreshResults = await sendShopListingRefreshToDiscord({
       events: [event],
       webhookUrl: webhook,
       dedicatedMatchNum: matchNum,
     });
-    results.push(result);
-    if (result.ok && result.attempted) {
+    results.push(...refreshResults);
+    if (refreshResults.some((r) => r.ok && r.attempted)) {
       await markShopDiscordLastHeartbeatAt(matchNum);
     }
   }

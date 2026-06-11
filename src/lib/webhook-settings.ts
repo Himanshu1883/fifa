@@ -112,8 +112,17 @@ function dedicatedLastHeartbeatJson(map: DedicatedShopLastHeartbeatAt): Prisma.I
   return map as Prisma.InputJsonValue;
 }
 
-/** Minimum quiet period before a shop Discord heartbeat (baseline/delta/heartbeat all reset the timer). */
-export const SHOP_DISCORD_HEARTBEAT_INTERVAL_MS = 30 * 60 * 1000;
+/** Default 12 min — resend full shop listings when prices unchanged (override via SHOP_DISCORD_HEARTBEAT_INTERVAL_MINUTES). */
+export function shopDiscordHeartbeatIntervalMs(): number {
+  const fromEnv = Number(process.env.SHOP_DISCORD_HEARTBEAT_INTERVAL_MINUTES);
+  if (Number.isFinite(fromEnv) && fromEnv > 0) {
+    return fromEnv * 60 * 1000;
+  }
+  return 12 * 60 * 1000;
+}
+
+/** @deprecated Use shopDiscordHeartbeatIntervalMs() — kept for imports that read the constant at module load. */
+export const SHOP_DISCORD_HEARTBEAT_INTERVAL_MS = 12 * 60 * 1000;
 
 /** Combined resale+shop price list webhook heartbeat when fingerprint is unchanged. */
 export const PRICE_LIST_DISCORD_HEARTBEAT_INTERVAL_MS = 30 * 60 * 1000;
@@ -140,7 +149,7 @@ export async function shouldSendShopDiscordHeartbeat(
 ): Promise<boolean> {
   const last = await getShopDiscordLastHeartbeatAt(target);
   if (!last) return true;
-  return Date.now() - last.getTime() >= SHOP_DISCORD_HEARTBEAT_INTERVAL_MS;
+  return Date.now() - last.getTime() >= shopDiscordHeartbeatIntervalMs();
 }
 
 export async function markShopDiscordLastHeartbeatAt(

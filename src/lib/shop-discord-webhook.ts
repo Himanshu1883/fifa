@@ -103,8 +103,9 @@ export function buildShopBaselineEmbeds(events: ShopMarketEvent[]): Array<Record
   }));
 }
 
-function deltaEmbedTitle(event: ShopMarketEvent): string {
-  return `🛒 SHOP · M${event.matchNum} · ${event.catalogue.eventName}`;
+function shopMatchEmbedTitle(event: ShopMarketEvent): string {
+  const label = event.catalogue.matchLabel?.trim() || `Match ${event.matchNum}`;
+  return `M${event.matchNum} · ${label}`;
 }
 
 /** Prefer event.buyUrl; fall back to FIFA checkout mapping by match number. */
@@ -175,12 +176,13 @@ export function computeChangedListingsFromStoredFingerprint(
   );
 }
 
-function buildShopDeltaEmbed(
+function buildShopListingEmbed(
   event: ShopMarketEvent,
-  changedListings: ShopMarketListing[],
+  listings: ShopMarketListing[],
+  options: { footerText: string },
 ): Record<string, unknown> | null {
-  if (changedListings.length === 0) return null;
-  const description = formatChangedListingLines(changedListings, SHOP_DISCORD_CURRENCY).trim();
+  if (listings.length === 0) return null;
+  const description = formatChangedListingLines(listings, SHOP_DISCORD_CURRENCY).trim();
   if (!description) return null;
 
   const buyUrl = resolveShopBuyUrl(event);
@@ -188,11 +190,11 @@ function buildShopDeltaEmbed(
     ? `${description}\n\n[Click here to buy](${buyUrl})`
     : description;
   const embed: Record<string, unknown> = {
-    title: deltaEmbedTitle(event),
+    title: shopMatchEmbedTitle(event),
     description: descriptionWithBuyLink.slice(0, 3900),
     color: SHOP_EMBED_COLOR_IN_STOCK,
     fields: [{ name: "Source", value: "🛒 Shop", inline: true }],
-    footer: { text: "🛒 Shop · price/availability update" },
+    footer: { text: options.footerText },
     timestamp: new Date().toISOString(),
   };
   if (buyUrl) {
@@ -205,6 +207,15 @@ function buildShopDeltaEmbed(
     });
   }
   return embed;
+}
+
+function buildShopDeltaEmbed(
+  event: ShopMarketEvent,
+  changedListings: ShopMarketListing[],
+): Record<string, unknown> | null {
+  return buildShopListingEmbed(event, changedListings, {
+    footerText: "🛒 Shop · price/availability update",
+  });
 }
 
 export function buildShopDeltaEmbeds(
@@ -319,33 +330,52 @@ function deltaEventsForNotify(
   return out.sort((a, b) => a.event.matchNum - b.event.matchNum);
 }
 
-export async function sendOneShopDeltaToDiscord(
+export async function sendOneShopListingToDiscord(
   event: ShopMarketEvent,
-  options: { changedListings: ShopMarketListing[] },
+  options: {
+    listings: ShopMarketListing[];
+    mode: "delta" | "heartbeat";
+    footerText: string;
+    webhookUrl?: string | null;
+  },
 ): Promise<ShopDiscordNotifyResult> {
-  const embed = buildShopDeltaEmbed(event, options.changedListings);
+  const embed = buildShopListingEmbed(event, options.listings, { footerText: options.footerText });
   if (!embed) {
-    return { attempted: false, ok: true, provider: "discord-shop", mode: "delta", matchCount: 0 };
+    return { attempted: false, ok: true, provider: "discord-shop", mode: options.mode, matchCount: 0 };
   }
   const buyUrl = resolveShopBuyUrl(event);
   const matchLabel = event.catalogue.matchLabel ?? `Match${event.matchNum}`;
-  const webhookUrl = await resolveDiscordShopWebhookUrlForEvent(matchLabel, event.catalogue.eventName);
+  const webhookUrl =
+    options.webhookUrl ??
+    (await resolveDiscordShopWebhookUrlForEvent(matchLabel, event.catalogue.eventName));
   return sendShopDiscordPayload({
     content: "",
     embeds: [embed],
     components: buildShopBuyNowComponents(buyUrl),
-    mode: "delta",
+    mode: options.mode,
     matchCount: 1,
     webhookUrl,
+  });
+}
+
+export async function sendOneShopDeltaToDiscord(
+  event: ShopMarketEvent,
+  options: { changedListings: ShopMarketListing[] },
+): Promise<ShopDiscordNotifyResult> {
+  return sendOneShopListingToDiscord(event, {
+    listings: options.changedListings,
+    mode: "delta",
+    footerText: "🛒 Shop · price/availability update",
   });
 }
 
 async function sendShopBaselineBatchToWebhook(
   events: ShopMarketEvent[],
   webhookUrl: string | null,
-  options: { dedicatedMatchNum?: number },
+  options: { dedicatedMatchNum?: number; variant?: "baseline" | "refresh" },
 ): Promise<ShopDiscordNotifyResult[]> {
   if (!webhookUrl || events.length === 0) return [];
+  const variant = options.variant ?? "baseline";
   const sorted = [...events].sort((a, b) => a.matchNum - b.matchNum);
   const batches = chunk(sorted, 12);
   const hasAnyStock = sorted.some((e) => availableListings(e).length > 0);
@@ -353,31 +383,55 @@ async function sendShopBaselineBatchToWebhook(
   const results: ShopDiscordNotifyResult[] = [];
   for (let i = 0; i < batches.length; i++) {
     const batch = batches[i];
-    const embed = {
-      title: dedicatedMatchNum
-        ? i === 0
+    const title = (() => {
+      if (variant === "refresh") {
+        if (dedicatedMatchNum) {
+          return i === 0
+            ? `🛒 SHOP — Match ${dedicatedMatchNum} · current listings`
+            : `🛒 SHOP — Match ${dedicatedMatchNum} · current listings (cont. ${i + 1})`;
+        }
+        return i === 0 ? "🛒 SHOP — Current listings" : `🛒 SHOP — Current listings (cont. ${i + 1})`;
+      }
+      if (dedicatedMatchNum) {
+        return i === 0
           ? `🛒 SHOP — Match ${dedicatedMatchNum} snapshot`
-          : `🛒 SHOP — Match ${dedicatedMatchNum} snapshot (cont. ${i + 1})`
-        : i === 0
-          ? "🛒 SHOP — Full marketplace snapshot"
-          : `🛒 SHOP snapshot (cont. ${i + 1})`,
+          : `🛒 SHOP — Match ${dedicatedMatchNum} snapshot (cont. ${i + 1})`;
+      }
+      return i === 0 ? "🛒 SHOP — Full marketplace snapshot" : `🛒 SHOP snapshot (cont. ${i + 1})`;
+    })();
+    const content = (() => {
+      if (variant === "refresh") {
+        if (dedicatedMatchNum) {
+          return i === 0 ? `**SHOP** — Latest listings · M${dedicatedMatchNum}` : "";
+        }
+        return i === 0 ? "**SHOP** — Latest listings (refresh)" : "";
+      }
+      if (dedicatedMatchNum) {
+        return i === 0 ? `**SHOP** — Match ${dedicatedMatchNum} initial listing dump` : "";
+      }
+      return i === 0 ? "**SHOP** — Initial full listing dump (all matches)" : "";
+    })();
+    const footer = (() => {
+      if (variant === "refresh") {
+        return dedicatedMatchNum
+          ? { text: `🛒 Shop · Match ${dedicatedMatchNum} · listing refresh` }
+          : { text: `🛒 Shop · listing refresh · Matches ${batch[0]?.matchNum}–${batch[batch.length - 1]?.matchNum}` };
+      }
+      return dedicatedMatchNum
+        ? { text: `🛒 Shop · Match ${dedicatedMatchNum} baseline` }
+        : { text: `🛒 Shop · Matches ${batch[0]?.matchNum}–${batch[batch.length - 1]?.matchNum}` };
+    })();
+    const embed = {
+      title,
       description: batch.map((e) => matchSummaryLine(e, true)).join("\n").slice(0, 3900),
       color: hasAnyStock ? SHOP_EMBED_COLOR_IN_STOCK : SHOP_EMBED_COLOR_NO_STOCK,
-      footer: dedicatedMatchNum
-        ? { text: `🛒 Shop · Match ${dedicatedMatchNum} baseline` }
-        : { text: `🛒 Shop · Matches ${batch[0]?.matchNum}–${batch[batch.length - 1]?.matchNum}` },
+      footer,
     };
     const res = await sendShopDiscordPayload({
-      content: dedicatedMatchNum
-        ? i === 0
-          ? `**SHOP** — Match ${dedicatedMatchNum} initial listing dump`
-          : ""
-        : i === 0
-          ? "**SHOP** — Initial full listing dump (all matches)"
-          : "",
+      content,
       embeds: [embed],
       components: batch.length === 1 ? buildShopBuyNowComponents(resolveShopBuyUrl(batch[0])) : undefined,
-      mode: "baseline",
+      mode: variant === "refresh" ? "heartbeat" : "baseline",
       matchCount: events.length,
       webhookUrl,
     });
@@ -412,51 +466,40 @@ export async function sendShopBaselineToDiscord(events: ShopMarketEvent[]): Prom
   return results;
 }
 
-function buildShopHeartbeatEmbed(
-  events: ShopMarketEvent[],
-  options: { dedicatedMatchNum?: number },
-): Record<string, unknown> {
-  const sorted = [...events].sort((a, b) => a.matchNum - b.matchNum);
-  const dedicatedMatchNum = options.dedicatedMatchNum;
-  const hasAnyStock = sorted.some((e) => availableListings(e).length > 0);
-  const description = sorted.map((e) => matchSummaryLine(e, true)).join("\n").slice(0, 3900);
-  return {
-    title: dedicatedMatchNum
-      ? `🛒 SHOP · M${dedicatedMatchNum} — No price changes`
-      : "🛒 SHOP — No price changes",
-    description: description || "_no stock_",
-    color: hasAnyStock ? SHOP_EMBED_COLOR_IN_STOCK : SHOP_EMBED_COLOR_NO_STOCK,
-    footer: {
-      text: dedicatedMatchNum
-        ? `🛒 Shop · Match ${dedicatedMatchNum} · unchanged 30+ min`
-        : "🛒 Shop · unchanged 30+ min",
-    },
-    timestamp: new Date().toISOString(),
-  };
-}
-
-export async function sendShopHeartbeatToDiscord(input: {
+/** Re-post current in-stock listings (same per-match format as deltas) when prices are unchanged. */
+export async function sendShopListingRefreshToDiscord(input: {
   events: ShopMarketEvent[];
   webhookUrl: string;
   dedicatedMatchNum?: number;
-}): Promise<ShopDiscordNotifyResult> {
+}): Promise<ShopDiscordNotifyResult[]> {
   const sorted = dedupeShopEventsByMatchNum(input.events);
   if (sorted.length === 0) {
-    return { attempted: false, ok: true, provider: "discord-shop", mode: "heartbeat", matchCount: 0 };
+    return [{ attempted: false, ok: true, provider: "discord-shop", mode: "heartbeat", matchCount: 0 }];
   }
-  const dedicatedMatchNum = input.dedicatedMatchNum;
-  const embed = buildShopHeartbeatEmbed(sorted, { dedicatedMatchNum });
-  const buyUrl = sorted.length === 1 ? resolveShopBuyUrl(sorted[0]) : null;
-  return sendShopDiscordPayload({
-    content: dedicatedMatchNum
-      ? `**SHOP** — No price changes (last 30+ min) · M${dedicatedMatchNum}`
-      : "**SHOP** — No price changes (last 30+ min)",
-    embeds: [embed],
-    components: buyUrl ? buildShopBuyNowComponents(buyUrl) : undefined,
-    mode: "heartbeat",
-    matchCount: sorted.length,
-    webhookUrl: input.webhookUrl,
-  });
+
+  const footerText = input.dedicatedMatchNum
+    ? `🛒 Shop · Match ${input.dedicatedMatchNum} · listing refresh`
+    : "🛒 Shop · listing refresh";
+
+  const results: ShopDiscordNotifyResult[] = [];
+  for (const event of sorted) {
+    const listings = availablePricedListings(event);
+    if (listings.length === 0) continue;
+
+    const result = await sendOneShopListingToDiscord(event, {
+      listings,
+      mode: "heartbeat",
+      footerText,
+      webhookUrl: input.webhookUrl,
+    });
+    results.push(result);
+    if (result.attempted && !result.ok) break;
+  }
+
+  if (results.length === 0) {
+    return [{ attempted: false, ok: true, provider: "discord-shop", mode: "heartbeat", matchCount: 0 }];
+  }
+  return results;
 }
 
 /** Legacy batch path — prefer sendHardenedShopDelta. Never adds a summary content header. */
