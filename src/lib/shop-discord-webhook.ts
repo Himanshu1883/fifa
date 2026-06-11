@@ -15,7 +15,7 @@ export type ShopDiscordNotifyResult = {
   provider: "discord-shop";
   status?: number;
   error?: string;
-  mode?: "baseline" | "delta";
+  mode?: "baseline" | "delta" | "heartbeat";
   matchCount?: number;
   request?: {
     webhookUrlMasked: string;
@@ -222,7 +222,7 @@ export async function sendShopDiscordPayload(input: {
   content: string;
   embeds: Array<Record<string, unknown>>;
   components?: Array<Record<string, unknown>>;
-  mode: "baseline" | "delta";
+  mode: "baseline" | "delta" | "heartbeat";
   matchCount: number;
   webhookUrl?: string | null;
 }): Promise<ShopDiscordNotifyResult> {
@@ -408,6 +408,53 @@ export async function sendShopBaselineToDiscord(events: ShopMarketEvent[]): Prom
   }
 
   return results;
+}
+
+function buildShopHeartbeatEmbed(
+  events: ShopMarketEvent[],
+  options: { dedicatedMatchNum?: number },
+): Record<string, unknown> {
+  const sorted = [...events].sort((a, b) => a.matchNum - b.matchNum);
+  const dedicatedMatchNum = options.dedicatedMatchNum;
+  const hasAnyStock = sorted.some((e) => availableListings(e).length > 0);
+  const description = sorted.map((e) => matchSummaryLine(e, true)).join("\n").slice(0, 3900);
+  return {
+    title: dedicatedMatchNum
+      ? `🛒 SHOP · M${dedicatedMatchNum} — No price changes`
+      : "🛒 SHOP — No price changes",
+    description: description || "_no stock_",
+    color: hasAnyStock ? SHOP_EMBED_COLOR_IN_STOCK : SHOP_EMBED_COLOR_NO_STOCK,
+    footer: {
+      text: dedicatedMatchNum
+        ? `🛒 Shop · Match ${dedicatedMatchNum} · unchanged 30+ min`
+        : "🛒 Shop · unchanged 30+ min",
+    },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export async function sendShopHeartbeatToDiscord(input: {
+  events: ShopMarketEvent[];
+  webhookUrl: string;
+  dedicatedMatchNum?: number;
+}): Promise<ShopDiscordNotifyResult> {
+  const sorted = dedupeShopEventsByMatchNum(input.events);
+  if (sorted.length === 0) {
+    return { attempted: false, ok: true, provider: "discord-shop", mode: "heartbeat", matchCount: 0 };
+  }
+  const dedicatedMatchNum = input.dedicatedMatchNum;
+  const embed = buildShopHeartbeatEmbed(sorted, { dedicatedMatchNum });
+  const buyUrl = sorted.length === 1 ? resolveShopBuyUrl(sorted[0]) : null;
+  return sendShopDiscordPayload({
+    content: dedicatedMatchNum
+      ? `**SHOP** — No price changes (last 30+ min) · M${dedicatedMatchNum}`
+      : "**SHOP** — No price changes (last 30+ min)",
+    embeds: [embed],
+    components: buyUrl ? buildShopBuyNowComponents(buyUrl) : undefined,
+    mode: "heartbeat",
+    matchCount: sorted.length,
+    webhookUrl: input.webhookUrl,
+  });
 }
 
 /** Legacy batch path — prefer sendHardenedShopDelta. Never adds a summary content header. */

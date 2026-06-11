@@ -11,20 +11,32 @@ import {
   dedupeShopEventsByMatchNum,
   sendOneShopDeltaToDiscord,
   sendShopBaselineToDiscord,
+  sendShopHeartbeatToDiscord,
   type ShopDiscordNotifyResult,
 } from "@/lib/shop-discord-webhook";
 import {
   hasAnyDedicatedMatchWebhookConfigured,
+  isDedicatedMatchShopDiscordBaselineSent,
   isShopDiscordBaselineSent,
+  markDedicatedMatchShopDiscordBaselineSent,
   markShopDiscordBaselineSent,
+  markShopDiscordLastHeartbeatAt,
+  resolveDedicatedMatchWebhookUrl,
   resolveDiscordShopWebhookUrl,
+  shouldSendShopDiscordHeartbeat,
+  type ShopDiscordWebhookHeartbeatTarget,
 } from "@/lib/webhook-settings";
+import {
+  DEDICATED_MATCH_WEBHOOK_NUMBERS,
+  isDedicatedMatchWebhook,
+} from "@/lib/dedicated-match-webhooks";
 import { persistShopDiscordNotifyLog } from "@/lib/shop-discord-log";
 import { ensureAllShopMatches } from "@/lib/shop-match-grid";
 import {
   bootstrapShopDiscordNotifyFingerprints,
   claimShopDiscordNotifyFingerprint,
   loadShopDiscordNotifyFingerprints,
+  persistShopDiscordNotifyFingerprint,
   revertShopDiscordNotifyFingerprint,
   updateShopDiscordNotifyFingerprints,
 } from "@/lib/shop-sync-service";
@@ -32,7 +44,7 @@ import {
 export type ShopDiscordNotifySummary = {
   attempted: boolean;
   ok: boolean;
-  mode: "baseline" | "delta" | "skipped";
+  mode: "baseline" | "delta" | "heartbeat" | "skipped";
   results: ShopDiscordNotifyResult[];
   changedCount: number;
   /** Matches successfully sent — fingerprints persisted immediately per match. */
@@ -77,6 +89,70 @@ function diffDeltaCandidates(
 async function finishShopNotify(summary: ShopDiscordNotifySummary): Promise<ShopDiscordNotifySummary> {
   await persistShopDiscordNotifyLog(summary);
   return summary;
+}
+
+function shopDiscordHeartbeatTargetForMatch(matchNum: number): ShopDiscordWebhookHeartbeatTarget {
+  return isDedicatedMatchWebhook(matchNum) ? matchNum : "general";
+}
+
+async function markShopDiscordNotifySentForMatch(matchNum: number): Promise<void> {
+  await markShopDiscordLastHeartbeatAt(shopDiscordHeartbeatTargetForMatch(matchNum));
+}
+
+async function maybeSendShopDiscordHeartbeats(
+  allMatches: ShopMarketEvent[],
+): Promise<ShopDiscordNotifySummary | null> {
+  const results: ShopDiscordNotifyResult[] = [];
+  const generalWebhook = await resolveDiscordShopWebhookUrl();
+  const generalEvents = allMatches.filter((e) => !isDedicatedMatchWebhook(e.matchNum));
+
+  if (
+    generalWebhook &&
+    generalEvents.length > 0 &&
+    (await shouldSendShopDiscordHeartbeat("general"))
+  ) {
+    shopLog("Discord shop heartbeat send (general)");
+    const result = await sendShopHeartbeatToDiscord({
+      events: generalEvents,
+      webhookUrl: generalWebhook,
+    });
+    results.push(result);
+    if (result.ok && result.attempted) {
+      await markShopDiscordLastHeartbeatAt("general");
+    }
+  }
+
+  for (const matchNum of DEDICATED_MATCH_WEBHOOK_NUMBERS) {
+    const webhook = await resolveDedicatedMatchWebhookUrl(matchNum);
+    if (!webhook) continue;
+    const event = allMatches.find((e) => e.matchNum === matchNum);
+    if (!event) continue;
+    if (!(await shouldSendShopDiscordHeartbeat(matchNum))) continue;
+
+    shopLog(`Discord shop heartbeat send M${matchNum}`);
+    const result = await sendShopHeartbeatToDiscord({
+      events: [event],
+      webhookUrl: webhook,
+      dedicatedMatchNum: matchNum,
+    });
+    results.push(result);
+    if (result.ok && result.attempted) {
+      await markShopDiscordLastHeartbeatAt(matchNum);
+    }
+  }
+
+  if (results.length === 0) return null;
+
+  const attempted = results.some((r) => r.attempted);
+  const ok = results.length > 0 && results.every((r) => r.ok || !r.attempted);
+  return {
+    attempted,
+    ok,
+    mode: "heartbeat",
+    results,
+    changedCount: 0,
+    notifiedEvents: [],
+  };
 }
 
 /**
@@ -156,6 +232,9 @@ async function sendHardenedShopDelta(
         return { result, notified: false };
       }
 
+      if (result.ok && result.attempted) {
+        await markShopDiscordNotifySentForMatch(event.matchNum);
+      }
       return { result, notified: true };
     });
 
@@ -173,6 +252,38 @@ async function sendHardenedShopDelta(
       results: [{ attempted: false, ok: true, provider: "discord-shop", mode: "delta", matchCount: 0 }],
       notifiedEvents: [],
     };
+  }
+
+  return { results, notifiedEvents };
+}
+
+/** Send shop baseline to dedicated match webhooks configured after the global baseline ran. */
+async function sendPendingDedicatedShopBaselines(
+  allMatches: ShopMarketEvent[],
+): Promise<{ results: ShopDiscordNotifyResult[]; notifiedEvents: ShopMarketEvent[] }> {
+  const results: ShopDiscordNotifyResult[] = [];
+  const notifiedEvents: ShopMarketEvent[] = [];
+
+  for (const matchNum of DEDICATED_MATCH_WEBHOOK_NUMBERS) {
+    if (await isDedicatedMatchShopDiscordBaselineSent(matchNum)) continue;
+    const webhook = await resolveDedicatedMatchWebhookUrl(matchNum);
+    if (!webhook) continue;
+
+    const event = allMatches.find((e) => e.matchNum === matchNum);
+    if (!event) continue;
+
+    shopLog(`Discord shop dedicated baseline send M${matchNum}`);
+    const batchResults = await sendShopBaselineToDiscord([event]);
+    results.push(...batchResults);
+    const attempted = batchResults.some((r) => r.attempted);
+    const ok = batchResults.length > 0 && batchResults.every((r) => r.ok || !r.attempted);
+    if (attempted && ok) {
+      await markDedicatedMatchShopDiscordBaselineSent(matchNum);
+      await persistShopDiscordNotifyFingerprint(event);
+      await markShopDiscordNotifySentForMatch(matchNum);
+      notifiedEvents.push(event);
+    }
+    if (batchResults.some((r) => r.attempted && !r.ok)) break;
   }
 
   return { results, notifiedEvents };
@@ -209,6 +320,16 @@ export async function maybeNotifyShopDiscord(input: {
     if (ok) {
       await markShopDiscordBaselineSent();
       await updateShopDiscordNotifyFingerprints(allMatches);
+      if (generalWebhook) {
+        await markShopDiscordLastHeartbeatAt("general");
+      }
+      for (const matchNum of DEDICATED_MATCH_WEBHOOK_NUMBERS) {
+        const webhook = await resolveDedicatedMatchWebhookUrl(matchNum);
+        if (webhook) {
+          await markDedicatedMatchShopDiscordBaselineSent(matchNum);
+          await markShopDiscordLastHeartbeatAt(matchNum);
+        }
+      }
     }
     shopLog(`Discord shop baseline ${ok ? "OK" : "failed"}`);
     return finishShopNotify({
@@ -221,11 +342,30 @@ export async function maybeNotifyShopDiscord(input: {
     });
   }
 
+  const pendingDedicated = await sendPendingDedicatedShopBaselines(allMatches);
+  if (pendingDedicated.results.some((r) => r.attempted)) {
+    const ok = pendingDedicated.results.every((r) => r.ok || !r.attempted);
+    shopLog(`Discord shop dedicated baseline ${ok ? "OK" : "failed"}`);
+    return finishShopNotify({
+      attempted: true,
+      ok,
+      mode: "baseline",
+      results: pendingDedicated.results,
+      changedCount: pendingDedicated.notifiedEvents.length,
+      notifiedEvents: ok ? pendingDedicated.notifiedEvents : [],
+    });
+  }
+
   await bootstrapShopDiscordNotifyFingerprints(allMatches, previousAll, storedFingerprints);
 
   const changed = diffDeltaCandidates(allMatches, storedFingerprints);
   if (changed.length === 0) {
     shopLog("Discord shop delta skip (no matches with fingerprint changes vs stored)");
+    const heartbeatSummary = await maybeSendShopDiscordHeartbeats(allMatches);
+    if (heartbeatSummary) {
+      shopLog(`Discord shop heartbeat ${heartbeatSummary.ok ? "OK" : "failed"}`);
+      return finishShopNotify(heartbeatSummary);
+    }
     return finishShopNotify({
       attempted: false,
       ok: true,

@@ -8,6 +8,7 @@ import {
 } from "@/lib/dedicated-match-webhooks";
 import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/generated/prisma/client";
 
 const SETTINGS_ID = 1;
 
@@ -73,6 +74,174 @@ async function readSettingsRow() {
     return await prisma.appWebhookSettings.findUnique({ where: { id: SETTINGS_ID } });
   } catch {
     return null;
+  }
+}
+
+type DedicatedShopBaselinesSent = Partial<Record<string, string>>;
+
+function parseDedicatedShopBaselinesSent(raw: unknown): DedicatedShopBaselinesSent {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: DedicatedShopBaselinesSent = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === "string" && value.trim()) out[key] = value;
+  }
+  return out;
+}
+
+type DedicatedShopLastHeartbeatAt = Partial<Record<string, string>>;
+
+function parseDedicatedShopLastHeartbeatAt(raw: unknown): DedicatedShopLastHeartbeatAt {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: DedicatedShopLastHeartbeatAt = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === "string" && value.trim()) out[key] = value;
+  }
+  return out;
+}
+
+function dedicatedLastHeartbeatJson(map: DedicatedShopLastHeartbeatAt): Prisma.InputJsonValue {
+  return map as Prisma.InputJsonValue;
+}
+
+/** Minimum quiet period before a shop Discord heartbeat (baseline/delta/heartbeat all reset the timer). */
+export const SHOP_DISCORD_HEARTBEAT_INTERVAL_MS = 30 * 60 * 1000;
+
+export type ShopDiscordWebhookHeartbeatTarget = "general" | DedicatedMatchWebhookNumber;
+
+export async function getShopDiscordLastHeartbeatAt(
+  target: ShopDiscordWebhookHeartbeatTarget,
+): Promise<Date | null> {
+  const row = await readSettingsRow();
+  if (!row) return null;
+  if (target === "general") {
+    return row.shopDiscordLastHeartbeatAt ?? null;
+  }
+  const map = parseDedicatedShopLastHeartbeatAt(row.dedicatedShopDiscordLastHeartbeatAt);
+  const iso = map[String(target)];
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+export async function shouldSendShopDiscordHeartbeat(
+  target: ShopDiscordWebhookHeartbeatTarget,
+): Promise<boolean> {
+  const last = await getShopDiscordLastHeartbeatAt(target);
+  if (!last) return true;
+  return Date.now() - last.getTime() >= SHOP_DISCORD_HEARTBEAT_INTERVAL_MS;
+}
+
+export async function markShopDiscordLastHeartbeatAt(
+  target: ShopDiscordWebhookHeartbeatTarget,
+): Promise<void> {
+  const at = new Date();
+  if (target === "general") {
+    await prisma.appWebhookSettings.upsert({
+      where: { id: SETTINGS_ID },
+      create: { id: SETTINGS_ID, shopDiscordLastHeartbeatAt: at },
+      update: { shopDiscordLastHeartbeatAt: at },
+    });
+    return;
+  }
+  const row = await readSettingsRow();
+  const map = parseDedicatedShopLastHeartbeatAt(row?.dedicatedShopDiscordLastHeartbeatAt);
+  map[String(target)] = at.toISOString();
+  await prisma.appWebhookSettings.upsert({
+    where: { id: SETTINGS_ID },
+    create: {
+      id: SETTINGS_ID,
+      dedicatedShopDiscordLastHeartbeatAt: dedicatedLastHeartbeatJson(map),
+    },
+    update: { dedicatedShopDiscordLastHeartbeatAt: dedicatedLastHeartbeatJson(map) },
+  });
+}
+
+async function clearDedicatedShopDiscordLastHeartbeatAt(
+  matchNum: DedicatedMatchWebhookNumber,
+): Promise<void> {
+  const row = await readSettingsRow();
+  const map = parseDedicatedShopLastHeartbeatAt(row?.dedicatedShopDiscordLastHeartbeatAt);
+  if (!(String(matchNum) in map)) return;
+  delete map[String(matchNum)];
+  await prisma.appWebhookSettings.upsert({
+    where: { id: SETTINGS_ID },
+    create: {
+      id: SETTINGS_ID,
+      dedicatedShopDiscordLastHeartbeatAt: dedicatedLastHeartbeatJson(map),
+    },
+    update: { dedicatedShopDiscordLastHeartbeatAt: dedicatedLastHeartbeatJson(map) },
+  });
+}
+
+function dedicatedBaselinesSentJson(
+  map: DedicatedShopBaselinesSent,
+): Prisma.InputJsonValue {
+  return map as Prisma.InputJsonValue;
+}
+
+export async function isDedicatedMatchShopDiscordBaselineSent(
+  matchNum: DedicatedMatchWebhookNumber,
+): Promise<boolean> {
+  const row = await readSettingsRow();
+  const sent = parseDedicatedShopBaselinesSent(row?.dedicatedShopDiscordBaselinesSent);
+  return Boolean(sent[String(matchNum)]);
+}
+
+export async function markDedicatedMatchShopDiscordBaselineSent(
+  matchNum: DedicatedMatchWebhookNumber,
+): Promise<void> {
+  const row = await readSettingsRow();
+  const sent = parseDedicatedShopBaselinesSent(row?.dedicatedShopDiscordBaselinesSent);
+  sent[String(matchNum)] = new Date().toISOString();
+  await prisma.appWebhookSettings.upsert({
+    where: { id: SETTINGS_ID },
+    create: {
+      id: SETTINGS_ID,
+      dedicatedShopDiscordBaselinesSent: dedicatedBaselinesSentJson(sent),
+    },
+    update: { dedicatedShopDiscordBaselinesSent: dedicatedBaselinesSentJson(sent) },
+  });
+}
+
+export async function clearDedicatedMatchShopDiscordBaselineSent(
+  matchNum: DedicatedMatchWebhookNumber,
+): Promise<void> {
+  const row = await readSettingsRow();
+  const sent = parseDedicatedShopBaselinesSent(row?.dedicatedShopDiscordBaselinesSent);
+  if (!(String(matchNum) in sent)) return;
+  delete sent[String(matchNum)];
+  await prisma.appWebhookSettings.upsert({
+    where: { id: SETTINGS_ID },
+    create: {
+      id: SETTINGS_ID,
+      dedicatedShopDiscordBaselinesSent: dedicatedBaselinesSentJson(sent),
+    },
+    update: { dedicatedShopDiscordBaselinesSent: dedicatedBaselinesSentJson(sent) },
+  });
+}
+
+async function resetDedicatedMatchNotifyStateOnWebhookChange(matchNum: number): Promise<void> {
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.resaleDiscordMatchNotifyState.deleteMany({ where: { matchNum } });
+      await tx.resaleDiscordMatchNotifyLog.deleteMany({ where: { matchNum } });
+    });
+  } catch {
+    // best-effort reset so resale baseline fires after webhook configure
+  }
+}
+
+async function onDedicatedMatchWebhookUrlChanged(
+  matchNum: DedicatedMatchWebhookNumber,
+  previousUrl: string | null,
+  nextUrl: string | null,
+): Promise<void> {
+  const urlChanged = (previousUrl ?? "") !== (nextUrl ?? "");
+  if (!urlChanged) return;
+  await clearDedicatedMatchShopDiscordBaselineSent(matchNum);
+  await clearDedicatedShopDiscordLastHeartbeatAt(matchNum);
+  if (nextUrl) {
+    await resetDedicatedMatchNotifyStateOnWebhookChange(matchNum);
   }
 }
 
@@ -304,11 +473,14 @@ export async function setDiscordMatch3ResaleWebhookUrl(raw: string | null): Prom
   if (next) {
     assertDistinctWebhookUrls(next, dedicatedWebhookDistinctChecks(3, row));
   }
+  const prevUrl =
+    row?.discordMatch3ResaleWebhookUrl?.trim() || envTrim("DISCORD_MATCH3_RESALE_WEBHOOK_URL") || null;
   await prisma.appWebhookSettings.upsert({
     where: { id: SETTINGS_ID },
     create: { id: SETTINGS_ID, discordMatch3ResaleWebhookUrl: next },
     update: { discordMatch3ResaleWebhookUrl: next },
   });
+  await onDedicatedMatchWebhookUrlChanged(3, prevUrl, next);
   return getAppWebhookSettings();
 }
 
@@ -327,11 +499,14 @@ export async function setDiscordMatch4ResaleWebhookUrl(raw: string | null): Prom
   if (next) {
     assertDistinctWebhookUrls(next, dedicatedWebhookDistinctChecks(4, row));
   }
+  const prevUrl =
+    row?.discordMatch4ResaleWebhookUrl?.trim() || envTrim("DISCORD_MATCH4_RESALE_WEBHOOK_URL") || null;
   await prisma.appWebhookSettings.upsert({
     where: { id: SETTINGS_ID },
     create: { id: SETTINGS_ID, discordMatch4ResaleWebhookUrl: next },
     update: { discordMatch4ResaleWebhookUrl: next },
   });
+  await onDedicatedMatchWebhookUrlChanged(4, prevUrl, next);
   return getAppWebhookSettings();
 }
 
@@ -349,11 +524,13 @@ export async function setDiscordMatch5WebhookUrl(raw: string | null): Promise<Ap
   if (next) {
     assertDistinctWebhookUrls(next, dedicatedWebhookDistinctChecks(5, row));
   }
+  const prevUrl = row?.discordMatch5WebhookUrl?.trim() || envTrim("DISCORD_MATCH5_WEBHOOK_URL") || null;
   await prisma.appWebhookSettings.upsert({
     where: { id: SETTINGS_ID },
     create: { id: SETTINGS_ID, discordMatch5WebhookUrl: next },
     update: { discordMatch5WebhookUrl: next },
   });
+  await onDedicatedMatchWebhookUrlChanged(5, prevUrl, next);
   return getAppWebhookSettings();
 }
 
@@ -367,11 +544,13 @@ export async function setDiscordMatch7WebhookUrl(raw: string | null): Promise<Ap
   if (next) {
     assertDistinctWebhookUrls(next, dedicatedWebhookDistinctChecks(7, row));
   }
+  const prevUrl = row?.discordMatch7WebhookUrl?.trim() || envTrim("DISCORD_MATCH7_WEBHOOK_URL") || null;
   await prisma.appWebhookSettings.upsert({
     where: { id: SETTINGS_ID },
     create: { id: SETTINGS_ID, discordMatch7WebhookUrl: next },
     update: { discordMatch7WebhookUrl: next },
   });
+  await onDedicatedMatchWebhookUrlChanged(7, prevUrl, next);
   return getAppWebhookSettings();
 }
 
@@ -402,7 +581,7 @@ export async function setDiscordShopWebhookUrl(raw: string | null): Promise<AppW
     create: { id: SETTINGS_ID, discordShopWebhookUrl: next, shopDiscordBaselineSentAt: null },
     update: {
       discordShopWebhookUrl: next,
-      ...(urlChanged ? { shopDiscordBaselineSentAt: null } : {}),
+      ...(urlChanged ? { shopDiscordBaselineSentAt: null, shopDiscordLastHeartbeatAt: null } : {}),
     },
   });
   return getAppWebhookSettings();

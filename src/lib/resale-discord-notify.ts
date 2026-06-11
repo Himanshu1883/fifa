@@ -204,6 +204,18 @@ export async function claimResaleDiscordNotifyFingerprint(
   }
 }
 
+/** Clear resale notify dedup so the next scrape sends a baseline to a newly configured webhook. */
+export async function resetDedicatedResaleDiscordNotifyState(matchNum: number): Promise<void> {
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.resaleDiscordMatchNotifyState.deleteMany({ where: { matchNum } });
+      await tx.resaleDiscordMatchNotifyLog.deleteMany({ where: { matchNum } });
+    });
+  } catch {
+    // best-effort reset
+  }
+}
+
 export async function revertResaleDiscordNotifyFingerprint(
   matchNum: number,
   previousFingerprint: string | null,

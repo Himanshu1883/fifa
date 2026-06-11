@@ -319,6 +319,12 @@ model AppWebhookSettings {
   discordMatch7WebhookUrl       String?  @map("discord_match7_webhook_url") @db.Text
   discordShopWebhookUrl        String?   @map("discord_shop_webhook_url") @db.Text
   shopDiscordBaselineSentAt    DateTime? @map("shop_discord_baseline_sent_at")
+  /// Per dedicated match (3/4/5/7): ISO timestamp when that match's shop baseline was sent to its webhook.
+  dedicatedShopDiscordBaselinesSent Json @default("{}") @map("dedicated_shop_discord_baselines_sent")
+  /// General shop webhook: last successful notify (baseline, delta, or heartbeat).
+  shopDiscordLastHeartbeatAt   DateTime? @map("shop_discord_last_heartbeat_at")
+  /// Per dedicated match (3/4/5/7): ISO timestamp of last successful shop notify to that webhook.
+  dedicatedShopDiscordLastHeartbeatAt Json @default("{}") @map("dedicated_shop_discord_last_heartbeat_at")
   updatedAt                    DateTime  @updatedAt @map("updated_at")
 
   @@map("app_webhook_settings")

@@ -171,6 +171,22 @@ function ChannelTabs({
   );
 }
 
+function SendBaselineButton({
+  disabled,
+  loading,
+  onClick,
+}: {
+  disabled?: boolean;
+  loading?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" disabled={disabled || loading} onClick={onClick} className={btnSecondaryClass}>
+      {loading ? "Sending…" : "Send baseline now"}
+    </button>
+  );
+}
+
 function ShopLogDetail({ row }: { row: ShopLogRow }) {
   return (
     <div className="grid gap-4">
@@ -235,6 +251,8 @@ export function WebhookLogsClient() {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsSavedAt, setSettingsSavedAt] = useState<string | null>(null);
+  const [baselineSending, setBaselineSending] = useState<"shop" | number | null>(null);
+  const [baselineMessage, setBaselineMessage] = useState<string | null>(null);
 
   const [shopRows, setShopRows] = useState<ShopLogRow[]>([]);
   const [resaleRows, setResaleRows] = useState<ResaleLogRow[]>([]);
@@ -342,6 +360,57 @@ export function WebhookLogsClient() {
     }
   };
 
+  const sendBaselineNow = async (
+    input: { target: "shop" } | { target: "dedicated"; matchNum: number },
+  ) => {
+    const key = input.target === "shop" ? "shop" : input.matchNum;
+    setBaselineSending(key);
+    setBaselineMessage(null);
+    setSettingsError(null);
+    try {
+      const res = await fetch("/api/webhook-baseline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        shop?: { attempted?: boolean; ok?: boolean; error?: string };
+        resale?: { attempted?: boolean; ok?: boolean; error?: string; mode?: string };
+      };
+      if (!res.ok || !json.ok) {
+        setSettingsError(json.error ?? `Baseline send failed (${res.status})`);
+        return;
+      }
+
+      const parts: string[] = [];
+      if (input.target === "shop") {
+        parts.push(json.shop?.ok ? "General shop baseline sent to Discord" : json.shop?.error ?? "Shop baseline failed");
+      } else {
+        if (json.shop?.attempted) {
+          parts.push(`Shop: ${json.shop.ok ? "sent" : json.shop.error ?? "failed"}`);
+        } else {
+          parts.push(`Shop: ${json.shop?.error ?? "skipped"}`);
+        }
+        if (json.resale?.attempted) {
+          parts.push(`Resale: ${json.resale.ok ? "sent" : json.resale.error ?? "failed"}`);
+        } else if (json.resale?.error) {
+          parts.push(`Resale: ${json.resale.error}`);
+        } else {
+          parts.push("Resale: skipped (no inventory)");
+        }
+      }
+      setBaselineMessage(parts.join(" · "));
+      await loadSettings();
+      if (channel === "shop") await loadLogs();
+    } catch (e) {
+      setSettingsError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBaselineSending(null);
+    }
+  };
+
   const switchChannel = (next: WebhookChannel) => {
     setChannel(next);
     setOffset(0);
@@ -438,6 +507,13 @@ export function WebhookLogsClient() {
               >
                 Clear saved URL
               </button>
+              <SendBaselineButton
+                disabled={!settings?.discordShopWebhookConfigured || settingsSaving}
+                loading={baselineSending === "shop"}
+                onClick={() => {
+                  void sendBaselineNow({ target: "shop" });
+                }}
+              />
               {settingsSavedAt ? (
                 <span className="self-center text-[11px] text-zinc-500">Saved {settingsSavedAt}</span>
               ) : null}
@@ -566,6 +642,13 @@ export function WebhookLogsClient() {
               >
                 Clear saved URL
               </button>
+              <SendBaselineButton
+                disabled={!settings?.discordMatch3ResaleWebhookConfigured || settingsSaving}
+                loading={baselineSending === 3}
+                onClick={() => {
+                  void sendBaselineNow({ target: "dedicated", matchNum: 3 });
+                }}
+              />
             </div>
           </div>
 
@@ -628,6 +711,13 @@ export function WebhookLogsClient() {
               >
                 Clear saved URL
               </button>
+              <SendBaselineButton
+                disabled={!settings?.discordMatch4ResaleWebhookConfigured || settingsSaving}
+                loading={baselineSending === 4}
+                onClick={() => {
+                  void sendBaselineNow({ target: "dedicated", matchNum: 4 });
+                }}
+              />
             </div>
           </div>
           </>
@@ -690,6 +780,13 @@ export function WebhookLogsClient() {
               >
                 Clear saved URL
               </button>
+              <SendBaselineButton
+                disabled={!settings?.discordMatch5WebhookConfigured || settingsSaving}
+                loading={baselineSending === 5}
+                onClick={() => {
+                  void sendBaselineNow({ target: "dedicated", matchNum: 5 });
+                }}
+              />
             </div>
           </div>
 
@@ -748,9 +845,22 @@ export function WebhookLogsClient() {
               >
                 Clear saved URL
               </button>
+              <SendBaselineButton
+                disabled={!settings?.discordMatch7WebhookConfigured || settingsSaving}
+                loading={baselineSending === 7}
+                onClick={() => {
+                  void sendBaselineNow({ target: "dedicated", matchNum: 7 });
+                }}
+              />
             </div>
           </div>
           </>
+        ) : null}
+
+        {baselineMessage ? (
+          <p className="mt-3 rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
+            {baselineMessage}
+          </p>
         ) : null}
 
         {settingsError ? (
