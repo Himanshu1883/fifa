@@ -14,6 +14,7 @@ import {
   type ShopDiscordNotifyResult,
 } from "@/lib/shop-discord-webhook";
 import {
+  hasAnyDedicatedMatchWebhookConfigured,
   isShopDiscordBaselineSent,
   markShopDiscordBaselineSent,
   resolveDiscordShopWebhookUrl,
@@ -181,9 +182,10 @@ export async function maybeNotifyShopDiscord(input: {
   payload: ShopLatestPayload;
   previousEvents: ShopMarketEvent[];
 }): Promise<ShopDiscordNotifySummary> {
-  const webhook = await resolveDiscordShopWebhookUrl();
-  if (!webhook) {
-    shopLog("Discord shop skip (DISCORD_SHOP_WEBHOOK_URL not configured)");
+  const generalWebhook = await resolveDiscordShopWebhookUrl();
+  const dedicatedConfigured = await hasAnyDedicatedMatchWebhookConfigured();
+  if (!generalWebhook && !dedicatedConfigured) {
+    shopLog("Discord shop skip (no shop webhook configured)");
     return finishShopNotify({
       attempted: false,
       ok: false,

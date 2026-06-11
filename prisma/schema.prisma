@@ -313,6 +313,10 @@ model SbPushRulesSettings {
 model AppWebhookSettings {
   id                           Int       @id
   discordNewListingsWebhookUrl String?   @map("discord_new_listings_webhook_url") @db.Text
+  discordMatch3ResaleWebhookUrl String?  @map("discord_match3_resale_webhook_url") @db.Text
+  discordMatch4ResaleWebhookUrl String?  @map("discord_match4_resale_webhook_url") @db.Text
+  discordMatch5WebhookUrl       String?  @map("discord_match5_webhook_url") @db.Text
+  discordMatch7WebhookUrl       String?  @map("discord_match7_webhook_url") @db.Text
   discordShopWebhookUrl        String?   @map("discord_shop_webhook_url") @db.Text
   shopDiscordBaselineSentAt    DateTime? @map("shop_discord_baseline_sent_at")
   updatedAt                    DateTime  @updatedAt @map("updated_at")
@@ -346,6 +350,26 @@ model ShopDiscordMatchNotifyLog {
 
   @@index([matchNum, fingerprint, createdAt])
   @@map("shop_discord_match_notify_logs")
+}
+
+/// Per-match successful dedicated resale Discord sends — dedup by matchNum + fingerprint.
+model ResaleDiscordMatchNotifyLog {
+  id          Int      @id @default(autoincrement())
+  matchNum    Int      @map("match_num")
+  fingerprint String   @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([matchNum, fingerprint, createdAt])
+  @@map("resale_discord_match_notify_logs")
+}
+
+/// Last successfully notified resale price state for dedicated match webhooks (3, 4, 5, 7).
+model ResaleDiscordMatchNotifyState {
+  matchNum                     Int      @id @map("match_num")
+  lastDiscordNotifyFingerprint String?  @map("last_discord_notify_fingerprint") @db.Text
+  updatedAt                    DateTime @updatedAt @map("updated_at")
+
+  @@map("resale_discord_match_notify_state")
 }
 
 /// Events that have had at least one manual SB push — eligible for auto-push when global toggle is on.

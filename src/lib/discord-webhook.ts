@@ -1,6 +1,7 @@
 import type { SockAvailableKind } from "@/generated/prisma/enums";
 import type { SockAvailableNewListingKey } from "@/lib/sock-available-diff";
-import { maskWebhookUrl, resolveDiscordNewListingsWebhookUrl } from "@/lib/webhook-settings";
+import { resolveDedicatedMatchWebhookUrl } from "@/lib/webhook-settings";
+import { maskWebhookUrl, resolveDiscordResaleWebhookUrlForEvent } from "@/lib/webhook-settings";
 
 /** Left accent bar on resale new-listing embeds (Tailwind blue-500). */
 const RESALE_NEW_LISTINGS_EMBED_COLOR = 0x3b82f6;
@@ -100,6 +101,115 @@ export function buildDiscordNewListingsPayload(input: {
   };
 }
 
+export async function sendDiscordResaleDedicatedMessage(input: {
+  eventLabel: string;
+  eventName: string;
+  eventId: number;
+  prefId: string;
+  matchNum: number;
+  mode: "baseline" | "delta";
+  categoryLines: string;
+  totalListings: number;
+}): Promise<DiscordNotifyResult> {
+  const provider = "discord" as const;
+  const webhookUrl = await resolveDedicatedMatchWebhookUrl(
+    input.matchNum as 3 | 4 | 5 | 7,
+  );
+
+  if (!webhookUrl) {
+    return { attempted: false, ok: false, provider };
+  }
+
+  const appBase = envTrim("APP_BASE_URL").replace(/\/+$/, "");
+  const eventPath = `/events/${input.eventId}?kind=RESALE&panel=sock`;
+  const eventUrl = appBase ? `${appBase}${eventPath}` : null;
+  const matchLine = `${input.eventLabel} — ${input.eventName}`;
+
+  const title =
+    input.mode === "baseline"
+      ? `🔵 Resale — Match ${input.matchNum} initial price snapshot`
+      : `🔵 Resale — Match ${input.matchNum} price update`;
+
+  let description = input.categoryLines.trim();
+  if (!description) description = "—";
+  if (description.length > 3900) {
+    description = `${description.slice(0, 3900)}…`;
+  }
+
+  const embed: Record<string, unknown> = {
+    author: { name: `🔵 ${matchLine}` },
+    title,
+    description,
+    color: RESALE_NEW_LISTINGS_EMBED_COLOR,
+    fields: [
+      { name: "Match", value: matchLine, inline: false },
+      { name: "Listings", value: input.totalListings.toLocaleString("en-US"), inline: true },
+      { name: "Source", value: "🔵 Resale", inline: true },
+    ],
+    footer: {
+      text:
+        input.mode === "baseline"
+          ? "🔵 Resale · initial price baseline"
+          : "🔵 Resale · price/availability update",
+    },
+    timestamp: new Date().toISOString(),
+  };
+
+  if (eventUrl) embed.url = eventUrl;
+
+  const payload = { embeds: [embed] };
+  const requestMeta = {
+    webhookUrlMasked: maskWebhookUrl(webhookUrl),
+    method: "POST" as const,
+    headers: { "content-type": "application/json" },
+    body: payload,
+  };
+
+  const ac = new AbortController();
+  const timeout = setTimeout(() => ac.abort(), 12_000);
+  try {
+    const res = await fetch(webhookUrl, {
+      method: "POST",
+      headers: requestMeta.headers,
+      body: JSON.stringify(payload),
+      signal: ac.signal,
+    });
+
+    const responseBody = await res.text().catch(() => "");
+
+    if (!res.ok) {
+      return {
+        attempted: true,
+        ok: false,
+        provider,
+        status: res.status,
+        error: `Discord returned HTTP ${res.status}${responseBody ? `: ${responseBody.slice(0, 120)}` : ""}`,
+        request: requestMeta,
+        response: { status: res.status, body: responseBody.slice(0, 2000) },
+      };
+    }
+
+    return {
+      attempted: true,
+      ok: true,
+      provider,
+      status: res.status,
+      request: requestMeta,
+      response: { status: res.status, body: responseBody.slice(0, 2000) },
+    };
+  } catch (err) {
+    return {
+      attempted: true,
+      ok: false,
+      provider,
+      error: clampError(err),
+      request: requestMeta,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function sendDiscordNewListingsMessage(input: {
   eventLabel: string;
   eventName: string;
@@ -116,7 +226,7 @@ export async function sendDiscordNewListingsMessage(input: {
     return { attempted: false, ok: false, provider };
   }
 
-  const webhookUrl = await resolveDiscordNewListingsWebhookUrl();
+  const webhookUrl = await resolveDiscordResaleWebhookUrlForEvent(input.eventLabel, input.eventName);
 
   if (!webhookUrl) {
     return { attempted: false, ok: false, provider };

@@ -1,7 +1,13 @@
 import type { ShopMarketEvent, ShopMarketListing } from "@/lib/shop-marketplace-types";
 import { formatShopPrice } from "@/app/shop/shop-utils";
 import { buildMatchBuyUrl } from "@/lib/shop-buy-urls";
-import { maskWebhookUrl, resolveDiscordShopWebhookUrl } from "@/lib/webhook-settings";
+import { DEDICATED_MATCH_WEBHOOK_NUMBERS, isDedicatedMatchWebhook } from "@/lib/dedicated-match-webhooks";
+import {
+  maskWebhookUrl,
+  resolveDedicatedMatchWebhookUrl,
+  resolveDiscordShopWebhookUrl,
+  resolveDiscordShopWebhookUrlForEvent,
+} from "@/lib/webhook-settings";
 
 export type ShopDiscordNotifyResult = {
   attempted: boolean;
@@ -96,7 +102,7 @@ export function buildShopBaselineEmbeds(events: ShopMarketEvent[]): Array<Record
 }
 
 function deltaEmbedTitle(event: ShopMarketEvent): string {
-  return `M${event.matchNum} · ${event.catalogue.eventName}`;
+  return `🛒 SHOP · M${event.matchNum} · ${event.catalogue.eventName}`;
 }
 
 /** Prefer event.buyUrl; fall back to FIFA checkout mapping by match number. */
@@ -183,12 +189,18 @@ function buildShopDeltaEmbed(
     title: deltaEmbedTitle(event),
     description: descriptionWithBuyLink.slice(0, 3900),
     color: SHOP_EMBED_COLOR_IN_STOCK,
+    fields: [{ name: "Source", value: "🛒 Shop", inline: true }],
+    footer: { text: "🛒 Shop · price/availability update" },
     timestamp: new Date().toISOString(),
   };
   if (buyUrl) {
     embed.url = buyUrl;
   } else {
-    embed.fields = [{ name: "Buy", value: "Checkout link unavailable for this match", inline: false }];
+    (embed.fields as Array<Record<string, unknown>>).push({
+      name: "Buy",
+      value: "Checkout link unavailable for this match",
+      inline: false,
+    });
   }
   return embed;
 }
@@ -212,9 +224,10 @@ export async function sendShopDiscordPayload(input: {
   components?: Array<Record<string, unknown>>;
   mode: "baseline" | "delta";
   matchCount: number;
+  webhookUrl?: string | null;
 }): Promise<ShopDiscordNotifyResult> {
   const provider = "discord-shop" as const;
-  const webhookUrl = await resolveDiscordShopWebhookUrl();
+  const webhookUrl = input.webhookUrl ?? (await resolveDiscordShopWebhookUrl());
   if (!webhookUrl) return { attempted: false, ok: false, provider };
 
   const body: Record<string, unknown> = { content: input.content, embeds: input.embeds };
@@ -313,39 +326,87 @@ export async function sendOneShopDeltaToDiscord(
     return { attempted: false, ok: true, provider: "discord-shop", mode: "delta", matchCount: 0 };
   }
   const buyUrl = resolveShopBuyUrl(event);
+  const matchLabel = event.catalogue.matchLabel ?? `Match${event.matchNum}`;
+  const webhookUrl = await resolveDiscordShopWebhookUrlForEvent(matchLabel, event.catalogue.eventName);
   return sendShopDiscordPayload({
     content: "",
     embeds: [embed],
     components: buildShopBuyNowComponents(buyUrl),
     mode: "delta",
     matchCount: 1,
+    webhookUrl,
   });
 }
 
-/** Baseline may require multiple Discord messages (embed limit). */
-export async function sendShopBaselineToDiscord(events: ShopMarketEvent[]): Promise<ShopDiscordNotifyResult[]> {
+async function sendShopBaselineBatchToWebhook(
+  events: ShopMarketEvent[],
+  webhookUrl: string | null,
+  options: { dedicatedMatchNum?: number },
+): Promise<ShopDiscordNotifyResult[]> {
+  if (!webhookUrl || events.length === 0) return [];
   const sorted = [...events].sort((a, b) => a.matchNum - b.matchNum);
   const batches = chunk(sorted, 12);
   const hasAnyStock = sorted.some((e) => availableListings(e).length > 0);
+  const dedicatedMatchNum = options.dedicatedMatchNum;
   const results: ShopDiscordNotifyResult[] = [];
   for (let i = 0; i < batches.length; i++) {
     const batch = batches[i];
     const embed = {
-      title: i === 0 ? "🛒 SHOP — Full marketplace snapshot" : `🛒 SHOP snapshot (cont. ${i + 1})`,
+      title: dedicatedMatchNum
+        ? i === 0
+          ? `🛒 SHOP — Match ${dedicatedMatchNum} snapshot`
+          : `🛒 SHOP — Match ${dedicatedMatchNum} snapshot (cont. ${i + 1})`
+        : i === 0
+          ? "🛒 SHOP — Full marketplace snapshot"
+          : `🛒 SHOP snapshot (cont. ${i + 1})`,
       description: batch.map((e) => matchSummaryLine(e, true)).join("\n").slice(0, 3900),
       color: hasAnyStock ? SHOP_EMBED_COLOR_IN_STOCK : SHOP_EMBED_COLOR_NO_STOCK,
-      footer: { text: `Matches ${batch[0]?.matchNum}–${batch[batch.length - 1]?.matchNum}` },
+      footer: dedicatedMatchNum
+        ? { text: `🛒 Shop · Match ${dedicatedMatchNum} baseline` }
+        : { text: `🛒 Shop · Matches ${batch[0]?.matchNum}–${batch[batch.length - 1]?.matchNum}` },
     };
     const res = await sendShopDiscordPayload({
-      content: i === 0 ? "**SHOP** — Initial full listing dump (all matches)" : "",
+      content: dedicatedMatchNum
+        ? i === 0
+          ? `**SHOP** — Match ${dedicatedMatchNum} initial listing dump`
+          : ""
+        : i === 0
+          ? "**SHOP** — Initial full listing dump (all matches)"
+          : "",
       embeds: [embed],
       components: batch.length === 1 ? buildShopBuyNowComponents(resolveShopBuyUrl(batch[0])) : undefined,
       mode: "baseline",
       matchCount: events.length,
+      webhookUrl,
     });
     results.push(res);
     if (!res.ok) break;
   }
+  return results;
+}
+
+/** Baseline may require multiple Discord messages (embed limit). Dedicated matches route to their webhooks. */
+export async function sendShopBaselineToDiscord(events: ShopMarketEvent[]): Promise<ShopDiscordNotifyResult[]> {
+  const sorted = dedupeShopEventsByMatchNum(events);
+  const generalEvents = sorted.filter((e) => !isDedicatedMatchWebhook(e.matchNum));
+  const generalWebhook = await resolveDiscordShopWebhookUrl();
+  const results: ShopDiscordNotifyResult[] = [];
+
+  if (generalEvents.length > 0) {
+    results.push(...(await sendShopBaselineBatchToWebhook(generalEvents, generalWebhook, {})));
+    if (results.some((r) => r.attempted && !r.ok)) return results;
+  }
+
+  for (const matchNum of DEDICATED_MATCH_WEBHOOK_NUMBERS) {
+    const dedicatedEvents = sorted.filter((e) => e.matchNum === matchNum);
+    if (dedicatedEvents.length === 0) continue;
+    const webhook = await resolveDedicatedMatchWebhookUrl(matchNum);
+    results.push(
+      ...(await sendShopBaselineBatchToWebhook(dedicatedEvents, webhook, { dedicatedMatchNum: matchNum })),
+    );
+    if (results.some((r) => r.attempted && !r.ok)) return results;
+  }
+
   return results;
 }
 

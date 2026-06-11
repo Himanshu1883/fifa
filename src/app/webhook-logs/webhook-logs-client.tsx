@@ -43,6 +43,18 @@ type WebhookSettings = {
   discordNewListingsWebhookUrlMasked: string | null;
   discordNewListingsWebhookSource: "db" | "env" | null;
   discordNewListingsWebhookConfigured: boolean;
+  discordMatch3ResaleWebhookUrlMasked: string | null;
+  discordMatch3ResaleWebhookSource: "db" | "env" | null;
+  discordMatch3ResaleWebhookConfigured: boolean;
+  discordMatch4ResaleWebhookUrlMasked: string | null;
+  discordMatch4ResaleWebhookSource: "db" | "env" | null;
+  discordMatch4ResaleWebhookConfigured: boolean;
+  discordMatch5WebhookUrlMasked: string | null;
+  discordMatch5WebhookSource: "db" | "env" | null;
+  discordMatch5WebhookConfigured: boolean;
+  discordMatch7WebhookUrlMasked: string | null;
+  discordMatch7WebhookSource: "db" | "env" | null;
+  discordMatch7WebhookConfigured: boolean;
   discordShopWebhookUrlMasked: string | null;
   discordShopWebhookSource: "db" | "env" | null;
   discordShopWebhookConfigured: boolean;
@@ -214,6 +226,10 @@ export function WebhookLogsClient() {
   const [channel, setChannel] = useState<WebhookChannel>("shop");
   const [settings, setSettings] = useState<WebhookSettings | null>(null);
   const [resaleDraft, setResaleDraft] = useState("");
+  const [match3ResaleDraft, setMatch3ResaleDraft] = useState("");
+  const [match4ResaleDraft, setMatch4ResaleDraft] = useState("");
+  const [match5Draft, setMatch5Draft] = useState("");
+  const [match7Draft, setMatch7Draft] = useState("");
   const [shopDraft, setShopDraft] = useState("");
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -348,7 +364,7 @@ export function WebhookLogsClient() {
             <p className="mt-1 text-xs leading-relaxed text-zinc-500">
               {channel === "shop"
                 ? "SHOP marketplace Discord — full snapshot once, then match-level changes on each poll."
-                : "Resale Discord — posts completely new listings from each sock_available scrape diff."}
+                : "Resale Discord — new listings for general matches; target-price updates for Match 3, 4, 5, and 7."}
             </p>
           </div>
           <ChannelTabs active={channel} onChange={switchChannel} />
@@ -379,7 +395,8 @@ export function WebhookLogsClient() {
               <p className="mt-1 text-[11px] text-zinc-600">Baseline not sent yet</p>
             )}
             <p className="mt-1 text-[11px] text-zinc-600">
-              Source: <span className="font-mono text-zinc-500">/api/shop/latest</span>
+              All shop matches except Match 3, 4, 5, and 7 (see dedicated webhooks below) · source{" "}
+              <span className="font-mono text-zinc-500">/api/shop/latest</span>
               {" · "}
               <Link href="/shop" className="text-[color:color-mix(in_oklab,var(--ticketing-accent)_85%,white_10%)] hover:underline">
                 Open SHOP tab
@@ -427,6 +444,7 @@ export function WebhookLogsClient() {
             </div>
           </div>
         ) : (
+          <>
           <div className="mt-4 rounded-xl border border-white/[0.06] bg-black/20 p-4">
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">Outbound · Resale Discord</p>
             <p className="mt-2 text-sm text-zinc-300">
@@ -443,15 +461,13 @@ export function WebhookLogsClient() {
                 <span className="text-zinc-500">Not configured</span>
               )}
             </p>
-            {settings?.updatedAt ? (
-              <p className="mt-1 text-[11px] text-zinc-600">Updated {formatWhen(settings.updatedAt)}</p>
-            ) : null}
             <p className="mt-1 text-[11px] text-zinc-600">
-              Source: <span className="font-mono text-zinc-500">/api/webhooks/sock-available</span>
+              All resale matches except Match 3, 4, 5, and 7 · source{" "}
+              <span className="font-mono text-zinc-500">/api/webhooks/sock-available</span>
             </p>
 
             <label className="mt-3 block">
-              <span className="text-[11px] font-medium text-zinc-400">Change Discord webhook URL</span>
+              <span className="text-[11px] font-medium text-zinc-400">Change general resale webhook URL</span>
               <input
                 type="url"
                 value={resaleDraft}
@@ -490,7 +506,252 @@ export function WebhookLogsClient() {
               ) : null}
             </div>
           </div>
+
+          <div className="mt-4 rounded-xl border border-white/[0.06] bg-black/20 p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+              Outbound · Match 3 Discord (shop + resale)
+            </p>
+            <p className="mt-2 text-sm text-zinc-300">
+              {settings?.discordMatch3ResaleWebhookConfigured ? (
+                <>
+                  <span className="font-mono text-xs text-zinc-200">
+                    {settings.discordMatch3ResaleWebhookUrlMasked}
+                  </span>
+                  <span className="ml-2 text-[11px] text-zinc-500">
+                    ({settings.discordMatch3ResaleWebhookSource === "env" ? "from env" : "saved in DB"})
+                  </span>
+                </>
+              ) : (
+                <span className="text-zinc-500">Not configured</span>
+              )}
+            </p>
+            <p className="mt-1 text-[11px] text-zinc-600">
+              Exclusive for Match 3 shop baseline/deltas and resale target-price updates
+            </p>
+
+            <label className="mt-3 block">
+              <span className="text-[11px] font-medium text-zinc-400">Change Match 3 webhook URL</span>
+              <input
+                type="url"
+                value={match3ResaleDraft}
+                onChange={(e) => setMatch3ResaleDraft(e.target.value)}
+                placeholder="https://discord.com/api/webhooks/…"
+                className={`${inputClass} mt-1.5`}
+                autoComplete="off"
+              />
+            </label>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={settingsSaving}
+                onClick={() => {
+                  void patchSettings({ discordMatch3ResaleWebhookUrl: match3ResaleDraft.trim() || null }).then(
+                    (ok) => {
+                      if (ok) setMatch3ResaleDraft("");
+                    },
+                  );
+                }}
+                className={btnPrimaryClass}
+              >
+                {settingsSaving ? "Saving…" : "Save webhook"}
+              </button>
+              <button
+                type="button"
+                disabled={settingsSaving}
+                onClick={() => {
+                  setMatch3ResaleDraft("");
+                  void patchSettings({ discordMatch3ResaleWebhookUrl: null });
+                }}
+                className={btnSecondaryClass}
+              >
+                Clear saved URL
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-white/[0.06] bg-black/20 p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+              Outbound · Match 4 Discord (shop + resale)
+            </p>
+            <p className="mt-2 text-sm text-zinc-300">
+              {settings?.discordMatch4ResaleWebhookConfigured ? (
+                <>
+                  <span className="font-mono text-xs text-zinc-200">
+                    {settings.discordMatch4ResaleWebhookUrlMasked}
+                  </span>
+                  <span className="ml-2 text-[11px] text-zinc-500">
+                    ({settings.discordMatch4ResaleWebhookSource === "env" ? "from env" : "saved in DB"})
+                  </span>
+                </>
+              ) : (
+                <span className="text-zinc-500">Not configured</span>
+              )}
+            </p>
+            <p className="mt-1 text-[11px] text-zinc-600">
+              Exclusive for Match 4 shop baseline/deltas and resale target-price updates
+            </p>
+
+            <label className="mt-3 block">
+              <span className="text-[11px] font-medium text-zinc-400">Change Match 4 webhook URL</span>
+              <input
+                type="url"
+                value={match4ResaleDraft}
+                onChange={(e) => setMatch4ResaleDraft(e.target.value)}
+                placeholder="https://discord.com/api/webhooks/…"
+                className={`${inputClass} mt-1.5`}
+                autoComplete="off"
+              />
+            </label>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={settingsSaving}
+                onClick={() => {
+                  void patchSettings({ discordMatch4ResaleWebhookUrl: match4ResaleDraft.trim() || null }).then(
+                    (ok) => {
+                      if (ok) setMatch4ResaleDraft("");
+                    },
+                  );
+                }}
+                className={btnPrimaryClass}
+              >
+                {settingsSaving ? "Saving…" : "Save webhook"}
+              </button>
+              <button
+                type="button"
+                disabled={settingsSaving}
+                onClick={() => {
+                  setMatch4ResaleDraft("");
+                  void patchSettings({ discordMatch4ResaleWebhookUrl: null });
+                }}
+                className={btnSecondaryClass}
+              >
+                Clear saved URL
+              </button>
+            </div>
+          </div>
+          </>
         )}
+
+        {!settingsLoading ? (
+          <>
+          <div className="mt-4 rounded-xl border border-white/[0.06] bg-black/20 p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+              Outbound · Match 5 Discord (shop + resale)
+            </p>
+            <p className="mt-2 text-sm text-zinc-300">
+              {settings?.discordMatch5WebhookConfigured ? (
+                <>
+                  <span className="font-mono text-xs text-zinc-200">{settings.discordMatch5WebhookUrlMasked}</span>
+                  <span className="ml-2 text-[11px] text-zinc-500">
+                    ({settings.discordMatch5WebhookSource === "env" ? "from env" : "saved in DB"})
+                  </span>
+                </>
+              ) : (
+                <span className="text-zinc-500">Not configured</span>
+              )}
+            </p>
+            <p className="mt-1 text-[11px] text-zinc-600">
+              Exclusive for Match 5 shop baseline/deltas and resale target-price updates
+            </p>
+
+            <label className="mt-3 block">
+              <span className="text-[11px] font-medium text-zinc-400">Change Match 5 webhook URL</span>
+              <input
+                type="url"
+                value={match5Draft}
+                onChange={(e) => setMatch5Draft(e.target.value)}
+                placeholder="https://discord.com/api/webhooks/…"
+                className={`${inputClass} mt-1.5`}
+                autoComplete="off"
+              />
+            </label>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={settingsSaving}
+                onClick={() => {
+                  void patchSettings({ discordMatch5WebhookUrl: match5Draft.trim() || null }).then((ok) => {
+                    if (ok) setMatch5Draft("");
+                  });
+                }}
+                className={btnPrimaryClass}
+              >
+                {settingsSaving ? "Saving…" : "Save webhook"}
+              </button>
+              <button
+                type="button"
+                disabled={settingsSaving}
+                onClick={() => {
+                  setMatch5Draft("");
+                  void patchSettings({ discordMatch5WebhookUrl: null });
+                }}
+                className={btnSecondaryClass}
+              >
+                Clear saved URL
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-white/[0.06] bg-black/20 p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+              Outbound · Match 7 Discord (shop + resale)
+            </p>
+            <p className="mt-2 text-sm text-zinc-300">
+              {settings?.discordMatch7WebhookConfigured ? (
+                <>
+                  <span className="font-mono text-xs text-zinc-200">{settings.discordMatch7WebhookUrlMasked}</span>
+                  <span className="ml-2 text-[11px] text-zinc-500">
+                    ({settings.discordMatch7WebhookSource === "env" ? "from env" : "saved in DB"})
+                  </span>
+                </>
+              ) : (
+                <span className="text-zinc-500">Not configured</span>
+              )}
+            </p>
+            <p className="mt-1 text-[11px] text-zinc-600">
+              Exclusive for Match 7 shop baseline/deltas and resale target-price updates
+            </p>
+
+            <label className="mt-3 block">
+              <span className="text-[11px] font-medium text-zinc-400">Change Match 7 webhook URL</span>
+              <input
+                type="url"
+                value={match7Draft}
+                onChange={(e) => setMatch7Draft(e.target.value)}
+                placeholder="https://discord.com/api/webhooks/…"
+                className={`${inputClass} mt-1.5`}
+                autoComplete="off"
+              />
+            </label>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={settingsSaving}
+                onClick={() => {
+                  void patchSettings({ discordMatch7WebhookUrl: match7Draft.trim() || null }).then((ok) => {
+                    if (ok) setMatch7Draft("");
+                  });
+                }}
+                className={btnPrimaryClass}
+              >
+                {settingsSaving ? "Saving…" : "Save webhook"}
+              </button>
+              <button
+                type="button"
+                disabled={settingsSaving}
+                onClick={() => {
+                  setMatch7Draft("");
+                  void patchSettings({ discordMatch7WebhookUrl: null });
+                }}
+                className={btnSecondaryClass}
+              >
+                Clear saved URL
+              </button>
+            </div>
+          </div>
+          </>
+        ) : null}
 
         {settingsError ? (
           <p className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">

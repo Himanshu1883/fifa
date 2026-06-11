@@ -5,6 +5,7 @@ import {
   sendDiscordNewListingsMessage,
   type DiscordNotifyResult,
 } from "@/lib/discord-webhook";
+import { isDedicatedResaleEvent, maybeNotifyDedicatedResaleDiscord } from "@/lib/resale-discord-notify";
 import type { SockAvailableRowInput } from "@/lib/parse-sock-available-geojson-webhook";
 import { computeSockAvailableDiff } from "@/lib/sock-available-diff";
 import { sendUltraMsgWhatsAppMessage, type WhatsAppNotifyResult } from "@/lib/whatsapp-ultramsg";
@@ -128,18 +129,27 @@ export async function maybeNotifySockAvailableDiff(input: {
   const { prefId, event, diff } = input;
   if (!event) return { whatsapp: emptyWhatsApp, discord: emptyDiscord };
 
-  const discord =
-    diff.kind === "RESALE" && diff.newCount > 0
-      ? await sendDiscordNewListingsMessage({
-          eventLabel: event.matchLabel || event.label,
-          eventName: event.name,
-          eventId: event.id,
-          prefId,
-          kind: diff.kind,
-          newCount: diff.newCount,
-          newSeatIds: diff.newSeatIds,
-        })
-      : emptyDiscord;
+  let discord: DiscordNotifyResult = emptyDiscord;
+  if (diff.kind === "RESALE") {
+    if (isDedicatedResaleEvent(event.matchLabel || event.label, event.name)) {
+      discord = await maybeNotifyDedicatedResaleDiscord({
+        eventId: event.id,
+        eventLabel: event.matchLabel || event.label,
+        eventName: event.name,
+        prefId,
+      });
+    } else if (diff.newCount > 0) {
+      discord = await sendDiscordNewListingsMessage({
+        eventLabel: event.matchLabel || event.label,
+        eventName: event.name,
+        eventId: event.id,
+        prefId,
+        kind: diff.kind,
+        newCount: diff.newCount,
+        newSeatIds: diff.newSeatIds,
+      });
+    }
+  }
 
   const shouldNotifyWhatsApp = diff.newCount > 0 || diff.priceChangedCount > 0;
   const whatsapp = shouldNotifyWhatsApp
