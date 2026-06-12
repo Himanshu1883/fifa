@@ -8,7 +8,10 @@ import type {
   VivaMarketplaceListingEntry,
 } from "@/lib/shop-marketplace-types";
 
-export const SHOP_API_URL = "https://vivalafifa.realb.it/api/latest";
+/** Primary LMS marketplace feed (override with SHOP_API_URL in env). */
+export const SHOP_API_URL =
+  process.env.SHOP_API_URL?.trim() ||
+  "https://www.vivalafifa.com/api/wc/2026/tickets/lms/latest";
 
 /** Upper bound for upstream marketplace fetch (Vercel + slow upstream). */
 export const SHOP_VIVA_FETCH_TIMEOUT_MS = 25_000;
@@ -166,7 +169,7 @@ export function normalizeVivaLatest(
 }
 
 export async function fetchVivaLatestMarketplace(signal?: AbortSignal): Promise<VivaLatestApiResponse> {
-  shopLog("Fetch started");
+  shopLog(`Fetch started (${SHOP_API_URL})`);
   const timeoutSignal = AbortSignal.timeout(SHOP_VIVA_FETCH_TIMEOUT_MS);
   const combined =
     signal && typeof AbortSignal.any === "function"

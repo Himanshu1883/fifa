@@ -1,4 +1,4 @@
-/** Raw entry from `GET https://vivalafifa.realb.it/api/latest`. */
+/** Raw entry from the vivalafifa LMS latest API (`SHOP_API_URL`). */
 export type VivaMarketplaceListingEntry = {
   available: boolean;
   price?: number;

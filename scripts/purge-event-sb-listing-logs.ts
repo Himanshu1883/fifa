@@ -4,7 +4,9 @@
  *   DOTENV_CONFIG_PATH=.env.local node --import tsx scripts/purge-event-sb-listing-logs.ts 5677 --dry-run
  *   DOTENV_CONFIG_PATH=.env.local node --import tsx scripts/purge-event-sb-listing-logs.ts 5677 --yes
  */
-import { prisma } from "../src/lib/prisma";
+import { createPrismaClient } from "../src/lib/prisma";
+
+const prisma = createPrismaClient();
 
 function parseArgs(argv: string[]) {
   let dryRun = false;

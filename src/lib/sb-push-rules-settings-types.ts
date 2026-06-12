@@ -1,18 +1,4 @@
 import type { SeatOfferType } from "@/lib/seat-offers-transform";
-import {
-  DEFAULT_SB_PUSH_GROUP_SIZE_FILTER,
-  groupSizeFilterSummary,
-  normalizeGroupSizeFilter,
-  type SbPushGroupSizeFilter,
-} from "@/lib/sb-push-group-size-filter";
-
-export type { SbPushGroupSizeFilter } from "@/lib/sb-push-group-size-filter";
-export {
-  DEFAULT_SB_PUSH_GROUP_SIZE_FILTER,
-  filterGroupsBySizeConfig,
-  groupSizeFilterSummary,
-  normalizeGroupSizeFilter,
-} from "@/lib/sb-push-group-size-filter";
 
 export type SbPushQuantityRule = { input: number; output: number };
 

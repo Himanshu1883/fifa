@@ -82,10 +82,11 @@ export async function GET(request: Request) {
 
   try {
     const api = await fetchVivaLatestMarketplace();
-    const normalized = normalizeVivaLatest(api, new Map());
+    const metaByMatch = await safeLoadShopEventMetaLookup();
+    const normalized = normalizeVivaLatest(api, metaByMatch);
     const payload: ShopLatestPayload = {
       ...normalized,
-      events: ensureAllShopMatches(normalized.events, new Map()),
+      events: ensureAllShopMatches(normalized.events, metaByMatch),
     };
 
     shopLog("UI updated (API response ready)");

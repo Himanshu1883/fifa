@@ -7,8 +7,10 @@
  *   npx tsx scripts/purge-deleted-sb-listing-logs.ts --yes --sb-ticket 872971
  */
 
-import { prisma } from "../src/lib/prisma";
+import { createPrismaClient } from "../src/lib/prisma";
 import { sbPushLogExcludingClaimWhere } from "../src/lib/sb-listing-push-log-query";
+
+const prisma = createPrismaClient();
 
 function parseArgs(argv: string[]) {
   let dryRun = false;

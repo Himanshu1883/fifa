@@ -40,6 +40,33 @@ function availablePricedListings(event: ShopMarketEvent): ShopMarketListing[] {
   return availableListings(event).filter((l) => l.price !== null);
 }
 
+/** Priced categories for Discord, or Low/High when no per-category prices exist. */
+export function resolveShopDiscordDisplayListings(event: ShopMarketEvent): ShopMarketListing[] {
+  const priced = availablePricedListings(event);
+  if (priced.length > 0) return priced;
+  if (event.lowestPrice == null) return [];
+
+  const listings: ShopMarketListing[] = [
+    {
+      marketKey: `${event.matchNum}-low`,
+      categoryKey: "low",
+      categoryLabel: "Low",
+      available: true,
+      price: event.lowestPrice,
+    },
+  ];
+  if (event.highestPrice != null && event.highestPrice !== event.lowestPrice) {
+    listings.push({
+      marketKey: `${event.matchNum}-high`,
+      categoryKey: "high",
+      categoryLabel: "High",
+      available: true,
+      price: event.highestPrice,
+    });
+  }
+  return listings;
+}
+
 function formatAvailableListingLine(listing: ShopMarketListing, currency: string): string {
   if (listing.price !== null) {
     return `${listing.categoryLabel}: **${formatShopPrice(listing.price, currency)}**`;
@@ -483,7 +510,8 @@ export async function sendShopListingRefreshToDiscord(input: {
 
   const results: ShopDiscordNotifyResult[] = [];
   for (const event of sorted) {
-    const listings = availablePricedListings(event);
+    if (event.availableCount <= 0) continue;
+    const listings = resolveShopDiscordDisplayListings(event);
     if (listings.length === 0) continue;
 
     const result = await sendOneShopListingToDiscord(event, {
