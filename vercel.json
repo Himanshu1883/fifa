@@ -3,6 +3,10 @@
     {
       "path": "/api/shop/latest",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/seatsidekick/poll",
+      "schedule": "* * * * *"
     }
   ]
 }

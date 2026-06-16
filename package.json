@@ -28,6 +28,10 @@
     "seed:match-shop-batch": "node --import tsx scripts/seed-match-shop-webhooks-batch.ts",
     "seed:match-webhooks-csv": "node --import tsx scripts/seed-match-webhooks-from-csv.ts",
     "test:dual-post": "node --import tsx scripts/test-dual-post-local.ts",
+    "seatsidekick:poll": "node --require ./scripts/preload-stub-server-only.cjs --import tsx scripts/run-seatsidekick-poll.ts",
+    "seatsidekick:poll:dry": "node --require ./scripts/preload-stub-server-only.cjs --import tsx scripts/run-seatsidekick-poll.ts --dry",
+    "seatsidekick:test-send": "node --require ./scripts/preload-stub-server-only.cjs --import tsx scripts/test-seatsidekick-discord-send.ts",
+    "seatsidekick:poll:loop": "node --require ./scripts/preload-stub-server-only.cjs --import tsx scripts/run-seatsidekick-poll-loop.ts",
     "postinstall": "DOTENV_CONFIG_PATH=.env.local prisma generate"
   },
   "dependencies": {

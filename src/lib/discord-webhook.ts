@@ -59,8 +59,10 @@ export function buildDiscordNewListingsPayload(input: {
   newSeatIds: SockAvailableNewListingKey[];
   /** When false, title omits "new" (inventory/price refresh). Default true. */
   isNewListings?: boolean;
+  /** Override embed title (e.g. lowest-price feed). */
+  titleOverride?: string;
 }): { embeds: Array<Record<string, unknown>> } {
-  const { eventLabel, eventName, eventId, prefId, newCount, newSeatIds, isNewListings = true } = input;
+  const { eventLabel, eventName, eventId, prefId, newCount, newSeatIds, isNewListings = true, titleOverride } = input;
   const appBase = envTrim("APP_BASE_URL").replace(/\/+$/, "");
   const eventPath = `/events/${eventId}?kind=RESALE&panel=sock`;
   const eventUrl = appBase ? `${appBase}${eventPath}` : null;
@@ -78,9 +80,11 @@ export function buildDiscordNewListingsPayload(input: {
   }
 
   const matchLine = `${eventLabel} — ${eventName}`;
-  const title = isNewListings
-    ? `🆕 ${newCount.toLocaleString("en-US")} new resale listing${newCount === 1 ? "" : "s"}`
-    : `🆕 ${newCount.toLocaleString("en-US")} resale listing${newCount === 1 ? "" : "s"}`;
+  const title =
+    titleOverride ??
+    (isNewListings
+      ? `🆕 ${newCount.toLocaleString("en-US")} new resale listing${newCount === 1 ? "" : "s"}`
+      : `🆕 ${newCount.toLocaleString("en-US")} resale listing${newCount === 1 ? "" : "s"}`);
 
   const embed: Record<string, unknown> = {
     author: {
@@ -240,6 +244,7 @@ export async function sendDiscordNewListingsMessage(input: {
   /** When set, posts to this match's per-match webhook. */
   matchNum?: number;
   isNewListings?: boolean;
+  titleOverride?: string;
   /** Explicit webhook URL (e.g. general #resale-drop mirror). */
   webhookUrl?: string | null;
 }): Promise<DiscordNotifyResult> {
