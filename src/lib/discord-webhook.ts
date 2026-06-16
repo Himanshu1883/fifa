@@ -1,9 +1,8 @@
 import type { SockAvailableKind } from "@/generated/prisma/enums";
 import type { SockAvailableNewListingKey } from "@/lib/sock-available-diff";
 import { sortNewListingsByPriceAsc } from "@/lib/sock-available-diff";
-import { resolveDedicatedMatchWebhookUrl, maskWebhookUrl, resolveDiscordNewListingsWebhookUrl } from "@/lib/webhook-settings";
-import type { DedicatedMatchWebhookNumber } from "@/lib/dedicated-match-webhooks";
-import { parseDedicatedMatchNumber } from "@/lib/dedicated-match-webhooks";
+import { resolveDiscordResaleWebhookUrlForEvent, maskWebhookUrl } from "@/lib/webhook-settings";
+import { resolveMatchResaleWebhookUrlDedicatedOnly } from "@/lib/match-discord-webhooks";
 
 /** Left accent bar on resale new-listing embeds (Tailwind blue-500). */
 const RESALE_NEW_LISTINGS_EMBED_COLOR = 0x3b82f6;
@@ -113,13 +112,13 @@ export async function sendDiscordResaleDedicatedMessage(input: {
   eventName: string;
   eventId: number;
   prefId: string;
-  matchNum: DedicatedMatchWebhookNumber;
+  matchNum: number;
   mode: "baseline" | "delta";
   categoryLines: string;
   totalListings: number;
 }): Promise<DiscordNotifyResult> {
   const provider = "discord" as const;
-  const webhookUrl = await resolveDedicatedMatchWebhookUrl(input.matchNum);
+  const webhookUrl = await resolveMatchResaleWebhookUrlDedicatedOnly(input.matchNum);
 
   if (!webhookUrl) {
     return { attempted: false, ok: false, provider };
@@ -223,8 +222,8 @@ export async function sendDiscordNewListingsMessage(input: {
   kind: SockAvailableKind;
   newCount: number;
   newSeatIds: SockAvailableNewListingKey[];
-  /** When set, posts to this match's dedicated webhook (never the general resale webhook). */
-  dedicatedMatchNum?: DedicatedMatchWebhookNumber;
+  /** When set, posts to this match's per-match webhook. */
+  matchNum?: number;
   isNewListings?: boolean;
 }): Promise<DiscordNotifyResult> {
   const provider = "discord" as const;
@@ -234,12 +233,7 @@ export async function sendDiscordNewListingsMessage(input: {
     return { attempted: false, ok: false, provider };
   }
 
-  const dedicatedMatchNum =
-    input.dedicatedMatchNum ?? parseDedicatedMatchNumber(input.eventLabel, input.eventName) ?? null;
-
-  const webhookUrl = dedicatedMatchNum
-    ? await resolveDedicatedMatchWebhookUrl(dedicatedMatchNum)
-    : await resolveDiscordNewListingsWebhookUrl();
+  const webhookUrl = await resolveDiscordResaleWebhookUrlForEvent(input.eventLabel, input.eventName);
 
   if (!webhookUrl) {
     return { attempted: false, ok: false, provider };

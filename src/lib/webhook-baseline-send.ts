@@ -1,11 +1,15 @@
 import "server-only";
 
-import type { DedicatedMatchWebhookNumber } from "@/lib/dedicated-match-webhooks";
-import { DEDICATED_SHOP_ROUTING_MATCHES, isDedicatedMatchShopWebhook, isDedicatedMatchWebhook } from "@/lib/dedicated-match-webhooks";
 import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
+import {
+  listMatchNumsWithPerMatchShopWebhook,
+  resolveMatchResaleWebhookUrlDedicatedOnly,
+  resolveMatchShopWebhookUrlDedicatedOnly,
+} from "@/lib/match-discord-webhooks";
+import { SHOP_MATCH_COUNT } from "@/lib/shop-match-grid";
 import { prisma } from "@/lib/prisma";
 import {
-  maybeNotifyDedicatedResaleDiscord,
+  maybeNotifyResaleDiscordForEvent,
   resetDedicatedResaleDiscordNotifyState,
 } from "@/lib/resale-discord-notify";
 import { ensureAllShopMatches } from "@/lib/shop-match-grid";
@@ -26,9 +30,8 @@ import {
   updateShopDiscordNotifyFingerprints,
 } from "@/lib/shop-sync-service";
 import {
-  markDedicatedMatchShopDiscordBaselineSent,
+  markMatchShopDiscordBaselineSent,
   markShopDiscordBaselineSent,
-  resolveDedicatedMatchWebhookUrl,
   resolveDiscordShopWebhookUrl,
 } from "@/lib/webhook-settings";
 
@@ -118,10 +121,10 @@ export async function sendGeneralShopBaselineNow(): Promise<WebhookBaselineSendR
   if (shop.attempted && shop.ok) {
     await markShopDiscordBaselineSent();
     await updateShopDiscordNotifyFingerprints(allMatches);
-    for (const matchNum of DEDICATED_SHOP_ROUTING_MATCHES) {
-      const dedicatedWebhook = await resolveDedicatedMatchWebhookUrl(matchNum);
+    for (const matchNum of await listMatchNumsWithPerMatchShopWebhook()) {
+      const dedicatedWebhook = await resolveMatchShopWebhookUrlDedicatedOnly(matchNum);
       if (dedicatedWebhook) {
-        await markDedicatedMatchShopDiscordBaselineSent(matchNum);
+        await markMatchShopDiscordBaselineSent(matchNum);
       }
     }
   }
@@ -135,74 +138,79 @@ export async function sendGeneralShopBaselineNow(): Promise<WebhookBaselineSendR
   return { ok: shop.ok, shop, resale: { attempted: false, ok: true } };
 }
 
-export async function sendDedicatedMatchBaselineNow(
-  matchNum: DedicatedMatchWebhookNumber,
-): Promise<WebhookBaselineSendResult> {
-  const webhook = await resolveDedicatedMatchWebhookUrl(matchNum);
-  if (!webhook) {
+export async function sendMatchBaselineNow(matchNum: number): Promise<WebhookBaselineSendResult> {
+  const resaleWebhook = await resolveMatchResaleWebhookUrlDedicatedOnly(matchNum);
+  const shopWebhook = await resolveMatchShopWebhookUrlDedicatedOnly(matchNum);
+  if (!resaleWebhook && !shopWebhook) {
     return {
       ok: false,
-      shop: { attempted: false, ok: false, error: `Match ${matchNum} webhook not configured` },
-      resale: { attempted: false, ok: false, error: `Match ${matchNum} webhook not configured` },
+      shop: { attempted: false, ok: false, error: `Match ${matchNum} webhooks not configured` },
+      resale: { attempted: false, ok: false, error: `Match ${matchNum} webhooks not configured` },
     };
   }
 
   const allMatches = await loadShopLatestEvents();
   const event = allMatches.find((e) => e.matchNum === matchNum);
-  if (!event) {
-    return {
-      ok: false,
-      shop: { attempted: false, ok: false, error: `Match ${matchNum} shop data not found` },
-      resale: { attempted: false, ok: false, error: `Match ${matchNum} shop data not found` },
-    };
-  }
 
-  shopLog(`Manual dedicated baseline send M${matchNum} started`);
-  const shopResults = await sendShopBaselineToDiscord([event]);
-  const shop = shopChannelFromResults(shopResults);
-  if (shop.attempted && shop.ok && isDedicatedMatchShopWebhook(matchNum)) {
-    await markDedicatedMatchShopDiscordBaselineSent(matchNum);
-    await persistShopDiscordNotifyFingerprint(event);
-  } else if (shop.attempted && shop.ok) {
-    await persistShopDiscordNotifyFingerprint(event);
+  let shop: WebhookBaselineChannelResult = { attempted: false, ok: true };
+  if (shopWebhook) {
+    if (!event) {
+      shop = { attempted: false, ok: false, error: `Match ${matchNum} shop data not found` };
+    } else {
+      shopLog(`Manual per-match baseline send M${matchNum} (shop) started`);
+      const shopResults = await sendShopBaselineToDiscord([event]);
+      shop = shopChannelFromResults(shopResults);
+      if (shop.attempted && shop.ok) {
+        await markMatchShopDiscordBaselineSent(matchNum);
+        await persistShopDiscordNotifyFingerprint(event);
+      }
+      await persistManualShopBaselineLog({
+        ok: shop.ok,
+        results: shopResults,
+        changedCount: 1,
+      });
+    }
   }
-  await persistManualShopBaselineLog({
-    ok: shop.ok,
-    results: shopResults,
-    changedCount: 1,
-  });
 
   let resale: WebhookBaselineChannelResult = { attempted: false, ok: true };
-  const dbEvent = await findDbEventForMatchNum(matchNum);
-  if (!dbEvent) {
-    resale = { attempted: false, ok: false, error: `No event row linked to Match ${matchNum}` };
-  } else {
-    await resetDedicatedResaleDiscordNotifyState(matchNum);
-    const prefId = dbEvent.resalePrefId?.trim() || dbEvent.prefId?.trim() || "";
-    if (!prefId) {
-      resale = { attempted: false, ok: false, error: "Event has no prefId for resale" };
+  if (resaleWebhook) {
+    const dbEvent = await findDbEventForMatchNum(matchNum);
+    if (!dbEvent) {
+      resale = { attempted: false, ok: false, error: `No event row linked to Match ${matchNum}` };
     } else {
-      const resaleResult = await maybeNotifyDedicatedResaleDiscord({
-        eventId: dbEvent.id,
-        eventLabel: dbEvent.matchLabel || dbEvent.name,
-        eventName: dbEvent.name,
-        prefId,
-      });
-      resale = {
-        attempted: resaleResult.attempted,
-        ok: resaleResult.ok || !resaleResult.attempted,
-        error: resaleResult.error,
-        mode: resaleResult.mode,
-      };
+      await resetDedicatedResaleDiscordNotifyState(matchNum);
+      const prefId = dbEvent.resalePrefId?.trim() || dbEvent.prefId?.trim() || "";
+      if (!prefId) {
+        resale = { attempted: false, ok: false, error: "Event has no prefId for resale" };
+      } else {
+        const resaleResult = await maybeNotifyResaleDiscordForEvent({
+          eventId: dbEvent.id,
+          eventLabel: dbEvent.matchLabel || dbEvent.name,
+          eventName: dbEvent.name,
+          prefId,
+        });
+        resale = {
+          attempted: resaleResult.attempted,
+          ok: resaleResult.ok || !resaleResult.attempted,
+          error: resaleResult.error,
+          mode: resaleResult.mode,
+        };
+      }
     }
   }
 
   const ok = (shop.attempted ? shop.ok : true) && (resale.attempted ? resale.ok : true);
-  shopLog(`Manual dedicated baseline M${matchNum} shop=${shop.ok ? "OK" : "fail"} resale=${resale.mode ?? "skip"}`);
+  shopLog(`Manual per-match baseline M${matchNum} shop=${shop.ok ? "OK" : "skip"} resale=${resale.mode ?? "skip"}`);
   return { ok, shop, resale };
 }
 
-export function parseBaselineMatchNum(raw: unknown): DedicatedMatchWebhookNumber | null {
+/** @deprecated Use sendMatchBaselineNow */
+export async function sendDedicatedMatchBaselineNow(matchNum: number): Promise<WebhookBaselineSendResult> {
+  return sendMatchBaselineNow(matchNum);
+}
+
+export function parseBaselineMatchNum(raw: unknown): number | null {
   const n = typeof raw === "number" ? raw : Number(raw);
-  return isDedicatedMatchWebhook(n) ? n : null;
+  if (!Number.isInteger(n) || n < 1 || n > SHOP_MATCH_COUNT) return null;
+  return n;
 }

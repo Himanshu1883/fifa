@@ -1,10 +1,9 @@
 import type { ShopMarketEvent, ShopMarketListing } from "@/lib/shop-marketplace-types";
 import { formatShopPrice } from "@/app/shop/shop-utils";
 import { buildMatchBuyUrl } from "@/lib/shop-buy-urls";
-import { DEDICATED_SHOP_ROUTING_MATCHES, isDedicatedMatchShopWebhook } from "@/lib/dedicated-match-webhooks";
+import { listMatchNumsWithPerMatchShopWebhook, resolveMatchShopWebhookUrlDedicatedOnly } from "@/lib/match-discord-webhooks";
 import {
   maskWebhookUrl,
-  resolveDedicatedMatchWebhookUrl,
   resolveDiscordShopWebhookUrl,
   resolveDiscordShopWebhookUrlForEvent,
 } from "@/lib/webhook-settings";
@@ -468,10 +467,11 @@ async function sendShopBaselineBatchToWebhook(
   return results;
 }
 
-/** Baseline may require multiple Discord messages (embed limit). Dedicated matches route to their webhooks. */
+/** Baseline may require multiple Discord messages. Per-match webhooks receive one match each. */
 export async function sendShopBaselineToDiscord(events: ShopMarketEvent[]): Promise<ShopDiscordNotifyResult[]> {
   const sorted = dedupeShopEventsByMatchNum(events);
-  const generalEvents = sorted.filter((e) => !isDedicatedMatchShopWebhook(e.matchNum));
+  const perMatchNums = new Set(await listMatchNumsWithPerMatchShopWebhook());
+  const generalEvents = sorted.filter((e) => !perMatchNums.has(e.matchNum));
   const generalWebhook = await resolveDiscordShopWebhookUrl();
   const results: ShopDiscordNotifyResult[] = [];
 
@@ -480,10 +480,10 @@ export async function sendShopBaselineToDiscord(events: ShopMarketEvent[]): Prom
     if (results.some((r) => r.attempted && !r.ok)) return results;
   }
 
-  for (const matchNum of DEDICATED_SHOP_ROUTING_MATCHES) {
+  for (const matchNum of perMatchNums) {
     const dedicatedEvents = sorted.filter((e) => e.matchNum === matchNum);
     if (dedicatedEvents.length === 0) continue;
-    const webhook = await resolveDedicatedMatchWebhookUrl(matchNum);
+    const webhook = await resolveMatchShopWebhookUrlDedicatedOnly(matchNum);
     results.push(
       ...(await sendShopBaselineBatchToWebhook(dedicatedEvents, webhook, { dedicatedMatchNum: matchNum })),
     );

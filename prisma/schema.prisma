@@ -636,6 +636,16 @@ model ShopMarketplaceEventRecord {
   @@map("shop_marketplace_events")
 }
 
+/// Per-match Discord webhook URLs (matches 1–104): separate resale and LMS/shop channels.
+model MatchDiscordWebhook {
+  matchNum         Int      @id @map("match_num")
+  resaleWebhookUrl String?  @map("resale_webhook_url") @db.Text
+  shopWebhookUrl   String?  @map("shop_webhook_url") @db.Text
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@map("match_discord_webhooks")
+}
+
 /// Latest full API payload + scan timestamp (singleton row id = 1).
 model ShopMarketplaceSyncMeta {
   id         Int      @id @default(1)

@@ -7,8 +7,12 @@ import {
   isDedicatedMatchWebhook,
   parseDedicatedMatchNumber,
   type DedicatedMatchWebhookNumber,
-  type DedicatedShopMatchNumber,
 } from "@/lib/dedicated-match-webhooks";
+import {
+  hasAnyPerMatchShopWebhookConfigured,
+  resolveMatchResaleWebhookUrlDedicatedOnly,
+  resolveMatchShopWebhookUrlDedicatedOnly,
+} from "@/lib/match-discord-webhooks";
 import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
@@ -127,7 +131,7 @@ export const SHOP_DISCORD_HEARTBEAT_INTERVAL_MS = 12 * 60 * 1000;
 /** Combined resale+shop price list webhook heartbeat when fingerprint is unchanged. */
 export const PRICE_LIST_DISCORD_HEARTBEAT_INTERVAL_MS = 30 * 60 * 1000;
 
-export type ShopDiscordWebhookHeartbeatTarget = "general" | DedicatedShopMatchNumber;
+export type ShopDiscordWebhookHeartbeatTarget = "general" | number;
 
 export async function getShopDiscordLastHeartbeatAt(
   target: ShopDiscordWebhookHeartbeatTarget,
@@ -177,9 +181,7 @@ export async function markShopDiscordLastHeartbeatAt(
   });
 }
 
-async function clearDedicatedShopDiscordLastHeartbeatAt(
-  matchNum: DedicatedShopMatchNumber,
-): Promise<void> {
+export async function clearMatchShopDiscordLastHeartbeatAt(matchNum: number): Promise<void> {
   const row = await readSettingsRow();
   const map = parseDedicatedShopLastHeartbeatAt(row?.dedicatedShopDiscordLastHeartbeatAt);
   if (!(String(matchNum) in map)) return;
@@ -200,17 +202,20 @@ function dedicatedBaselinesSentJson(
   return map as Prisma.InputJsonValue;
 }
 
-export async function isDedicatedMatchShopDiscordBaselineSent(
-  matchNum: DedicatedMatchWebhookNumber,
-): Promise<boolean> {
+export async function isMatchShopDiscordBaselineSent(matchNum: number): Promise<boolean> {
   const row = await readSettingsRow();
   const sent = parseDedicatedShopBaselinesSent(row?.dedicatedShopDiscordBaselinesSent);
   return Boolean(sent[String(matchNum)]);
 }
 
-export async function markDedicatedMatchShopDiscordBaselineSent(
-  matchNum: DedicatedShopMatchNumber,
-): Promise<void> {
+/** @deprecated Use isMatchShopDiscordBaselineSent */
+export async function isDedicatedMatchShopDiscordBaselineSent(
+  matchNum: DedicatedMatchWebhookNumber,
+): Promise<boolean> {
+  return isMatchShopDiscordBaselineSent(matchNum);
+}
+
+export async function markMatchShopDiscordBaselineSent(matchNum: number): Promise<void> {
   const row = await readSettingsRow();
   const sent = parseDedicatedShopBaselinesSent(row?.dedicatedShopDiscordBaselinesSent);
   sent[String(matchNum)] = new Date().toISOString();
@@ -224,9 +229,12 @@ export async function markDedicatedMatchShopDiscordBaselineSent(
   });
 }
 
-export async function clearDedicatedMatchShopDiscordBaselineSent(
-  matchNum: DedicatedShopMatchNumber,
-): Promise<void> {
+/** @deprecated Use markMatchShopDiscordBaselineSent */
+export async function markDedicatedMatchShopDiscordBaselineSent(matchNum: number): Promise<void> {
+  return markMatchShopDiscordBaselineSent(matchNum);
+}
+
+export async function clearMatchShopDiscordBaselineSent(matchNum: number): Promise<void> {
   const row = await readSettingsRow();
   const sent = parseDedicatedShopBaselinesSent(row?.dedicatedShopDiscordBaselinesSent);
   if (!(String(matchNum) in sent)) return;
@@ -260,8 +268,8 @@ async function onDedicatedMatchWebhookUrlChanged(
   const urlChanged = (previousUrl ?? "") !== (nextUrl ?? "");
   if (!urlChanged) return;
   if (isDedicatedMatchShopWebhook(matchNum)) {
-    await clearDedicatedMatchShopDiscordBaselineSent(matchNum);
-    await clearDedicatedShopDiscordLastHeartbeatAt(matchNum);
+    await clearMatchShopDiscordBaselineSent(matchNum);
+    await clearMatchShopDiscordLastHeartbeatAt(matchNum);
   }
   if (nextUrl) {
     await resetDedicatedMatchNotifyStateOnWebhookChange(matchNum);
@@ -369,14 +377,15 @@ export async function resolveDiscordMatch7WebhookUrl(): Promise<string | null> {
   return settings.discordMatch7WebhookUrl;
 }
 
-/** Match 1/3/4/5/7 resale → dedicated webhooks; all other matches → general resale webhook. */
+/** Per-match resale webhook when configured; otherwise general resale webhook. */
 export async function resolveDiscordResaleWebhookUrlForEvent(
   matchLabel: string,
   name: string,
 ): Promise<string | null> {
   const matchNum = parseEventMatchNumber(matchLabel, name);
-  if (isDedicatedMatchWebhook(matchNum)) {
-    return resolveDedicatedMatchWebhookUrl(matchNum);
+  if (matchNum != null) {
+    const dedicated = await resolveMatchResaleWebhookUrlDedicatedOnly(matchNum);
+    if (dedicated) return dedicated;
   }
   return resolveDiscordNewListingsWebhookUrl();
 }
@@ -402,22 +411,22 @@ export async function resolveDiscordPriceListWebhookUrl(): Promise<string | null
   return settings.discordPriceListWebhookUrl;
 }
 
-/** Match 1/5/7 shop → dedicated webhook; M3/M4 and all others → general shop webhook. */
+/** Per-match shop webhook when configured; otherwise general shop webhook. */
 export async function resolveDiscordShopWebhookUrlForMatch(matchNum: number): Promise<string | null> {
-  if (isDedicatedMatchShopWebhook(matchNum)) {
-    return resolveDedicatedMatchWebhookUrl(matchNum);
-  }
+  const dedicated = await resolveMatchShopWebhookUrlDedicatedOnly(matchNum);
+  if (dedicated) return dedicated;
   return resolveDiscordShopWebhookUrl();
 }
 
-/** Match 1/5/7 shop → dedicated webhook; M3/M4 and all others → general shop webhook. */
+/** Per-match shop webhook when configured; otherwise general shop webhook. */
 export async function resolveDiscordShopWebhookUrlForEvent(
   matchLabel: string,
   name: string,
 ): Promise<string | null> {
   const matchNum = parseEventMatchNumber(matchLabel, name);
-  if (isDedicatedMatchShopWebhook(matchNum)) {
-    return resolveDedicatedMatchWebhookUrl(matchNum);
+  if (matchNum != null) {
+    const dedicated = await resolveMatchShopWebhookUrlDedicatedOnly(matchNum);
+    if (dedicated) return dedicated;
   }
   return resolveDiscordShopWebhookUrl();
 }
@@ -449,6 +458,7 @@ export async function resolveDedicatedMatchWebhookUrlForEvent(
 }
 
 export async function hasAnyDedicatedShopWebhookConfigured(): Promise<boolean> {
+  if (await hasAnyPerMatchShopWebhookConfigured()) return true;
   for (const matchNum of DEDICATED_SHOP_ROUTING_MATCHES) {
     const url = await resolveDedicatedMatchWebhookUrl(matchNum);
     if (url) return true;

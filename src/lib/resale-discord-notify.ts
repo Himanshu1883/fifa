@@ -4,12 +4,8 @@ import {
   sendDiscordNewListingsMessage,
   type DiscordNotifyResult,
 } from "@/lib/discord-webhook";
-import { resolveDedicatedMatchWebhookUrl } from "@/lib/webhook-settings";
-import {
-  isDedicatedResaleMatch,
-  parseDedicatedResaleMatchNumber,
-  type DedicatedResaleMatchNumber,
-} from "@/lib/dedicated-match-webhooks";
+import { resolveMatchResaleWebhookUrlDedicatedOnly } from "@/lib/match-discord-webhooks";
+import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
 import { sortNewListingsByPriceAsc, type SockAvailableNewListingKey } from "@/lib/sock-available-diff";
 import { prisma } from "@/lib/prisma";
 
@@ -174,9 +170,8 @@ export async function claimResaleDiscordNotifyFingerprint(
     return { action: "skip", reason: "no_inventory" };
   }
 
-  const webhookUrl = isDedicatedResaleMatch(matchNum)
-    ? await resolveDedicatedMatchWebhookUrl(matchNum)
-    : null;
+  const webhookUrl =
+    matchNum != null ? await resolveMatchResaleWebhookUrlDedicatedOnly(matchNum) : null;
   if (!webhookUrl) {
     return { action: "skip", reason: "no_webhook" };
   }
@@ -282,15 +277,20 @@ async function loadResaleSeatRows(eventId: number): Promise<ResaleSeatRow[]> {
   });
 }
 
-export async function maybeNotifyDedicatedResaleDiscord(input: {
+export async function maybeNotifyResaleDiscordForEvent(input: {
   eventId: number;
   eventLabel: string;
   eventName: string;
   prefId: string;
 }): Promise<DiscordNotifyResult & { mode?: "baseline" | "delta" | "skipped" }> {
   const provider = "discord" as const;
-  const matchNum = parseDedicatedResaleMatchNumber(input.eventLabel, input.eventName);
-  if (!matchNum) {
+  const matchNum = parseEventMatchNumber(input.eventLabel, input.eventName);
+  if (matchNum == null) {
+    return { attempted: false, ok: false, provider, mode: "skipped" };
+  }
+
+  const webhookUrl = await resolveMatchResaleWebhookUrlDedicatedOnly(matchNum);
+  if (!webhookUrl) {
     return { attempted: false, ok: false, provider, mode: "skipped" };
   }
 
@@ -329,7 +329,7 @@ export async function maybeNotifyDedicatedResaleDiscord(input: {
     kind: "RESALE",
     newCount: listings.length,
     newSeatIds: listings,
-    dedicatedMatchNum: matchNum,
+    matchNum,
     isNewListings: false,
   });
 
@@ -358,18 +358,31 @@ export async function persistResaleDiscordNotifyFingerprintState(
   }
 }
 
+/** @deprecated Use maybeNotifyResaleDiscordForEvent */
+export const maybeNotifyDedicatedResaleDiscord = maybeNotifyResaleDiscordForEvent;
+
+export function resolveEventMatchNum(
+  matchLabel: string | null | undefined,
+  label: string,
+  name: string,
+): number | null {
+  return (
+    parseEventMatchNumber(matchLabel?.trim() || label.trim(), name) ??
+    parseEventMatchNumber(label.trim(), name)
+  );
+}
+
+/** @deprecated Use resolveEventMatchNum */
 export function resolveDedicatedResaleMatchNum(
   matchLabel: string | null | undefined,
   label: string,
   name: string,
-): DedicatedResaleMatchNumber | null {
-  return (
-    parseDedicatedResaleMatchNumber(matchLabel?.trim() || label.trim(), name) ??
-    parseDedicatedResaleMatchNumber(label.trim(), name)
-  );
+): number | null {
+  return resolveEventMatchNum(matchLabel, label, name);
 }
 
 /** @internal exported for tests */
-export function isDedicatedResaleEvent(matchLabel: string, name: string): boolean {
-  return resolveDedicatedResaleMatchNum(matchLabel, matchLabel, name) != null;
+export function isPerMatchResaleEvent(matchLabel: string, name: string): boolean {
+  const matchNum = parseEventMatchNumber(matchLabel, name);
+  return matchNum != null;
 }

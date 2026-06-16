@@ -10,6 +10,7 @@ const links = [
   { href: "/sb-push-settings", label: "Push rules" },
   { href: "/listing-changes", label: "Changes" },
   { href: "/webhook-logs", label: "Webhook logs" },
+  { href: "/discord-match-webhooks", label: "Match Discord" },
 ] as const;
 
 function navLinkActive(pathname: string, href: string, exact?: boolean): boolean {

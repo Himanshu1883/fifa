@@ -16,20 +16,19 @@ import {
 } from "@/lib/shop-discord-webhook";
 import {
   hasAnyDedicatedShopWebhookConfigured,
-  isDedicatedMatchShopDiscordBaselineSent,
+  isMatchShopDiscordBaselineSent,
   isShopDiscordBaselineSent,
-  markDedicatedMatchShopDiscordBaselineSent,
+  markMatchShopDiscordBaselineSent,
   markShopDiscordBaselineSent,
   markShopDiscordLastHeartbeatAt,
-  resolveDedicatedMatchWebhookUrl,
   resolveDiscordShopWebhookUrl,
   shouldSendShopDiscordHeartbeat,
   type ShopDiscordWebhookHeartbeatTarget,
 } from "@/lib/webhook-settings";
 import {
-  DEDICATED_SHOP_ROUTING_MATCHES,
-  isDedicatedMatchShopWebhook,
-} from "@/lib/dedicated-match-webhooks";
+  listMatchNumsWithPerMatchShopWebhook,
+  resolveMatchShopWebhookUrlDedicatedOnly,
+} from "@/lib/match-discord-webhooks";
 import { persistShopDiscordNotifyLog } from "@/lib/shop-discord-log";
 import { ensureAllShopMatches } from "@/lib/shop-match-grid";
 import {
@@ -91,12 +90,17 @@ async function finishShopNotify(summary: ShopDiscordNotifySummary): Promise<Shop
   return summary;
 }
 
-function shopDiscordHeartbeatTargetForMatch(matchNum: number): ShopDiscordWebhookHeartbeatTarget {
-  return isDedicatedMatchShopWebhook(matchNum) ? matchNum : "general";
+async function shopDiscordHeartbeatTargetForMatch(matchNum: number): Promise<ShopDiscordWebhookHeartbeatTarget> {
+  const dedicated = await resolveMatchShopWebhookUrlDedicatedOnly(matchNum);
+  return dedicated ? matchNum : "general";
 }
 
 async function markShopDiscordNotifySentForMatch(matchNum: number): Promise<void> {
-  await markShopDiscordLastHeartbeatAt(shopDiscordHeartbeatTargetForMatch(matchNum));
+  await markShopDiscordLastHeartbeatAt(await shopDiscordHeartbeatTargetForMatch(matchNum));
+}
+
+async function perMatchShopWebhookNums(): Promise<Set<number>> {
+  return new Set(await listMatchNumsWithPerMatchShopWebhook());
 }
 
 async function maybeSendShopDiscordHeartbeats(
@@ -104,7 +108,8 @@ async function maybeSendShopDiscordHeartbeats(
 ): Promise<ShopDiscordNotifySummary | null> {
   const results: ShopDiscordNotifyResult[] = [];
   const generalWebhook = await resolveDiscordShopWebhookUrl();
-  const generalEvents = allMatches.filter((e) => !isDedicatedMatchShopWebhook(e.matchNum));
+  const perMatchNums = await perMatchShopWebhookNums();
+  const generalEvents = allMatches.filter((e) => !perMatchNums.has(e.matchNum));
 
   if (
     generalWebhook &&
@@ -122,8 +127,8 @@ async function maybeSendShopDiscordHeartbeats(
     }
   }
 
-  for (const matchNum of DEDICATED_SHOP_ROUTING_MATCHES) {
-    const webhook = await resolveDedicatedMatchWebhookUrl(matchNum);
+  for (const matchNum of perMatchNums) {
+    const webhook = await resolveMatchShopWebhookUrlDedicatedOnly(matchNum);
     if (!webhook) continue;
     const event = allMatches.find((e) => e.matchNum === matchNum);
     if (!event) continue;
@@ -257,28 +262,29 @@ async function sendHardenedShopDelta(
   return { results, notifiedEvents };
 }
 
-/** Send shop baseline to dedicated match webhooks configured after the global baseline ran. */
-async function sendPendingDedicatedShopBaselines(
+/** Send shop baseline to per-match webhooks configured after the global baseline ran. */
+async function sendPendingPerMatchShopBaselines(
   allMatches: ShopMarketEvent[],
 ): Promise<{ results: ShopDiscordNotifyResult[]; notifiedEvents: ShopMarketEvent[] }> {
   const results: ShopDiscordNotifyResult[] = [];
   const notifiedEvents: ShopMarketEvent[] = [];
+  const perMatchNums = await perMatchShopWebhookNums();
 
-  for (const matchNum of DEDICATED_SHOP_ROUTING_MATCHES) {
-    if (await isDedicatedMatchShopDiscordBaselineSent(matchNum)) continue;
-    const webhook = await resolveDedicatedMatchWebhookUrl(matchNum);
+  for (const matchNum of perMatchNums) {
+    if (await isMatchShopDiscordBaselineSent(matchNum)) continue;
+    const webhook = await resolveMatchShopWebhookUrlDedicatedOnly(matchNum);
     if (!webhook) continue;
 
     const event = allMatches.find((e) => e.matchNum === matchNum);
     if (!event) continue;
 
-    shopLog(`Discord shop dedicated baseline send M${matchNum}`);
+    shopLog(`Discord shop per-match baseline send M${matchNum}`);
     const batchResults = await sendShopBaselineToDiscord([event]);
     results.push(...batchResults);
     const attempted = batchResults.some((r) => r.attempted);
     const ok = batchResults.length > 0 && batchResults.every((r) => r.ok || !r.attempted);
     if (attempted && ok) {
-      await markDedicatedMatchShopDiscordBaselineSent(matchNum);
+      await markMatchShopDiscordBaselineSent(matchNum);
       await persistShopDiscordNotifyFingerprint(event);
       await markShopDiscordNotifySentForMatch(matchNum);
       notifiedEvents.push(event);
@@ -323,10 +329,10 @@ export async function maybeNotifyShopDiscord(input: {
       if (generalWebhook) {
         await markShopDiscordLastHeartbeatAt("general");
       }
-      for (const matchNum of DEDICATED_SHOP_ROUTING_MATCHES) {
-        const webhook = await resolveDedicatedMatchWebhookUrl(matchNum);
+      for (const matchNum of await listMatchNumsWithPerMatchShopWebhook()) {
+        const webhook = await resolveMatchShopWebhookUrlDedicatedOnly(matchNum);
         if (webhook) {
-          await markDedicatedMatchShopDiscordBaselineSent(matchNum);
+          await markMatchShopDiscordBaselineSent(matchNum);
           await markShopDiscordLastHeartbeatAt(matchNum);
         }
       }
@@ -342,7 +348,7 @@ export async function maybeNotifyShopDiscord(input: {
     });
   }
 
-  const pendingDedicated = await sendPendingDedicatedShopBaselines(allMatches);
+  const pendingDedicated = await sendPendingPerMatchShopBaselines(allMatches);
   if (pendingDedicated.results.some((r) => r.attempted)) {
     const ok = pendingDedicated.results.every((r) => r.ok || !r.attempted);
     shopLog(`Discord shop dedicated baseline ${ok ? "OK" : "failed"}`);

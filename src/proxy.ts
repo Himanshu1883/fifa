@@ -132,6 +132,7 @@ export const config = {
     "/sb-push-settings/:path*",
     "/listing-changes/:path*",
     "/webhook-logs/:path*",
+    "/discord-match-webhooks/:path*",
     "/undetectable/:path*",
     "/admin/:path*",
     "/pending-approval",

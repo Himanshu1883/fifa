@@ -6,10 +6,11 @@ import {
   type DiscordNotifyResult,
 } from "@/lib/discord-webhook";
 import {
-  maybeNotifyDedicatedResaleDiscord,
+  maybeNotifyResaleDiscordForEvent,
   persistResaleDiscordNotifyFingerprintState,
-  resolveDedicatedResaleMatchNum,
+  resolveEventMatchNum,
 } from "@/lib/resale-discord-notify";
+import { resolveMatchResaleWebhookUrlDedicatedOnly } from "@/lib/match-discord-webhooks";
 import type { SockAvailableRowInput } from "@/lib/parse-sock-available-geojson-webhook";
 import { prisma } from "@/lib/prisma";
 import { computeSockAvailableDiff } from "@/lib/sock-available-diff";
@@ -137,13 +138,11 @@ export async function maybeNotifySockAvailableDiff(input: {
   let discord: DiscordNotifyResult = emptyDiscord;
   if (diff.kind === "RESALE") {
     const eventLabel = event.matchLabel?.trim() || event.label.trim();
-    const dedicatedMatchNum = resolveDedicatedResaleMatchNum(
-      event.matchLabel,
-      event.label,
-      event.name,
-    );
+    const matchNum = resolveEventMatchNum(event.matchLabel, event.label, event.name);
+    const perMatchWebhook =
+      matchNum != null ? await resolveMatchResaleWebhookUrlDedicatedOnly(matchNum) : null;
 
-    if (dedicatedMatchNum) {
+    if (perMatchWebhook && matchNum != null) {
       if (diff.newCount > 0) {
         discord = await sendDiscordNewListingsMessage({
           eventLabel,
@@ -153,17 +152,17 @@ export async function maybeNotifySockAvailableDiff(input: {
           kind: diff.kind,
           newCount: diff.newCount,
           newSeatIds: diff.newSeatIds,
-          dedicatedMatchNum,
+          matchNum,
         });
         if (discord.ok) {
           const rows = await prisma.sockAvailable.findMany({
             where: { eventId: event.id, kind: "RESALE" },
             select: { categoryId: true, categoryName: true, amount: true },
           });
-          await persistResaleDiscordNotifyFingerprintState(dedicatedMatchNum, rows);
+          await persistResaleDiscordNotifyFingerprintState(matchNum, rows);
         }
       } else if (diff.priceChangedCount > 0 || diff.changedCount > 0) {
-        discord = await maybeNotifyDedicatedResaleDiscord({
+        discord = await maybeNotifyResaleDiscordForEvent({
           eventId: event.id,
           eventLabel,
           eventName: event.name,
