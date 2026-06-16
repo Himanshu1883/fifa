@@ -109,16 +109,15 @@ async function maybeSendShopDiscordHeartbeats(
   const results: ShopDiscordNotifyResult[] = [];
   const generalWebhook = await resolveDiscordShopWebhookUrl();
   const perMatchNums = await perMatchShopWebhookNums();
-  const generalEvents = allMatches.filter((e) => !perMatchNums.has(e.matchNum));
 
   if (
     generalWebhook &&
-    generalEvents.length > 0 &&
+    allMatches.length > 0 &&
     (await shouldSendShopDiscordHeartbeat("general"))
   ) {
-    shopLog("Discord shop listing refresh send (general)");
+    shopLog("Discord shop listing refresh send (general — all matches)");
     const refreshResults = await sendShopListingRefreshToDiscord({
-      events: generalEvents,
+      events: allMatches,
       webhookUrl: generalWebhook,
     });
     results.push(...refreshResults);
@@ -158,6 +157,32 @@ async function maybeSendShopDiscordHeartbeats(
     changedCount: 0,
     notifiedEvents: [],
   };
+}
+
+async function sendShopDeltaToWebhooks(
+  event: ShopMarketEvent,
+  changedListings: ShopMarketListing[],
+): Promise<ShopDiscordNotifyResult[]> {
+  const dedicatedWebhook = await resolveMatchShopWebhookUrlDedicatedOnly(event.matchNum);
+  const generalWebhook = await resolveDiscordShopWebhookUrl();
+  const primaryUrl = dedicatedWebhook ?? generalWebhook;
+  if (!primaryUrl) return [];
+
+  const results: ShopDiscordNotifyResult[] = [];
+  const primary = await sendOneShopDeltaToDiscord(event, {
+    changedListings,
+    webhookUrl: primaryUrl,
+  });
+  results.push(primary);
+
+  if (dedicatedWebhook && generalWebhook && dedicatedWebhook !== generalWebhook) {
+    shopLog(`Discord shop delta mirror M${event.matchNum} → general drop channel`);
+    results.push(
+      await sendOneShopDeltaToDiscord(event, { changedListings, webhookUrl: generalWebhook }),
+    );
+  }
+
+  return results;
 }
 
 /**
@@ -226,7 +251,8 @@ async function sendHardenedShopDelta(
       shopLog(
         `Discord shop delta send M${event.matchNum} (${changedListings.map((l) => l.categoryKey).join(", ")})`,
       );
-      const result = await sendOneShopDeltaToDiscord(event, { changedListings });
+      const deltaResults = await sendShopDeltaToWebhooks(event, changedListings);
+      const result = deltaResults[0] ?? { attempted: false, ok: false, provider: "discord-shop" as const };
       if (!result.ok) {
         await revertShopDiscordNotifyFingerprint(
           event.matchNum,
@@ -239,14 +265,21 @@ async function sendHardenedShopDelta(
 
       if (result.ok && result.attempted) {
         await markShopDiscordNotifySentForMatch(event.matchNum);
+        const dedicatedWebhook = await resolveMatchShopWebhookUrlDedicatedOnly(event.matchNum);
+        const generalWebhook = await resolveDiscordShopWebhookUrl();
+        if (dedicatedWebhook && generalWebhook && dedicatedWebhook !== generalWebhook) {
+          await markShopDiscordLastHeartbeatAt("general");
+        }
       }
-      return { result, notified: true };
+      return { result, deltaResults, notified: true };
     });
 
-    if (outcome.result) {
+    if (outcome.deltaResults) {
+      results.push(...outcome.deltaResults);
+    } else if (outcome.result) {
       results.push(outcome.result);
-      if (!outcome.result.ok) break;
     }
+    if (outcome.result && !outcome.result.ok) break;
     if (outcome.notified) {
       notifiedEvents.push(event);
     }

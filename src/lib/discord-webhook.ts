@@ -214,6 +214,21 @@ export async function sendDiscordResaleDedicatedMessage(input: {
   }
 }
 
+export function combineDiscordNotifyResults(
+  primary: DiscordNotifyResult,
+  secondary: DiscordNotifyResult,
+): DiscordNotifyResult {
+  if (!secondary.attempted) return primary;
+  if (!primary.attempted) return secondary;
+  return {
+    attempted: true,
+    ok: primary.ok && secondary.ok,
+    provider: "discord",
+    status: secondary.status ?? primary.status,
+    error: [primary.error, secondary.error].filter(Boolean).join(" | ") || undefined,
+  };
+}
+
 export async function sendDiscordNewListingsMessage(input: {
   eventLabel: string;
   eventName: string;
@@ -225,6 +240,8 @@ export async function sendDiscordNewListingsMessage(input: {
   /** When set, posts to this match's per-match webhook. */
   matchNum?: number;
   isNewListings?: boolean;
+  /** Explicit webhook URL (e.g. general #resale-drop mirror). */
+  webhookUrl?: string | null;
 }): Promise<DiscordNotifyResult> {
   const provider = "discord" as const;
 
@@ -233,7 +250,9 @@ export async function sendDiscordNewListingsMessage(input: {
     return { attempted: false, ok: false, provider };
   }
 
-  const webhookUrl = await resolveDiscordResaleWebhookUrlForEvent(input.eventLabel, input.eventName);
+  const webhookUrl =
+    input.webhookUrl ??
+    (await resolveDiscordResaleWebhookUrlForEvent(input.eventLabel, input.eventName));
 
   if (!webhookUrl) {
     return { attempted: false, ok: false, provider };

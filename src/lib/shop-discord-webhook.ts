@@ -386,12 +386,13 @@ export async function sendOneShopListingToDiscord(
 
 export async function sendOneShopDeltaToDiscord(
   event: ShopMarketEvent,
-  options: { changedListings: ShopMarketListing[] },
+  options: { changedListings: ShopMarketListing[]; webhookUrl?: string | null },
 ): Promise<ShopDiscordNotifyResult> {
   return sendOneShopListingToDiscord(event, {
     listings: options.changedListings,
     mode: "delta",
     footerText: "🛒 Shop · price/availability update",
+    webhookUrl: options.webhookUrl,
   });
 }
 
@@ -467,16 +468,15 @@ async function sendShopBaselineBatchToWebhook(
   return results;
 }
 
-/** Baseline may require multiple Discord messages. Per-match webhooks receive one match each. */
+/** Baseline may require multiple Discord messages. General webhook gets all matches; per-match webhooks get one match each. */
 export async function sendShopBaselineToDiscord(events: ShopMarketEvent[]): Promise<ShopDiscordNotifyResult[]> {
   const sorted = dedupeShopEventsByMatchNum(events);
   const perMatchNums = new Set(await listMatchNumsWithPerMatchShopWebhook());
-  const generalEvents = sorted.filter((e) => !perMatchNums.has(e.matchNum));
   const generalWebhook = await resolveDiscordShopWebhookUrl();
   const results: ShopDiscordNotifyResult[] = [];
 
-  if (generalEvents.length > 0) {
-    results.push(...(await sendShopBaselineBatchToWebhook(generalEvents, generalWebhook, {})));
+  if (sorted.length > 0) {
+    results.push(...(await sendShopBaselineBatchToWebhook(sorted, generalWebhook, {})));
     if (results.some((r) => r.attempted && !r.ok)) return results;
   }
 

@@ -494,10 +494,10 @@ export function WebhookLogsClient() {
             <h2 className="text-sm font-semibold text-zinc-100">Webhook configuration</h2>
             <p className="mt-1 text-xs leading-relaxed text-zinc-500">
               {channel === "shop"
-                ? "SHOP marketplace Discord — per-match channels via Match Discord tab, or general webhook for unconfigured matches."
+                ? "SHOP marketplace Discord — per-match channels plus the general #lms-drop webhook (all matches)."
                 : channel === "price-list"
                   ? "Combined price list — sorted resale then shop prices; sends on any combined price change or 30 min heartbeat."
-                  : "Resale Discord — per-match channels via Match Discord tab, or general webhook for new listings."}
+                  : "Resale Discord — per-match channels plus the general #resale-drop webhook (all matches)."}
             </p>
             <Link
               href="/discord-match-webhooks"

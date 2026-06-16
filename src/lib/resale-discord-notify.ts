@@ -2,10 +2,12 @@ import "server-only";
 
 import {
   sendDiscordNewListingsMessage,
+  combineDiscordNotifyResults,
   type DiscordNotifyResult,
 } from "@/lib/discord-webhook";
 import { resolveMatchResaleWebhookUrlDedicatedOnly } from "@/lib/match-discord-webhooks";
 import { parseEventMatchNumber } from "@/lib/parse-match-label-number";
+import { resolveDiscordNewListingsWebhookUrl } from "@/lib/webhook-settings";
 import { sortNewListingsByPriceAsc, type SockAvailableNewListingKey } from "@/lib/sock-available-diff";
 import { prisma } from "@/lib/prisma";
 
@@ -170,9 +172,9 @@ export async function claimResaleDiscordNotifyFingerprint(
     return { action: "skip", reason: "no_inventory" };
   }
 
-  const webhookUrl =
-    matchNum != null ? await resolveMatchResaleWebhookUrlDedicatedOnly(matchNum) : null;
-  if (!webhookUrl) {
+  const dedicatedWebhook = await resolveMatchResaleWebhookUrlDedicatedOnly(matchNum);
+  const generalWebhook = await resolveDiscordNewListingsWebhookUrl();
+  if (!dedicatedWebhook && !generalWebhook) {
     return { action: "skip", reason: "no_webhook" };
   }
 
@@ -289,8 +291,9 @@ export async function maybeNotifyResaleDiscordForEvent(input: {
     return { attempted: false, ok: false, provider, mode: "skipped" };
   }
 
-  const webhookUrl = await resolveMatchResaleWebhookUrlDedicatedOnly(matchNum);
-  if (!webhookUrl) {
+  const dedicatedWebhook = await resolveMatchResaleWebhookUrlDedicatedOnly(matchNum);
+  const generalWebhook = await resolveDiscordNewListingsWebhookUrl();
+  if (!dedicatedWebhook && !generalWebhook) {
     return { attempted: false, ok: false, provider, mode: "skipped" };
   }
 
@@ -321,6 +324,7 @@ export async function maybeNotifyResaleDiscordForEvent(input: {
     return { attempted: false, ok: true, provider, mode: "skipped" };
   }
 
+  const primaryUrl = dedicatedWebhook ?? generalWebhook;
   const result = await sendDiscordNewListingsMessage({
     eventLabel: input.eventLabel,
     eventName: input.eventName,
@@ -331,13 +335,35 @@ export async function maybeNotifyResaleDiscordForEvent(input: {
     newSeatIds: listings,
     matchNum,
     isNewListings: false,
+    webhookUrl: primaryUrl,
   });
 
-  if (!result.ok) {
+  let combined = result;
+  if (
+    result.ok &&
+    dedicatedWebhook &&
+    generalWebhook &&
+    dedicatedWebhook !== generalWebhook
+  ) {
+    const mirror = await sendDiscordNewListingsMessage({
+      eventLabel: input.eventLabel,
+      eventName: input.eventName,
+      eventId: input.eventId,
+      prefId: input.prefId,
+      kind: "RESALE",
+      newCount: listings.length,
+      newSeatIds: listings,
+      isNewListings: false,
+      webhookUrl: generalWebhook,
+    });
+    combined = combineDiscordNotifyResults(result, mirror);
+  }
+
+  if (!combined.ok) {
     await revertResaleDiscordNotifyFingerprint(matchNum, claim.previousFingerprint, claim.notifyLogId);
   }
 
-  return { ...result, mode: claim.mode };
+  return { ...combined, mode: claim.mode };
 }
 
 /** Sync dedup state after a dedicated new-listings send (no Discord POST). */

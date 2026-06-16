@@ -3,6 +3,7 @@ import type { SockAvailableKind } from "@/generated/prisma/enums";
 import {
   amountRawToUsdString,
   sendDiscordNewListingsMessage,
+  combineDiscordNotifyResults,
   type DiscordNotifyResult,
 } from "@/lib/discord-webhook";
 import {
@@ -11,6 +12,7 @@ import {
   resolveEventMatchNum,
 } from "@/lib/resale-discord-notify";
 import { resolveMatchResaleWebhookUrlDedicatedOnly } from "@/lib/match-discord-webhooks";
+import { resolveDiscordNewListingsWebhookUrl } from "@/lib/webhook-settings";
 import type { SockAvailableRowInput } from "@/lib/parse-sock-available-geojson-webhook";
 import { prisma } from "@/lib/prisma";
 import { computeSockAvailableDiff } from "@/lib/sock-available-diff";
@@ -141,36 +143,10 @@ export async function maybeNotifySockAvailableDiff(input: {
     const matchNum = resolveEventMatchNum(event.matchLabel, event.label, event.name);
     const perMatchWebhook =
       matchNum != null ? await resolveMatchResaleWebhookUrlDedicatedOnly(matchNum) : null;
+    const generalWebhook = await resolveDiscordNewListingsWebhookUrl();
 
-    if (perMatchWebhook && matchNum != null) {
-      if (diff.newCount > 0) {
-        discord = await sendDiscordNewListingsMessage({
-          eventLabel,
-          eventName: event.name,
-          eventId: event.id,
-          prefId,
-          kind: diff.kind,
-          newCount: diff.newCount,
-          newSeatIds: diff.newSeatIds,
-          matchNum,
-        });
-        if (discord.ok) {
-          const rows = await prisma.sockAvailable.findMany({
-            where: { eventId: event.id, kind: "RESALE" },
-            select: { categoryId: true, categoryName: true, amount: true },
-          });
-          await persistResaleDiscordNotifyFingerprintState(matchNum, rows);
-        }
-      } else if (diff.priceChangedCount > 0 || diff.changedCount > 0) {
-        discord = await maybeNotifyResaleDiscordForEvent({
-          eventId: event.id,
-          eventLabel,
-          eventName: event.name,
-          prefId,
-        });
-      }
-    } else if (diff.newCount > 0) {
-      discord = await sendDiscordNewListingsMessage({
+    if (diff.newCount > 0) {
+      const listingInput = {
         eventLabel,
         eventName: event.name,
         eventId: event.id,
@@ -178,7 +154,40 @@ export async function maybeNotifySockAvailableDiff(input: {
         kind: diff.kind,
         newCount: diff.newCount,
         newSeatIds: diff.newSeatIds,
-      });
+      };
+
+      if (perMatchWebhook && matchNum != null) {
+        discord = await sendDiscordNewListingsMessage({
+          ...listingInput,
+          matchNum,
+          webhookUrl: perMatchWebhook,
+        });
+        if (discord.ok && generalWebhook && generalWebhook !== perMatchWebhook) {
+          const mirror = await sendDiscordNewListingsMessage({
+            ...listingInput,
+            webhookUrl: generalWebhook,
+          });
+          discord = combineDiscordNotifyResults(discord, mirror);
+        }
+        if (discord.ok) {
+          const rows = await prisma.sockAvailable.findMany({
+            where: { eventId: event.id, kind: "RESALE" },
+            select: { categoryId: true, categoryName: true, amount: true },
+          });
+          await persistResaleDiscordNotifyFingerprintState(matchNum, rows);
+        }
+      } else if (generalWebhook) {
+        discord = await sendDiscordNewListingsMessage(listingInput);
+      }
+    } else if (diff.priceChangedCount > 0 || diff.changedCount > 0) {
+      if (perMatchWebhook || generalWebhook) {
+        discord = await maybeNotifyResaleDiscordForEvent({
+          eventId: event.id,
+          eventLabel,
+          eventName: event.name,
+          prefId,
+        });
+      }
     }
   }
 
