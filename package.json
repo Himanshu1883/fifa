@@ -22,6 +22,7 @@
     "import:seat-listings-sample": "node --import tsx scripts/import-seat-listings-sample.ts",
     "test:sb-blocks": "DOTENV_CONFIG_PATH=.env.local node --import tsx scripts/test-sb-block-mapping.ts",
     "test:sb-blocks:live": "DOTENV_CONFIG_PATH=.env.local TEST_SB_LIVE=1 node --import tsx scripts/test-sb-block-mapping.ts",
+    "seed:match-discord": "node --import tsx scripts/seed-match-discord-webhook.ts",
     "postinstall": "DOTENV_CONFIG_PATH=.env.local prisma generate"
   },
   "dependencies": {
