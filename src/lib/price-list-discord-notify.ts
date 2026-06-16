@@ -366,10 +366,10 @@ async function sendPriceListMessages(input: {
 }
 
 async function resolveShopEvents(shopEvents?: ShopMarketEvent[]): Promise<ShopMarketEvent[]> {
-  if (shopEvents && shopEvents.length > 0) {
-    return ensureAllShopMatches(shopEvents);
-  }
   const metaByMatch = await safeLoadShopEventMetaLookup();
+  if (shopEvents && shopEvents.length > 0) {
+    return ensureAllShopMatches(shopEvents, metaByMatch);
+  }
   return ensureAllShopMatches(await loadShopEventsFromDatabase(metaByMatch), metaByMatch);
 }
 

@@ -23,6 +23,10 @@
     "test:sb-blocks": "DOTENV_CONFIG_PATH=.env.local node --import tsx scripts/test-sb-block-mapping.ts",
     "test:sb-blocks:live": "DOTENV_CONFIG_PATH=.env.local TEST_SB_LIVE=1 node --import tsx scripts/test-sb-block-mapping.ts",
     "seed:match-discord": "node --import tsx scripts/seed-match-discord-webhook.ts",
+    "seed:match-resale-batch": "node --import tsx scripts/seed-match-resale-webhooks-batch.ts",
+    "seed:match-resale-batch-51-104": "node --import tsx scripts/seed-match-resale-webhooks-batch-51-104.ts",
+    "seed:match-shop-batch": "node --import tsx scripts/seed-match-shop-webhooks-batch.ts",
+    "seed:match-webhooks-csv": "node --import tsx scripts/seed-match-webhooks-from-csv.ts",
     "test:dual-post": "node --import tsx scripts/test-dual-post-local.ts",
     "postinstall": "DOTENV_CONFIG_PATH=.env.local prisma generate"
   },

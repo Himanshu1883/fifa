@@ -37,6 +37,7 @@ import {
   loadShopDiscordNotifyFingerprints,
   persistShopDiscordNotifyFingerprint,
   revertShopDiscordNotifyFingerprint,
+  safeLoadShopEventMetaLookup,
   updateShopDiscordNotifyFingerprints,
 } from "@/lib/shop-sync-service";
 
@@ -359,8 +360,9 @@ export async function maybeNotifyShopDiscord(input: {
     });
   }
 
-  const allMatches = ensureAllShopMatches(input.payload.events);
-  const previousAll = ensureAllShopMatches(input.previousEvents);
+  const metaByMatch = await safeLoadShopEventMetaLookup();
+  const allMatches = ensureAllShopMatches(input.payload.events, metaByMatch);
+  const previousAll = ensureAllShopMatches(input.previousEvents, metaByMatch);
   const storedFingerprints = await loadShopDiscordNotifyFingerprints();
   const baselineSent = await isShopDiscordBaselineSent();
 
