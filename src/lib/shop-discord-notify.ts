@@ -140,7 +140,19 @@ async function maybeSendShopDiscordHeartbeats(
       dedicatedMatchNum: matchNum,
     });
     results.push(...refreshResults);
-    if (refreshResults.some((r) => r.ok && r.attempted)) {
+
+    const dedicatedOk = refreshResults.some((r) => r.ok && r.attempted);
+    if (dedicatedOk && generalWebhook && webhook !== generalWebhook) {
+      shopLog(`Discord shop heartbeat mirror M${matchNum} → general drop channel`);
+      results.push(
+        ...(await sendShopListingRefreshToDiscord({
+          events: [event],
+          webhookUrl: generalWebhook,
+        })),
+      );
+    }
+
+    if (dedicatedOk) {
       await markShopDiscordLastHeartbeatAt(matchNum);
     }
   }
